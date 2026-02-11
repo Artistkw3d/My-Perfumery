@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - الإنتاج{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <div class="row align-items-center">
+        <div class="col">
+            <h2><i class="bi bi-gear"></i> أوامر الإنتاج</h2>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#orderModal">
+                <i class="bi bi-plus-lg"></i> أمر إنتاج جديد
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-hover" id="ordersTable">
+            <thead>
+                <tr>
+                    <th>رقم الأمر</th>
+                    <th>التركيبة</th>
+                    <th>الكمية (جم)</th>
+                    <th>العميل</th>
+                    <th>رقم الدفعة</th>
+                    <th>الحالة</th>
+                    <th>التاريخ</th>
+                    <th>إجراءات</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal أمر جديد -->
+<div class="modal fade" id="orderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> أمر إنتاج جديد</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="orderForm">
+                    <div class="mb-3">
+                        <label class="form-label">التركيبة</label>
+                        <select class="form-select select2" name="formula_id" required>
+                            <option value="">-- اختر --</option>
+                            {% for f in formulas %}
+                            <option value="{{ f.id }}">{{ f.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الكمية المطلوبة (جم)</label>
+                        <input type="number" class="form-control" name="target_quantity" step="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">اسم العميل</label>
+                        <input type="text" class="form-control" name="customer_name">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">رقم الدفعة</label>
+                        <input type="text" class="form-control" name="batch_number" placeholder="مثال: BATCH-2024-001">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ملاحظات</label>
+                        <textarea class="form-control" name="notes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="createOrder()">
+                    <i class="bi bi-check-lg"></i> إنشاء الأمر
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal تفاصيل الأمر -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-text"></i> تفاصيل أمر الإنتاج</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="orderDetails"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" onclick="printOrder()">
+                    <i class="bi bi-printer"></i> طباعة
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentOrderId = null;
+
+loadOrders();
+
+function loadOrders() {
+    fetch('/api/production?action=list')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const tbody = document.querySelector('#ordersTable tbody');
+                tbody.innerHTML = data.data.map(o => `
+                    <tr>
+                        <td><strong>${o.order_number}</strong></td>
+                        <td>${o.formula_name}</td>
+                        <td>${o.target_quantity}</td>
+                        <td>${o.customer_name || '-'}</td>
+                        <td><code>${o.batch_number || '-'}</code></td>
+                        <td>
+                            <select class="form-select form-select-sm" style="width: 120px" 
+                                    onchange="updateStatus(${o.id}, this.value)">
+                                <option value="pending" ${o.status === 'pending' ? 'selected' : ''}>قيد الانتظار</option>
+                                <option value="in_progress" ${o.status === 'in_progress' ? 'selected' : ''}>جاري التنفيذ</option>
+                                <option value="completed" ${o.status === 'completed' ? 'selected' : ''}>مكتمل</option>
+                                <option value="cancelled" ${o.status === 'cancelled' ? 'selected' : ''}>ملغي</option>
+                            </select>
+                        </td>
+                        <td>${new Date(o.created_at).toLocaleDateString('ar-KW')}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="viewOrder(${o.id})">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteOrder(${o.id})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        });
+}
+
+function createOrder() {
+    const formData = new FormData(document.getElementById('orderForm'));
+    formData.append('action', 'create');
+    
+    fetch('/api/production', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('orderModal')).hide();
+            document.getElementById('orderForm').reset();
+            loadOrders();
+        }
+    });
+}
+
+function viewOrder(id) {
+    currentOrderId = id;
+    fetch(`/api/production?action=get&id=${id}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const o = data.data;
+                document.getElementById('orderDetails').innerHTML = `
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <p><strong>رقم الأمر:</strong> ${o.order_number}</p>
+                            <p><strong>التركيبة:</strong> ${o.formula_name}</p>
+                            <p><strong>الكمية المطلوبة:</strong> ${o.target_quantity} جم</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>العميل:</strong> ${o.customer_name || '-'}</p>
+                            <p><strong>رقم الدفعة:</strong> ${o.batch_number || '-'}</p>
+                            <p><strong>معامل القياس:</strong> ${o.scale_factor.toFixed(4)}</p>
+                        </div>
+                    </div>
+                    <h6><i class="bi bi-list-check"></i> المكونات المطلوبة:</h6>
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr><th>المادة</th><th>CAS</th><th>الكمية (جم)</th></tr>
+                        </thead>
+                        <tbody>
+                            ${o.items.map(i => `
+                                <tr>
+                                    <td>${i.name}</td>
+                                    <td><code>${i.cas || '-'}</code></td>
+                                    <td><strong>${i.weight.toFixed(4)}</strong></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    ${o.notes ? `<p class="mt-3"><strong>ملاحظات:</strong> ${o.notes}</p>` : ''}
+                `;
+                new bootstrap.Modal(document.getElementById('detailsModal')).show();
+            }
+        });
+}
+
+function updateStatus(id, status) {
+    const formData = new FormData();
+    formData.append('action', 'update_status');
+    formData.append('id', id);
+    formData.append('status', status);
+    
+    fetch('/api/production', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) showAlert('تم تحديث الحالة', 'success');
+    });
+}
+
+function deleteOrder(id) {
+    if (!confirm('هل أنت متأكد من حذف هذا الأمر؟')) return;
+    
+    const formData = new FormData();
+    formData.append('action', 'delete');
+    formData.append('id', id);
+    
+    fetch('/api/production', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadOrders();
+    });
+}
+
+function printOrder() {
+    window.print();
+}
+</script>
+{% endblock %}

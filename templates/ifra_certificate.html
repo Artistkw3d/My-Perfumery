@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - شهادة IFRA{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .certificate-container { padding: 20px; }
+        .no-print { display: none !important; }
+    }
+    .certificate-container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        max-width: 900px;
+        margin: 0 auto;
+    }
+    .certificate-header {
+        text-align: center;
+        border-bottom: 3px double #6f42c1;
+        padding-bottom: 20px;
+        margin-bottom: 30px;
+    }
+    .certificate-header h1 {
+        color: #6f42c1;
+        font-size: 2rem;
+    }
+    .ifra-notice {
+        background: #f8f9fa;
+        border-left: 4px solid #6f42c1;
+        padding: 15px;
+        margin-bottom: 20px;
+        font-size: 0.9rem;
+    }
+    .category-table th {
+        background: #6f42c1;
+        color: white;
+    }
+    .compliant { color: #198754; }
+    .not-compliant { color: #dc3545; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-4 no-print">
+    <div class="row align-items-center">
+        <div class="col-md-6">
+            <h2><i class="bi bi-award"></i> شهادة IFRA</h2>
+        </div>
+        <div class="col-md-6">
+            <div class="d-flex gap-2">
+                <select id="formulaSelect" class="form-select">
+                    <option value="">-- اختر تركيبة --</option>
+                    {% for f in formulas %}
+                    <option value="{{ f.id }}">{{ f.name }}</option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-primary" onclick="generateCertificate()">
+                    <i class="bi bi-check-circle"></i> توليد
+                </button>
+                <button class="btn btn-outline-secondary" onclick="window.print()">
+                    <i class="bi bi-printer"></i> طباعة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="certificateContent" style="display: none;">
+    <div class="certificate-container">
+        <div class="certificate-header">
+            <h1>IFRA Standards Certificate</h1>
+            <h3 id="productName" class="text-muted"></h3>
+        </div>
+        
+        <div class="ifra-notice">
+            <strong>*</strong> This is to confirm that the subject fragrance is composed of aroma chemicals, natural essential oils 
+            and other functional components in compliance with the most recent guidelines published by I.F.R.A. 
+            (International Fragrance Association). The IFRA standards are based on safety assessments from RIFM 
+            (Research Institute of Fragrance Materials).
+        </div>
+        
+        <h5 class="mb-3"><i class="bi bi-list-check"></i> IFRA Category Limits</h5>
+        <table class="table table-bordered category-table">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Level/Limit</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="categoriesBody"></tbody>
+        </table>
+        
+        <div class="mt-4">
+            <h5><i class="bi bi-box-seam"></i> Composition</h5>
+            <table class="table table-sm" id="ingredientsTable">
+                <thead>
+                    <tr>
+                        <th>Material</th>
+                        <th>CAS Number</th>
+                        <th>Weight (g)</th>
+                        <th>IFRA Limit %</th>
+                    </tr>
+                </thead>
+                <tbody id="ingredientsBody2"></tbody>
+            </table>
+        </div>
+        
+        <div class="mt-4 text-center text-muted">
+            <small>Generated: <span id="genDate"></span></small>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Check URL parameter
+const urlParams = new URLSearchParams(window.location.search);
+const preselectedFormula = urlParams.get('formula');
+if (preselectedFormula) {
+    document.getElementById('formulaSelect').value = preselectedFormula;
+    generateCertificate();
+}
+
+function generateCertificate() {
+    const fid = document.getElementById('formulaSelect').value;
+    if (!fid) {
+        showAlert('اختر تركيبة أولاً', 'warning');
+        return;
+    }
+    
+    fetch(`/api/ifra-certificate/${fid}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('certificateContent').style.display = 'block';
+                document.getElementById('productName').textContent = data.formula.name;
+                document.getElementById('genDate').textContent = new Date().toLocaleString('en-US');
+                
+                // Categories
+                const catBody = document.getElementById('categoriesBody');
+                catBody.innerHTML = data.categories.map(c => `
+                    <tr>
+                        <td><strong>${c.name}</strong></td>
+                        <td>${c.desc}</td>
+                        <td>${typeof c.limit === 'number' ? c.limit.toFixed(3) + '%' : c.limit}</td>
+                        <td class="${c.compliant ? 'compliant' : 'not-compliant'}">
+                            <i class="bi bi-${c.compliant ? 'check-circle-fill' : 'x-circle-fill'}"></i>
+                            ${c.compliant ? 'Compliant' : 'Check Required'}
+                            ${c.restricted && c.restricted.length > 0 ? `<br><small>(${c.restricted.join(', ')})</small>` : ''}
+                        </td>
+                    </tr>
+                `).join('');
+                
+                // Ingredients
+                const ingBody = document.getElementById('ingredientsBody2');
+                ingBody.innerHTML = data.ingredients.map(i => `
+                    <tr>
+                        <td>${i.name}</td>
+                        <td><code>${i.cas_number || '-'}</code></td>
+                        <td>${i.weight}</td>
+                        <td>${i.ifra_limit ? i.ifra_limit + '%' : '-'}</td>
+                    </tr>
+                `).join('');
+            } else {
+                showAlert(data.message || 'خطأ', 'danger');
+            }
+        });
+}
+</script>
+{% endblock %}

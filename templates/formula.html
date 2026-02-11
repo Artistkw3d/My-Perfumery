@@ -1,0 +1,625 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - {{ formula.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/formulas" class="btn btn-link text-decoration-none">
+            <i class="bi bi-arrow-right"></i> العودة
+        </a>
+        <h2 class="d-inline">{{ formula.name }}</h2>
+        <span class="badge bg-{{ 'success' if formula.status == 'final' else 'warning' if formula.status == 'testing' else 'secondary' }} ms-2">
+            {{ formula.status }}
+        </span>
+    </div>
+    <div>
+        <button class="btn btn-outline-primary" onclick="showScaleModal()">
+            <i class="bi bi-arrows-angle-expand"></i> Scale
+        </button>
+        <a href="/ifra-certificate?formula={{ formula.id }}" class="btn btn-outline-success">
+            <i class="bi bi-award"></i> IFRA
+        </a>
+        <a href="/msds-generator?formula={{ formula.id }}" class="btn btn-outline-info">
+            <i class="bi bi-file-medical"></i> MSDS
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-list-ul"></i> المكونات</span>
+                <button class="btn btn-sm btn-light" onclick="showAddModal()">
+                    <i class="bi bi-plus"></i> إضافة
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-bordered" style="font-size: 11px;">
+                        <thead class="text-center">
+                            <tr style="background-color: #000;">
+                                <th style="background:#000; color:#fff;">#</th>
+                                <th style="background:#000; color:#fff;">المادة</th>
+                                <th style="background:#000; color:#fff;">المذيب<br><small>(C)</small></th>
+                                <th style="background:#000; color:#fff;">التخفيف<br><small>(E)</small></th>
+                                <th style="background:#000; color:#fff;">حد IFRA<br><small>(F)</small></th>
+                                <th style="background:#000; color:#fff;">وزن الزيت<br><small>(G)</small></th>
+                                <th style="background:#000; color:#fff;">نسبة الزيت<br><small>(H=G/ΣG)</small></th>
+                                <th style="background:#000; color:#fff;">IFRA تصميم<br><small>(N=F/H)</small></th>
+                                <th style="background:#000; color:#fff;">تجاوز؟<br><small>(M)</small></th>
+                                <th style="background:#000; color:#fff;">وزن صافي<br><small>(I=G×E)</small></th>
+                                <th style="background:#000; color:#fff;">نسبة صافي<br><small>(J=I/ΣI)</small></th>
+                                <th style="background:#000; color:#fff;">IFRA نهائي<br><small>(L=F/J)</small></th>
+                                <th style="background:#000; color:#fff;">تجاوز؟<br><small>(K)</small></th>
+                                <th style="background:#000; color:#fff;">تكلفة</th>
+                                <th style="background:#000; color:#fff;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="ingredientsBody"></tbody>
+                        <tfoot id="ingredientsFoot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <i class="bi bi-gear"></i> إعدادات التركيبة
+            </div>
+            <div class="card-body">
+                <form id="formulaForm">
+                    <input type="hidden" name="action" value="update_formula">
+                    <div class="mb-3">
+                        <label class="form-label">الاسم</label>
+                        <input type="text" name="name" id="f_name" class="form-control" value="{{ formula.name }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الوصف</label>
+                        <textarea name="description" id="f_desc" class="form-control" rows="2">{{ formula.description or '' }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">IFRA Category</label>
+                        <select name="ifra_category" id="f_ifra" class="form-select">
+                            {% for cat in ifra_categories %}
+                            <option value="{{ cat.id }}" {{ 'selected' if formula.ifra_category == cat.id else '' }}>
+                                {{ cat.name }} - {{ cat.desc[:40] }}...
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الحالة</label>
+                        <select name="status" id="f_status" class="form-select">
+                            <option value="draft" {{ 'selected' if formula.status == 'draft' else '' }}>Draft</option>
+                            <option value="testing" {{ 'selected' if formula.status == 'testing' else '' }}>Testing</option>
+                            <option value="final" {{ 'selected' if formula.status == 'final' else '' }}>Final</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-primary w-100" onclick="saveFormula()">
+                        <i class="bi bi-check-circle"></i> حفظ التغييرات
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- نتائج IFRA المحسوبة -->
+        <div class="card mb-3">
+            <div class="card-header bg-dark text-white">
+                <i class="bi bi-calculator"></i> نتائج IFRA (محسوبة تلقائياً)
+            </div>
+            <div class="card-body">
+                <div class="row g-2 text-center">
+                    <div class="col-12">
+                        <label class="form-label small text-muted">J2: نسبة المادة الفعالة</label>
+                        <div class="fw-bold fs-5 text-primary" id="calc_active_ratio">-</div>
+                        <small class="text-muted">= ΣI / ΣG × 100</small>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small text-muted">N3: حد IFRA للتصميم</label>
+                        <div class="fw-bold text-success" id="calc_ifra_design">-</div>
+                        <small class="text-muted">= MIN(N) × 0.99</small>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small text-muted">E3: حد IFRA النهائي</label>
+                        <div class="fw-bold text-success" id="calc_ifra_final">-</div>
+                        <small class="text-muted">= MIN(L) × 0.99</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-info-circle"></i> شرح التخفيف
+            </div>
+            <div class="card-body">
+                <p class="small mb-1"><strong>التخفيف (E):</strong></p>
+                <ul class="small text-muted mb-0">
+                    <li><code>1</code> = مادة صافية (100%)</li>
+                    <li><code>0.1</code> = تركيز 10%</li>
+                    <li><code>0.5</code> = تركيز 50%</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Ingredient Modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">إضافة مكون</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addForm">
+                    <input type="hidden" name="action" value="add">
+                    <div class="mb-3">
+                        <label class="form-label">المادة</label>
+                        <select name="material_id" id="add_material" class="form-select select2" required>
+                            <option value="">-- اختر --</option>
+                            {% for m in materials %}
+                            <option value="{{ m.id }}">{{ m.name }} {{ '(' + m.cas_number + ')' if m.cas_number else '' }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">الوزن (G) بالجرام</label>
+                                <input type="number" name="weight" class="form-control" step="0.0001" min="0" value="0" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">نسبة التخفيف (E) <span class="text-muted">(1 = صافي، 0.1 = 10%)</span></label>
+                                <input type="number" name="dilution" class="form-control" step="0.01" min="0" max="1" value="1">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">مادة التخفيف (Diluent)</label>
+                                <select name="diluent" id="add_diluent" class="form-select" onchange="toggleDiluentOther(this, 'add_diluent_other')">
+                                    <option value="">-- بدون --</option>
+                                    <option value="Ethanol">Ethanol Absolute</option>
+                                    <option value="DPG">DPG - DiPropylene Glycol</option>
+                                    <option value="IPM">IPM - IsoPropyl Myristate</option>
+                                    <option value="TEC">TEC - Triethyl Citrate</option>
+                                    <option value="MMB">MMB - MethoxyMethyl Butanol</option>
+                                    <option value="BB">BB - Benzyl Benzoate</option>
+                                    <option value="DEP">DEP - Diethyl Phthalate</option>
+                                    <option value="other">أخرى (يدوي)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3" id="add_diluent_other_div" style="display:none;">
+                                <label class="form-label">اسم المذيب (يدوي)</label>
+                                <input type="text" name="diluent_other" id="add_diluent_other" class="form-control" placeholder="اكتب اسم المذيب">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="addIngredient()">
+                    <i class="bi bi-plus-circle"></i> إضافة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scale Modal -->
+<div class="modal fade" id="scaleModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title">حساب الكميات (Scale)</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- اختيار نوع الحساب -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">نوع الحساب:</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="scaleType" id="scaleTypePure" value="pure" checked>
+                            <label class="form-check-label" for="scaleTypePure">
+                                نسبة الصافي (J) - للإنتاج النهائي
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="scaleType" id="scaleTypeDesign" value="design">
+                            <label class="form-check-label" for="scaleTypeDesign">
+                                نسبة الزيت (H) - للتصميم
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label fw-bold">الكميات المطلوبة (جرام):</label>
+                        <div class="row g-2">
+                            <div class="col">
+                                <input type="number" id="qty1" class="form-control" value="1000" step="1" min="0">
+                            </div>
+                            <div class="col">
+                                <input type="number" id="qty2" class="form-control" value="100" step="1" min="0">
+                            </div>
+                            <div class="col">
+                                <input type="number" id="qty3" class="form-control" value="50" step="1" min="0">
+                            </div>
+                            <div class="col">
+                                <input type="number" id="qty4" class="form-control" value="20" step="1" min="0">
+                            </div>
+                            <div class="col">
+                                <input type="number" id="qty5" class="form-control" value="5" step="1" min="0">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary mb-3" onclick="calculateScaleMulti()">
+                    <i class="bi bi-calculator"></i> حساب الكميات
+                </button>
+                <div id="scaleResult"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const formulaId = {{ formula.id }};
+const addModal = new bootstrap.Modal(document.getElementById('addModal'));
+const scaleModal = new bootstrap.Modal(document.getElementById('scaleModal'));
+
+function loadIngredients() {
+    fetch(`/api/formula/${formulaId}/ingredients`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                renderIngredients(
+                    data.data, 
+                    data.total_weight, 
+                    data.total_pure,
+                    data.ifra_design_limit,
+                    data.ifra_final_limit
+                );
+                // عرض القيم المحسوبة
+                if (data.active_ratio !== undefined) {
+                    document.getElementById('calc_active_ratio').textContent = data.active_ratio.toFixed(2) + '%';
+                }
+                if (data.ifra_design_limit !== undefined) {
+                    document.getElementById('calc_ifra_design').textContent = data.ifra_design_limit.toFixed(4);
+                }
+                if (data.ifra_final_limit !== undefined) {
+                    document.getElementById('calc_ifra_final').textContent = data.ifra_final_limit.toFixed(4);
+                }
+            }
+        });
+}
+
+function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraFinalLimit) {
+    const tbody = document.getElementById('ingredientsBody');
+    let totalCost = 0;
+    let rowNum = 0;
+    
+    const diluentOptions = (selected) => `
+        <option value="" ${!selected ? 'selected' : ''}>--</option>
+        <option value="Ethanol" ${selected === 'Ethanol' ? 'selected' : ''}>Ethanol</option>
+        <option value="DPG" ${selected === 'DPG' ? 'selected' : ''}>DPG</option>
+        <option value="IPM" ${selected === 'IPM' ? 'selected' : ''}>IPM</option>
+        <option value="TEC" ${selected === 'TEC' ? 'selected' : ''}>TEC</option>
+        <option value="MMB" ${selected === 'MMB' ? 'selected' : ''}>MMB</option>
+        <option value="BB" ${selected === 'BB' ? 'selected' : ''}>BB</option>
+        <option value="DEP" ${selected === 'DEP' ? 'selected' : ''}>DEP</option>
+        <option value="other" ${selected === 'other' ? 'selected' : ''}>أخرى</option>
+    `;
+    
+    tbody.innerHTML = items.map(i => {
+        totalCost += i.cost || 0;
+        rowNum++;
+        const escapedDiluentOther = (i.diluent_other || '').replace(/'/g, "\\'");
+        
+        // تحديد إذا تجاوز IFRA
+        let rowClass = '';
+        if (i.ifra_design_exceeded || i.ifra_final_exceeded) {
+            rowClass = 'table-danger';
+        }
+        
+        // عرض N (حساب التصميم)
+        let nDisplay = '-';
+        if (i.ifra_design_calc !== null && i.ifra_design_calc !== undefined) {
+            nDisplay = i.ifra_design_calc.toFixed(3);
+        }
+        
+        // عرض M (تجاوز التصميم)
+        let mDisplay = '-';
+        if (i.ifra_limit) {
+            mDisplay = i.ifra_design_exceeded ? 
+                '<span class="text-danger fw-bold">⚠️</span>' : 
+                '<span class="text-success">✓</span>';
+        }
+        
+        // عرض L (حساب النهائي)
+        let lDisplay = '-';
+        if (i.ifra_final_calc !== null && i.ifra_final_calc !== undefined) {
+            lDisplay = i.ifra_final_calc.toFixed(3);
+        }
+        
+        // عرض K (تجاوز النهائي)
+        let kDisplay = '-';
+        if (i.ifra_limit) {
+            kDisplay = i.ifra_final_exceeded ? 
+                '<span class="text-danger fw-bold">⚠️</span>' : 
+                '<span class="text-success">✓</span>';
+        }
+        
+        return `
+        <tr class="${rowClass}">
+            <td class="text-muted text-center">${rowNum}</td>
+            <td>
+                <strong>${i.name}</strong>
+                ${i.cas_number ? `<br><small class="text-muted">${i.cas_number}</small>` : ''}
+            </td>
+            <td>
+                <select class="form-select form-select-sm w-100"
+                    onchange="handleDiluentChange(${i.id}, ${i.weight}, ${i.dilution || 1}, this)">
+                    ${diluentOptions(i.diluent)}
+                </select>
+            </td>
+            <td>
+                <input type="number" class="form-control form-control-sm text-center" style="width: 60px;" 
+                    value="${i.dilution || 1}" step="0.001" min="0" max="1"
+                    onchange="updateIngredientFull(${i.id}, ${i.weight}, this.value, '${i.diluent || ''}', '${escapedDiluentOther}')">
+            </td>
+            <td class="text-center">${i.ifra_limit || '-'}</td>
+            <td>
+                <input type="number" class="form-control form-control-sm text-center" style="width: 65px;" 
+                    value="${i.weight}" step="0.0001" min="0"
+                    onchange="updateIngredientFull(${i.id}, this.value, ${i.dilution || 1}, '${i.diluent || ''}', '${escapedDiluentOther}')">
+            </td>
+            <td class="text-center">${i.weight_percentage?.toFixed(2) || '-'}%</td>
+            <td class="text-center">${nDisplay}</td>
+            <td class="text-center">${mDisplay}</td>
+            <td class="text-center">${i.pure_weight?.toFixed(4) || '-'}</td>
+            <td class="text-center">${i.percentage?.toFixed(2) || '-'}%</td>
+            <td class="text-center">${lDisplay}</td>
+            <td class="text-center">${kDisplay}</td>
+            <td class="text-center">${(i.cost || 0).toFixed(2)}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-danger p-0 px-1" onclick="deleteIngredient(${i.id})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `}).join('');
+    
+    document.getElementById('ingredientsFoot').innerHTML = `
+        <tr style="background-color: #000; color: #fff;" class="fw-bold text-center">
+            <td style="background:#000; color:#fff;"></td>
+            <td style="background:#000; color:#fff;">المجموع</td>
+            <td style="background:#000; color:#fff;"></td>
+            <td style="background:#000; color:#fff;"></td>
+            <td style="background:#000; color:#fff;"></td>
+            <td style="background:#000; color:#fff;">${totalWeight?.toFixed(4) || 0}</td>
+            <td style="background:#000; color:#fff;">100%</td>
+            <td style="background:#000; color:#fff;"></td>
+            <td style="background:#000; color:#fff;"></td>
+            <td style="background:#000; color:#fff;">${totalPure?.toFixed(4) || 0}</td>
+            <td style="background:#000; color:#fff;">100%</td>
+            <td style="background:#000; color:#fff;"></td>
+            <td style="background:#000; color:#fff;"></td>
+            <td style="background:#000; color:#fff;">${totalCost.toFixed(2)}</td>
+            <td style="background:#000; color:#fff;"></td>
+        </tr>
+    `;
+}
+
+function showAddModal() {
+    document.getElementById('addForm').reset();
+    addModal.show();
+}
+
+function addIngredient() {
+    const formData = new FormData(document.getElementById('addForm'));
+    fetch(`/api/formula/${formulaId}/ingredients`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            addModal.hide();
+            loadIngredients();
+            showAlert('تمت الإضافة');
+        } else {
+            showAlert(data.message || 'خطأ', 'danger');
+        }
+    });
+}
+
+// دالة لإظهار/إخفاء حقل المذيب اليدوي
+function toggleDiluentOther(select, inputId) {
+    const div = document.getElementById(inputId + '_div');
+    if (select.value === 'other') {
+        div.style.display = 'block';
+    } else {
+        div.style.display = 'none';
+    }
+}
+
+// دالة للتعامل مع تغيير المذيب في الجدول
+function handleDiluentChange(ingId, weight, dilution, select) {
+    const diluent = select.value;
+    const diluentOther = diluent === 'other' ? '' : '';
+    updateIngredientFull(ingId, weight, dilution, diluent, diluentOther);
+}
+
+// دالة التحديث الكاملة
+function updateIngredientFull(ingId, weight, dilution, diluent, diluentOther) {
+    const formData = new FormData();
+    formData.append('action', 'update');
+    formData.append('ing_id', ingId);
+    formData.append('weight', weight);
+    formData.append('dilution', dilution);
+    formData.append('diluent', diluent || '');
+    formData.append('diluent_other', diluentOther || '');
+    
+    fetch(`/api/formula/${formulaId}/ingredients`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            loadIngredients();
+        }
+    });
+}
+
+function updateIngredient(ingId, weight, dilution) {
+    updateIngredientFull(ingId, weight, dilution, '', '');
+}
+
+function deleteIngredient(ingId) {
+    if (confirm('هل تريد حذف هذا المكون؟')) {
+        const formData = new FormData();
+        formData.append('action', 'delete');
+        formData.append('ing_id', ingId);
+        
+        fetch(`/api/formula/${formulaId}/ingredients`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                loadIngredients();
+                showAlert('تم الحذف');
+            }
+        });
+    }
+}
+
+function saveFormula() {
+    const formData = new FormData(document.getElementById('formulaForm'));
+    
+    fetch(`/api/formula/${formulaId}/ingredients`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('تم الحفظ');
+            loadIngredients();
+        }
+    });
+}
+
+function showScaleModal() {
+    document.getElementById('scaleResult').innerHTML = '';
+    scaleModal.show();
+}
+
+// متغير لتخزين بيانات المكونات
+let ingredientsData = [];
+
+function calculateScaleMulti() {
+    // الحصول على الكميات
+    const qty1 = parseFloat(document.getElementById('qty1').value) || 0;
+    const qty2 = parseFloat(document.getElementById('qty2').value) || 0;
+    const qty3 = parseFloat(document.getElementById('qty3').value) || 0;
+    const qty4 = parseFloat(document.getElementById('qty4').value) || 0;
+    const qty5 = parseFloat(document.getElementById('qty5').value) || 0;
+    const quantities = [qty1, qty2, qty3, qty4, qty5].filter(q => q > 0);
+    
+    // نوع الحساب
+    const scaleType = document.querySelector('input[name="scaleType"]:checked').value;
+    const useH = scaleType === 'design'; // H للتصميم، J للإنتاج
+    
+    // جلب البيانات
+    fetch(`/api/formula/${formulaId}/ingredients`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success || !data.data.length) {
+                document.getElementById('scaleResult').innerHTML = '<div class="alert alert-warning">لا توجد مكونات</div>';
+                return;
+            }
+            
+            const items = data.data;
+            const typeName = useH ? 'نسبة الزيت (H) - تصميم' : 'نسبة الصافي (J) - إنتاج';
+            
+            // بناء الجدول
+            let html = `
+                <div class="alert alert-info mb-2">
+                    <strong>نوع الحساب:</strong> ${typeName}<br>
+                    <strong>المعادلة:</strong> ${useH ? 'H × الكمية' : 'J × الكمية'}
+                </div>
+                <div class="table-responsive">
+                <table class="table table-sm table-bordered" style="font-size: 12px;">
+                    <thead style="background:#000; color:#fff;">
+                        <tr>
+                            <th style="background:#000; color:#fff;">#</th>
+                            <th style="background:#000; color:#fff;">المادة</th>
+                            <th style="background:#000; color:#fff;">${useH ? 'H%' : 'J%'}</th>
+            `;
+            
+            // إضافة أعمدة الكميات
+            quantities.forEach(q => {
+                html += `<th style="background:#000; color:#fff;">${q}g</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+            
+            // إضافة الصفوف
+            let totals = quantities.map(() => 0);
+            
+            items.forEach((item, idx) => {
+                const pct = useH ? (item.weight_percentage / 100) : (item.percentage / 100);
+                
+                html += `<tr>
+                    <td>${idx + 1}</td>
+                    <td><strong>${item.name}</strong></td>
+                    <td class="text-center">${(pct * 100).toFixed(2)}%</td>
+                `;
+                
+                quantities.forEach((q, qIdx) => {
+                    const amount = pct * q;
+                    totals[qIdx] += amount;
+                    html += `<td class="text-center">${amount.toFixed(4)}</td>`;
+                });
+                
+                html += `</tr>`;
+            });
+            
+            // صف المجموع
+            html += `<tr style="background:#000; color:#fff; font-weight:bold;">
+                <td style="background:#000; color:#fff;"></td>
+                <td style="background:#000; color:#fff;">المجموع</td>
+                <td style="background:#000; color:#fff;">100%</td>
+            `;
+            quantities.forEach((q, qIdx) => {
+                html += `<td style="background:#000; color:#fff;">${totals[qIdx].toFixed(2)}</td>`;
+            });
+            html += `</tr></tbody></table></div>`;
+            
+            document.getElementById('scaleResult').innerHTML = html;
+        });
+}
+
+// الدالة القديمة للتوافق
+function calculateScale() {
+    calculateScaleMulti();
+}
+
+loadIngredients();
+</script>
+{% endblock %}

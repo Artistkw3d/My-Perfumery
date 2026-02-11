@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - الحاسبة{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h2><i class="bi bi-calculator"></i> حاسبة المزج</h2>
+</div>
+
+<div class="row">
+    <!-- حاسبة التخفيف -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-droplet-half"></i> حاسبة التخفيف
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">احسب كمية المادة الخام والمذيب للحصول على تركيز معين</p>
+                <div class="mb-3">
+                    <label class="form-label">الكمية الإجمالية المطلوبة (جم)</label>
+                    <input type="number" class="form-control" id="totalAmount" step="0.01" value="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">نسبة التركيز المطلوبة (%)</label>
+                    <input type="number" class="form-control" id="targetConcentration" step="0.1" value="10">
+                </div>
+                <button class="btn btn-primary" onclick="calculateDilution()">
+                    <i class="bi bi-calculator"></i> احسب
+                </button>
+                <div id="dilutionResult" class="mt-3 p-3 bg-light rounded" style="display: none;">
+                    <h6>النتيجة:</h6>
+                    <p><strong>المادة الخام:</strong> <span id="rawAmount"></span> جم</p>
+                    <p><strong>المذيب (DPG/IPM):</strong> <span id="solventAmount"></span> جم</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- حاسبة القياس -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-rulers"></i> حاسبة القياس (Scale)
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">حول الكميات من حجم لآخر</p>
+                <div class="mb-3">
+                    <label class="form-label">الوزن الأصلي (جم)</label>
+                    <input type="number" class="form-control" id="originalWeight" step="0.01" value="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">الوزن المطلوب (جم)</label>
+                    <input type="number" class="form-control" id="targetWeight" step="0.01" value="500">
+                </div>
+                <button class="btn btn-primary" onclick="calculateScale()">
+                    <i class="bi bi-calculator"></i> احسب المعامل
+                </button>
+                <div id="scaleResult" class="mt-3 p-3 bg-light rounded" style="display: none;">
+                    <h6>معامل القياس:</h6>
+                    <p class="display-6 text-center text-primary" id="scaleFactor"></p>
+                    <p class="text-muted text-center">اضرب كل كمية في هذا الرقم</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- حاسبة النسب المئوية -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-percent"></i> حاسبة النسب المئوية
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">احسب وزن المكون من النسبة المئوية</p>
+                <div class="mb-3">
+                    <label class="form-label">الوزن الإجمالي (جم)</label>
+                    <input type="number" class="form-control" id="totalWeight" step="0.01" value="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">النسبة المئوية (%)</label>
+                    <input type="number" class="form-control" id="percentage" step="0.01" value="15">
+                </div>
+                <button class="btn btn-primary" onclick="calculatePercentage()">
+                    <i class="bi bi-calculator"></i> احسب
+                </button>
+                <div id="percentResult" class="mt-3 p-3 bg-light rounded" style="display: none;">
+                    <h6>الوزن المطلوب:</h6>
+                    <p class="display-6 text-center text-success" id="componentWeight"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- حاسبة التكلفة -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-cash-coin"></i> حاسبة التكلفة
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">احسب تكلفة الجرام من سعر الشراء</p>
+                <div class="mb-3">
+                    <label class="form-label">سعر الشراء (دينار)</label>
+                    <input type="number" class="form-control" id="purchasePrice" step="0.01" value="50">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">الكمية المشتراة (جم)</label>
+                    <input type="number" class="form-control" id="purchaseQty" step="0.01" value="100">
+                </div>
+                <button class="btn btn-primary" onclick="calculateCost()">
+                    <i class="bi bi-calculator"></i> احسب
+                </button>
+                <div id="costResult" class="mt-3 p-3 bg-light rounded" style="display: none;">
+                    <h6>سعر الجرام:</h6>
+                    <p class="display-6 text-center text-warning" id="pricePerGram"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- جدول المواد للمرجع -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-table"></i> مرجع المواد والأسعار
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover" id="materialsRef">
+                        <thead>
+                            <tr>
+                                <th>المادة</th>
+                                <th>سعر الشراء</th>
+                                <th>الكمية</th>
+                                <th>سعر الجرام</th>
+                                <th>حد IFRA (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for m in materials %}
+                            <tr>
+                                <td>{{ m.name }}</td>
+                                <td>{{ "%.2f"|format(m.purchase_price or 0) }}</td>
+                                <td>{{ m.purchase_quantity or 0 }} جم</td>
+                                <td>{{ "%.4f"|format(m.price_per_gram or 0) }}</td>
+                                <td>{{ m.ifra_limit or '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function calculateDilution() {
+    const total = parseFloat(document.getElementById('totalAmount').value) || 0;
+    const concentration = parseFloat(document.getElementById('targetConcentration').value) || 0;
+    
+    const raw = (total * concentration) / 100;
+    const solvent = total - raw;
+    
+    document.getElementById('rawAmount').textContent = raw.toFixed(4);
+    document.getElementById('solventAmount').textContent = solvent.toFixed(4);
+    document.getElementById('dilutionResult').style.display = 'block';
+}
+
+function calculateScale() {
+    const original = parseFloat(document.getElementById('originalWeight').value) || 1;
+    const target = parseFloat(document.getElementById('targetWeight').value) || 0;
+    
+    const factor = target / original;
+    
+    document.getElementById('scaleFactor').textContent = factor.toFixed(4) + 'x';
+    document.getElementById('scaleResult').style.display = 'block';
+}
+
+function calculatePercentage() {
+    const total = parseFloat(document.getElementById('totalWeight').value) || 0;
+    const pct = parseFloat(document.getElementById('percentage').value) || 0;
+    
+    const weight = (total * pct) / 100;
+    
+    document.getElementById('componentWeight').textContent = weight.toFixed(4) + ' جم';
+    document.getElementById('percentResult').style.display = 'block';
+}
+
+function calculateCost() {
+    const price = parseFloat(document.getElementById('purchasePrice').value) || 0;
+    const qty = parseFloat(document.getElementById('purchaseQty').value) || 1;
+    
+    const ppg = price / qty;
+    
+    document.getElementById('pricePerGram').textContent = ppg.toFixed(4) + ' د.ك/جم';
+    document.getElementById('costResult').style.display = 'block';
+}
+</script>
+{% endblock %}
