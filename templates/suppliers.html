@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - الموردين{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <div class="row align-items-center">
+        <div class="col">
+            <h2><i class="bi bi-truck"></i> الموردين</h2>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-primary" onclick="openSupplierModal()">
+                <i class="bi bi-plus-lg"></i> مورد جديد
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-hover" id="suppliersTable">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>اسم المورد</th>
+                    <th>الدولة</th>
+                    <th>البريد الإلكتروني</th>
+                    <th>الهاتف</th>
+                    <th>الموقع</th>
+                    <th>عدد المواد</th>
+                    <th>إجراءات</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal المورد -->
+<div class="modal fade" id="supplierModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle"><i class="bi bi-truck"></i> مورد جديد</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="supplierForm">
+                    <input type="hidden" name="id" id="supplierId">
+                    <div class="mb-3">
+                        <label class="form-label">اسم المورد <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الدولة</label>
+                        <input type="text" class="form-control" name="country" placeholder="مثال: USA, Germany, France">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">البريد الإلكتروني</label>
+                        <input type="email" class="form-control" name="email">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الهاتف</label>
+                        <input type="text" class="form-control" name="phone">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الموقع الإلكتروني</label>
+                        <input type="url" class="form-control" name="website" placeholder="https://...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ملاحظات</label>
+                        <textarea class="form-control" name="notes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="saveSupplier()">
+                    <i class="bi bi-check-lg"></i> حفظ
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let supplierModal = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    supplierModal = new bootstrap.Modal(document.getElementById('supplierModal'));
+    loadSuppliers();
+});
+
+function loadSuppliers() {
+    fetch('/api/suppliers?action=list')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const tbody = document.querySelector('#suppliersTable tbody');
+                tbody.innerHTML = data.data.map((s, i) => `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td><strong>${s.name}</strong></td>
+                        <td>${s.country || '-'}</td>
+                        <td>${s.email ? `<a href="mailto:${s.email}">${s.email}</a>` : '-'}</td>
+                        <td>${s.phone || '-'}</td>
+                        <td>${s.website ? `<a href="${s.website}" target="_blank"><i class="bi bi-link-45deg"></i></a>` : '-'}</td>
+                        <td><span class="badge bg-secondary">${s.materials_count}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="editSupplier(${s.id})">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSupplier(${s.id})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+                
+                if (data.data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">لا يوجد موردين</td></tr>';
+                }
+            }
+        });
+}
+
+function openSupplierModal() {
+    document.getElementById('modalTitle').innerHTML = '<i class="bi bi-plus-circle"></i> مورد جديد';
+    document.getElementById('supplierForm').reset();
+    document.getElementById('supplierId').value = '';
+    supplierModal.show();
+}
+
+function editSupplier(id) {
+    fetch(`/api/suppliers?action=get&id=${id}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.data) {
+                const s = data.data;
+                document.getElementById('modalTitle').innerHTML = '<i class="bi bi-pencil"></i> تعديل المورد';
+                document.getElementById('supplierId').value = s.id;
+                document.querySelector('[name="name"]').value = s.name || '';
+                document.querySelector('[name="country"]').value = s.country || '';
+                document.querySelector('[name="email"]').value = s.email || '';
+                document.querySelector('[name="phone"]').value = s.phone || '';
+                document.querySelector('[name="website"]').value = s.website || '';
+                document.querySelector('[name="notes"]').value = s.notes || '';
+                supplierModal.show();
+            }
+        });
+}
+
+function saveSupplier() {
+    const form = document.getElementById('supplierForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    const formData = new FormData(form);
+    formData.append('action', 'save');
+    
+    fetch('/api/suppliers', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+        if (data.success) {
+            supplierModal.hide();
+            loadSuppliers();
+        }
+    });
+}
+
+function deleteSupplier(id) {
+    if (!confirm('هل أنت متأكد من حذف هذا المورد؟')) return;
+    
+    const formData = new FormData();
+    formData.append('action', 'delete');
+    formData.append('id', id);
+    
+    fetch('/api/suppliers', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadSuppliers();
+    });
+}
+</script>
+{% endblock %}

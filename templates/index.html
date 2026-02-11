@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - الرئيسية{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-house-door"></i> لوحة التحكم</h2>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="stat-card" style="background: linear-gradient(135deg, #6f42c1, #8B5CF6);">
+            <h3>{{ stats.materials }}</h3>
+            <p><i class="bi bi-box-seam"></i> المواد الخام</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card" style="background: linear-gradient(135deg, #0d6efd, #0dcaf0);">
+            <h3>{{ stats.formulas }}</h3>
+            <p><i class="bi bi-file-earmark-text"></i> التركيبات</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card" style="background: linear-gradient(135deg, #198754, #20c997);">
+            <h3>{{ stats.suppliers }}</h3>
+            <p><i class="bi bi-truck"></i> الموردين</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card" style="background: linear-gradient(135deg, #fd7e14, #ffc107);">
+            <h3>{{ stats.production }}</h3>
+            <p><i class="bi bi-gear"></i> أوامر قيد التنفيذ</p>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-clock-history"></i> آخر التركيبات
+            </div>
+            <div class="card-body">
+                {% if recent_formulas %}
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>الاسم</th>
+                            <th>الحالة</th>
+                            <th>التاريخ</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in recent_formulas %}
+                        <tr>
+                            <td>{{ f.name }}</td>
+                            <td>
+                                <span class="badge bg-{% if f.status == 'final' %}success{% elif f.status == 'testing' %}warning{% else %}secondary{% endif %}">
+                                    {{ f.status }}
+                                </span>
+                            </td>
+                            <td>{{ f.created_at[:10] if f.created_at else '-' }}</td>
+                            <td>
+                                <a href="/formula/{{ f.id }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-4">لا توجد تركيبات بعد</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-lightning"></i> إجراءات سريعة
+            </div>
+            <div class="card-body">
+                <a href="/materials" class="btn btn-outline-primary w-100 mb-2">
+                    <i class="bi bi-plus-circle"></i> إضافة مادة خام
+                </a>
+                <a href="/formulas" class="btn btn-outline-primary w-100 mb-2">
+                    <i class="bi bi-plus-circle"></i> إنشاء تركيبة جديدة
+                </a>
+                <a href="/ifra-certificate" class="btn btn-outline-success w-100 mb-2">
+                    <i class="bi bi-award"></i> شهادة IFRA
+                </a>
+                <a href="/msds-generator" class="btn btn-outline-info w-100">
+                    <i class="bi bi-file-medical"></i> تقرير MSDS
+                </a>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-info-circle"></i> التخفيف (Dilution)
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-1"><strong>طريقة الإدخال:</strong></p>
+                <ul class="small text-muted">
+                    <li><code>0</code> = مادة صافية (100%)</li>
+                    <li><code>10</code> = تركيز 10%</li>
+                    <li><code>50</code> = تركيز 50%</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - التركيبات{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-file-earmark-text"></i> التركيبات</h2>
+    <button class="btn btn-primary" onclick="showCreateModal()">
+        <i class="bi bi-plus-circle"></i> تركيبة جديدة
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>المكونات</th>
+                        <th>الوزن</th>
+                        <th>التكلفة</th>
+                        <th>الحالة</th>
+                        <th>التاريخ</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="formulasBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Create Modal -->
+<div class="modal fade" id="createModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تركيبة جديدة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createForm">
+                    <input type="hidden" name="action" value="create">
+                    <div class="mb-3">
+                        <label class="form-label">اسم التركيبة</label>
+                        <input type="text" name="name" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الوصف</label>
+                        <textarea name="description" class="form-control" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="createFormula()">
+                    <i class="bi bi-plus-circle"></i> إنشاء
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const createModal = new bootstrap.Modal(document.getElementById('createModal'));
+
+function loadFormulas() {
+    fetch('/api/formulas')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                renderFormulas(data.data);
+            }
+        });
+}
+
+function renderFormulas(formulas) {
+    const tbody = document.getElementById('formulasBody');
+    tbody.innerHTML = formulas.map(f => `
+        <tr>
+            <td>
+                <a href="/formula/${f.id}" class="fw-bold text-decoration-none">${f.name}</a>
+                ${f.description ? `<br><small class="text-muted">${f.description.substring(0, 50)}...</small>` : ''}
+            </td>
+            <td>${f.ingredients_count}</td>
+            <td>${f.total_weight ? f.total_weight.toFixed(2) + ' g' : '-'}</td>
+            <td>${f.total_cost ? f.total_cost.toFixed(2) : '-'}</td>
+            <td>
+                <span class="badge bg-${f.status === 'final' ? 'success' : f.status === 'testing' ? 'warning' : 'secondary'}">
+                    ${f.status}
+                </span>
+            </td>
+            <td>${f.created_at ? f.created_at.substring(0, 10) : '-'}</td>
+            <td>
+                <a href="/formula/${f.id}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
+                <button class="btn btn-sm btn-outline-success" onclick="duplicateFormula(${f.id})"><i class="bi bi-copy"></i></button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteFormula(${f.id}, '${f.name}')"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function showCreateModal() {
+    document.getElementById('createForm').reset();
+    createModal.show();
+}
+
+function createFormula() {
+    const formData = new FormData(document.getElementById('createForm'));
+    fetch('/api/formulas', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            createModal.hide();
+            window.location.href = '/formula/' + data.id;
+        } else {
+            showAlert(data.message || 'خطأ', 'danger');
+        }
+    });
+}
+
+function duplicateFormula(id) {
+    const formData = new FormData();
+    formData.append('action', 'duplicate');
+    formData.append('id', id);
+    fetch('/api/formulas', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('تم النسخ');
+            window.location.href = '/formula/' + data.id;
+        }
+    });
+}
+
+function deleteFormula(id, name) {
+    if (confirm(`هل تريد حذف "${name}"؟`)) {
+        const formData = new FormData();
+        formData.append('action', 'delete');
+        formData.append('id', id);
+        fetch('/api/formulas', {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                loadFormulas();
+                showAlert('تم الحذف');
+            }
+        });
+    }
+}
+
+loadFormulas();
+</script>
+{% endblock %}

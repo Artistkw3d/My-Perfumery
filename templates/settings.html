@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - الإعدادات{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h2><i class="bi bi-gear-wide-connected"></i> الإعدادات</h2>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-building"></i> معلومات الشركة
+            </div>
+            <div class="card-body">
+                <form id="companyForm">
+                    <div class="mb-3">
+                        <label class="form-label">اسم الشركة</label>
+                        <input type="text" class="form-control" name="name" value="{{ company.name or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">العنوان</label>
+                        <textarea class="form-control" name="address" rows="2">{{ company.address or '' }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الهاتف</label>
+                        <input type="text" class="form-control" name="phone" value="{{ company.phone or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">البريد الإلكتروني</label>
+                        <input type="email" class="form-control" name="email" value="{{ company.email or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الموقع الإلكتروني</label>
+                        <input type="text" class="form-control" name="website" value="{{ company.website or '' }}">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg"></i> حفظ
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle"></i> معلومات النظام
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><th>الإصدار</th><td>3.0</td></tr>
+                    <tr><th>المطور</th><td>Perfume Vault Team</td></tr>
+                    <tr><th>آخر تحديث</th><td>2024</td></tr>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-shield-check"></i> الأمان
+            </div>
+            <div class="card-body">
+                <form id="passwordForm">
+                    <div class="mb-3">
+                        <label class="form-label">كلمة المرور الحالية</label>
+                        <input type="password" class="form-control" name="current_password">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">كلمة المرور الجديدة</label>
+                        <input type="password" class="form-control" name="new_password">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">تأكيد كلمة المرور</label>
+                        <input type="password" class="form-control" name="confirm_password">
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-key"></i> تغيير كلمة المرور
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('companyForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.append('action', 'save_company');
+    
+    fetch('/api/settings', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+    });
+});
+
+document.getElementById('passwordForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    showAlert('ميزة تغيير كلمة المرور قيد التطوير', 'info');
+});
+</script>
+{% endblock %}

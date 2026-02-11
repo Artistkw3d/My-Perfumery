@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  perfume-vault:
+    build: .
+    expose:
+      - "8000"
+    volumes:
+      - perfume_data:/app/database
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
+
+volumes:
+  perfume_data:

@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - تقرير MSDS{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .msds-container { padding: 20px; }
+        .no-print { display: none !important; }
+        .section { page-break-inside: avoid; }
+    }
+    .msds-container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        max-width: 900px;
+        margin: 0 auto;
+    }
+    .msds-header {
+        text-align: center;
+        border-bottom: 3px solid #6f42c1;
+        padding-bottom: 20px;
+        margin-bottom: 30px;
+    }
+    .section {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    .section-header {
+        background: linear-gradient(135deg, #6f42c1, #8B5CF6);
+        color: white;
+        padding: 10px 15px;
+        font-weight: bold;
+    }
+    .section-body {
+        padding: 15px;
+    }
+    .pictogram-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .pictogram {
+        width: 60px;
+        height: 60px;
+        border: 2px solid #dc3545;
+        border-radius: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        text-align: center;
+        background: #fff5f5;
+    }
+    .signal-danger { color: #dc3545; font-weight: bold; font-size: 1.5rem; }
+    .signal-warning { color: #ffc107; font-weight: bold; font-size: 1.5rem; }
+    .h-code, .p-code {
+        display: inline-block;
+        background: #f8f9fa;
+        padding: 5px 10px;
+        margin: 3px;
+        border-radius: 5px;
+        font-size: 0.85rem;
+    }
+    .h-code { border-left: 3px solid #dc3545; }
+    .p-code { border-left: 3px solid #0d6efd; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-4 no-print">
+    <div class="row align-items-center">
+        <div class="col-md-4">
+            <h2><i class="bi bi-file-medical"></i> تقرير MSDS</h2>
+        </div>
+        <div class="col-md-8">
+            <div class="d-flex gap-2">
+                <select id="formulaSelect" class="form-select">
+                    <option value="">-- اختر تركيبة --</option>
+                    {% for f in formulas %}
+                    <option value="{{ f.id }}">{{ f.name }}</option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-primary" onclick="generateMSDS()">
+                    <i class="bi bi-check-circle"></i> توليد
+                </button>
+                <button class="btn btn-outline-secondary" onclick="window.print()">
+                    <i class="bi bi-printer"></i> طباعة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="msdsContent" style="display: none;">
+    <div class="msds-container">
+        <div class="msds-header">
+            <h1>Safety Data Sheet</h1>
+            <h3 id="productName" class="text-muted"></h3>
+        </div>
+        
+        <!-- Section 1 -->
+        <div class="section">
+            <div class="section-header">Section 1- PRODUCT AND COMPANY IDENTIFICATION</div>
+            <div class="section-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Product Name:</strong> <span id="s1_product_name"></span></p>
+                        <p><strong>Recommended use:</strong> Fragrance compound for perfumery</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Manufacturer/Supplier:</strong> <span id="s1_company"></span></p>
+                        <p><strong>Address:</strong> <span id="s1_address"></span></p>
+                        <p><strong>Emergency Phone:</strong> <span id="s1_phone"></span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 2 -->
+        <div class="section">
+            <div class="section-header">Section 2- HAZARDS IDENTIFICATION</div>
+            <div class="section-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <p><strong>GHS Classification:</strong></p>
+                        <div id="s2_h_codes"></div>
+                        
+                        <p class="mt-3"><strong>GHS Labeling Elements:</strong></p>
+                        <p><strong>Signal Word:</strong> <span id="s2_signal_word"></span></p>
+                        
+                        <p><strong>GHS Precautionary Statements:</strong></p>
+                        <div id="s2_p_codes"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>GHS Pictograms:</strong></p>
+                        <div class="pictogram-container" id="s2_pictograms"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 3 -->
+        <div class="section">
+            <div class="section-header">Section 3- COMPOSITION/INFORMATION ON INGREDIENTS</div>
+            <div class="section-body">
+                <p><strong>Substance Type:</strong> Mixture</p>
+                <p>The complete ingredient list for the finished product(s) is as follows:</p>
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Chemical Name</th><th>CAS No.</th><th>%</th></tr>
+                    </thead>
+                    <tbody id="s3_ingredients"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Section 4 -->
+        <div class="section">
+            <div class="section-header">Section 4- FIRST-AID MEASURES</div>
+            <div class="section-body">
+                <p><strong>Eye:</strong> Rinse cautiously with water for several minutes. Remove contact lenses if present. Continue rinsing. If irritation persists, seek medical attention.</p>
+                <p><strong>Skin:</strong> Remove contaminated clothing, and any extraneous chemical and wash with plenty of water.</p>
+                <p><strong>Ingestion:</strong> Do not induce vomiting. Seek medical attention.</p>
+                <p><strong>Inhalation:</strong> Move to fresh air. If signs/symptoms continue, get medical attention.</p>
+            </div>
+        </div>
+        
+        <!-- Section 5 -->
+        <div class="section">
+            <div class="section-header">Section 5- FIREFIGHTING MEASURES</div>
+            <div class="section-body">
+                <p><strong>Extinguishing media:</strong> Water spray, dry chemical, carbon dioxide (CO2) or chemical foam.</p>
+                <p><strong>Special hazards arising from the substance or mixture:</strong> No further relevant information available.</p>
+                <p><strong>Advice for firefighters:</strong> No specific advice.</p>
+            </div>
+        </div>
+        
+        <!-- Section 6 -->
+        <div class="section">
+            <div class="section-header">Section 6- ACCIDENTAL RELEASE MEASURES</div>
+            <div class="section-body">
+                <p><strong>Procedures for Spill/Leak Clean-up:</strong></p>
+                <p><strong>For Household Settings:</strong> Absorb spill and scrub the area with detergent. Dilute with water. Ventilate area and eliminate all ignition sources.</p>
+                <p><strong>For Non-Household Settings:</strong> Ventilate area and eliminate all ignition sources. Use safety glasses or safety goggles if splash hazards exist; use gloves and other protective clothing (apron, boots etc.) to prevent skin contact.</p>
+            </div>
+        </div>
+        
+        <!-- Section 7 -->
+        <div class="section">
+            <div class="section-header">Section 7- HANDLING AND STORAGE</div>
+            <div class="section-body">
+                <p><strong>Precautions for Safe Handling:</strong></p>
+                <p><strong>For Household Settings:</strong> Do not expose to heat and flame.</p>
+                <p><strong>For Non-Household Settings:</strong> Avoid heat, sparks, flame, or smoking during use. Avoid extreme heat and ignition sources. Avoid spraying toward open flame.</p>
+                <p><strong>Conditions for Safe Storage:</strong> Store away from oxidizers. Store in a well ventilated, cool area. Store between 41-95°F (5-35°C).</p>
+                <p><strong>Other Recommendations:</strong> None.</p>
+            </div>
+        </div>
+        
+        <!-- Section 8 -->
+        <div class="section">
+            <div class="section-header">Section 8- EXPOSURE CONTROLS, PERSONAL PROTECTION</div>
+            <div class="section-body">
+                <p><strong>For Household Settings:</strong> This is a personal care or cosmetic product that is safe for consumers and other users under normal and reasonably foreseen use.</p>
+                <p><strong>For Non-Household Settings:</strong> Use in a well ventilated area. Use safety glasses or safety goggles if splash hazards exist; use gloves and other protective clothing (apron, boots etc.) to prevent skin contact. Always follow good hygienic work practices. Avoid prolonged contact with skin and clothing.</p>
+            </div>
+        </div>
+        
+        <!-- Section 9 -->
+        <div class="section">
+            <div class="section-header">Section 9- PHYSICAL AND CHEMICAL PROPERTIES</div>
+            <div class="section-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Color, Odor and Appearance:</strong> colorless/perfume</p>
+                        <p><strong>Physical State:</strong> Liquid</p>
+                        <p><strong>PH:</strong> N/A</p>
+                        <p><strong>Flashpoint:</strong> N/A</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Melting Point:</strong> N/A</p>
+                        <p><strong>Boiling Point:</strong> N/A</p>
+                        <p><strong>Solubility in Water:</strong> N/A</p>
+                        <p><strong>Specific Gravity:</strong> N/A</p>
+                        <p><strong>Vapor Density:</strong> N/A</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 10 -->
+        <div class="section">
+            <div class="section-header">Section 10- STABILITY AND REACTIVITY</div>
+            <div class="section-body">
+                <p><strong>Reactivity:</strong> Product is non-reactive under normal conditions including transport, storage, and use.</p>
+                <p><strong>Chemical stability:</strong> Stable under normal conditions including transport, storage, and use.</p>
+                <p><strong>Possibility of hazardous reactions:</strong> No dangerous reaction known under normal conditions.</p>
+                <p><strong>Conditions to avoid:</strong> Avoid freezing, excessive temperatures, open flame, and improper storage. Avoid contamination.</p>
+            </div>
+        </div>
+        
+        <!-- Section 11 -->
+        <div class="section">
+            <div class="section-header">Section 11- TOXICOLOGICAL INFORMATION</div>
+            <div class="section-body">
+                <p><strong>Toxicity Data:</strong> Not available</p>
+                <p><strong>Irritancy of Product:</strong> Not available</p>
+                <p><strong>Germ Cell Mutagenicity:</strong> Not available</p>
+                <p><strong>Reproductive Toxicity Information:</strong> Not available</p>
+            </div>
+        </div>
+        
+        <!-- Section 12 -->
+        <div class="section">
+            <div class="section-header">Section 12- ECOLOGICAL INFORMATION</div>
+            <div class="section-body">
+                <p><strong>Ecology - General:</strong> Not available</p>
+                <p><strong>Persistence and Degradability:</strong> Not available</p>
+                <p><strong>Bioaccumulative Potential:</strong> Not available</p>
+                <p><strong>Mobility in Soil:</strong> Not available</p>
+                <p><strong>Results of PBT and vPvB Assessment:</strong> Not available</p>
+                <p><strong>Other Adverse Effects:</strong> Not available</p>
+            </div>
+        </div>
+        
+        <!-- Section 13 -->
+        <div class="section">
+            <div class="section-header">Section 13- DISPOSAL CONSIDERATIONS</div>
+            <div class="section-body">
+                <p><strong>Waste Treatment Methods:</strong> Dispose of in accordance with local regulations. Avoid disposing into drainage systems and into the environment.</p>
+            </div>
+        </div>
+        
+        <!-- Section 14 -->
+        <div class="section">
+            <div class="section-header">Section 14- TRANSPORTATION INFORMATION</div>
+            <div class="section-body">
+                <p><strong>DOT shipping name:</strong> Not available</p>
+                <p><strong>IATA shipping name:</strong> Not available</p>
+            </div>
+        </div>
+        
+        <!-- Section 15 -->
+        <div class="section">
+            <div class="section-header">Section 15- REGULATORY INFORMATION</div>
+            <div class="section-body">
+                <p><strong>Safety, health, and environmental regulations/legislation specific for the substance</strong></p>
+                <table class="table table-sm">
+                    <thead><tr><th>Country</th><th>Notification</th></tr></thead>
+                    <tbody>
+                        <tr><td>Kuwait</td><td>Not available</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Section 16 -->
+        <div class="section">
+            <div class="section-header">Section 16- OTHER INFORMATION</div>
+            <div class="section-body">
+                <p><strong>Disclaimer</strong></p>
+                <p class="small text-muted">
+                    The information and recommendations in this SDS were obtained from current and reputable sources and are being constantly updated. 
+                    However, the data is provided without any warranty, express or implied, regarding its accuracy. 
+                    It is the user's responsibility both to determine the safe conditions for the use of this product and to assume liability for loss, 
+                    injury, damage, or expense resulting from the improper use of this product.
+                </p>
+                <p class="text-center text-muted mt-3">
+                    <small>Generated: <span id="genDate"></span></small>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// H-Codes descriptions lookup
+const hCodesData = {{ h_codes | tojson | safe }};
+const pCodesData = {{ p_codes | tojson | safe }};
+
+// Check URL parameter
+const urlParams = new URLSearchParams(window.location.search);
+const preselectedFormula = urlParams.get('formula');
+if (preselectedFormula) {
+    document.getElementById('formulaSelect').value = preselectedFormula;
+    generateMSDS();
+}
+
+function getHCodeDesc(code) {
+    const found = hCodesData.find(h => h.code === code);
+    return found ? `${found.code} – ${found.desc}` : code;
+}
+
+function getPCodeDesc(code) {
+    const found = pCodesData.find(p => p.code === code);
+    return found ? `${found.code} – ${found.desc}` : code;
+}
+
+function generateMSDS() {
+    const fid = document.getElementById('formulaSelect').value;
+    if (!fid) {
+        showAlert('اختر تركيبة أولاً', 'warning');
+        return;
+    }
+    
+    fetch(`/api/msds/${fid}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('msdsContent').style.display = 'block';
+                
+                // Section 1
+                document.getElementById('productName').textContent = data.formula.name;
+                document.getElementById('s1_product_name').textContent = data.formula.name;
+                document.getElementById('s1_company').textContent = data.company.name || '';
+                document.getElementById('s1_address').textContent = data.company.address || '';
+                document.getElementById('s1_phone').textContent = data.company.phone || '';
+                
+                // Section 2 - H-Codes
+                const hCodesHtml = data.h_codes.map(h => 
+                    `<span class="h-code">${getHCodeDesc(h)}</span>`
+                ).join('');
+                document.getElementById('s2_h_codes').innerHTML = hCodesHtml || '<span class="text-muted">None specified</span>';
+                
+                // Section 2 - Signal Word
+                const signalWord = data.signal_word;
+                document.getElementById('s2_signal_word').innerHTML = signalWord ? 
+                    `<span class="signal-${signalWord.toLowerCase()}">${signalWord}</span>` : 
+                    '<span class="text-muted">Not specified</span>';
+                
+                // Section 2 - P-Codes
+                const pCodesHtml = data.p_codes.map(p => 
+                    `<span class="p-code">${getPCodeDesc(p)}</span>`
+                ).join('');
+                document.getElementById('s2_p_codes').innerHTML = pCodesHtml || '<span class="text-muted">None specified</span>';
+                
+                // Section 2 - Pictograms
+                const pictoHtml = data.pictograms.map(p => 
+                    `<div class="pictogram">${p}</div>`
+                ).join('');
+                document.getElementById('s2_pictograms').innerHTML = pictoHtml || '<span class="text-muted">None</span>';
+                
+                // Section 3 - Ingredients
+                const ingHtml = data.ingredients.map(i => 
+                    `<tr><td>${i.name}</td><td><code>${i.cas_number || '-'}</code></td><td>${i.percentage}%</td></tr>`
+                ).join('');
+                document.getElementById('s3_ingredients').innerHTML = ingHtml;
+                
+                // Date
+                document.getElementById('genDate').textContent = new Date().toLocaleString('en-US');
+            } else {
+                showAlert(data.message || 'خطأ', 'danger');
+            }
+        });
+}
+</script>
+{% endblock %}

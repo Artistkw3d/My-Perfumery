@@ -1,0 +1,494 @@
+{% extends "base.html" %}
+{% block title %}Perfume Vault - المواد الخام{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-box-seam"></i> المواد الخام</h2>
+    <button class="btn btn-primary" onclick="showMaterialModal()">
+        <i class="bi bi-plus-circle"></i> إضافة مادة
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="mb-3">
+            <input type="text" id="searchInput" class="form-control" placeholder="بحث..." onkeyup="filterTable()">
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="materialsTable">
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>CAS</th>
+                        <th>العائلة</th>
+                        <th>الموقع</th>
+                        <th>IFRA Limit</th>
+                        <th>السعر/غ</th>
+                        <th>GHS</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="materialsBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="materialModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">إضافة مادة جديدة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="materialForm">
+                    <input type="hidden" id="mat_id" name="id">
+                    <input type="hidden" name="action" value="save">
+                    
+                    <ul class="nav nav-tabs mb-3" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active" data-bs-toggle="tab" href="#basicTab">البيانات الأساسية</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-bs-toggle="tab" href="#physicalTab">الخصائص الفيزيائية</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-bs-toggle="tab" href="#msdsTab">بيانات MSDS</a>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content">
+                        <!-- Basic Tab -->
+                        <div class="tab-pane fade show active" id="basicTab">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">الاسم (English) <span class="text-danger">*</span></label>
+                                        <input type="text" name="name" id="mat_name" class="form-control" required>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">الاسم (العربي)</label>
+                                        <input type="text" name="name_ar" id="mat_name_ar" class="form-control">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">CAS Number</label>
+                                        <input type="text" name="cas_number" id="mat_cas" class="form-control" placeholder="e.g., 123-45-6">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">العائلة العطرية</label>
+                                        <select name="family_id" id="mat_family" class="form-select">
+                                            <option value="">-- اختر --</option>
+                                            {% for f in families %}
+                                            <option value="{{ f.id }}">{{ f.name }} ({{ f.name_ar }})</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">الموقع في الهرم</label>
+                                        <select name="profile" id="mat_profile" class="form-select">
+                                            <option value="Top">Top (الرأس)</option>
+                                            <option value="Heart" selected>Heart (القلب)</option>
+                                            <option value="Base">Base (القاعدة)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">المورد</label>
+                                        <select name="supplier_id" id="mat_supplier" class="form-select">
+                                            <option value="">-- اختر --</option>
+                                            {% for s in suppliers %}
+                                            <option value="{{ s.id }}">{{ s.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">IFRA Limit (%)</label>
+                                        <input type="number" name="ifra_limit" id="mat_ifra" class="form-control" step="0.001" min="0">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">سعر الشراء</label>
+                                        <input type="number" name="purchase_price" id="mat_price" class="form-control" step="0.01" min="0">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">الكمية (غرام)</label>
+                                        <input type="number" name="purchase_quantity" id="mat_qty" class="form-control" step="0.01" min="0.01" value="1">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">وصف الرائحة</label>
+                                <textarea name="odor_description" id="mat_odor" class="form-control" rows="2"></textarea>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">ملاحظات</label>
+                                <textarea name="notes" id="mat_notes" class="form-control" rows="2"></textarea>
+                            </div>
+                        </div>
+                        
+                        <!-- Physical Properties Tab -->
+                        <div class="tab-pane fade" id="physicalTab">
+                            <div class="alert alert-secondary">
+                                <i class="bi bi-info-circle"></i>
+                                الخصائص الفيزيائية والكيميائية للمادة
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Color (اللون)</label>
+                                        <input type="text" name="color" id="mat_color" class="form-control" placeholder="e.g., Colorless, Yellow">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Appearance (المظهر)</label>
+                                        <input type="text" name="appearance" id="mat_appearance" class="form-control" placeholder="e.g., Clear liquid">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Physical State (الحالة)</label>
+                                        <select name="physical_state" id="mat_physical_state" class="form-select">
+                                            <option value="">-- اختر --</option>
+                                            <option value="Liquid">Liquid (سائل)</option>
+                                            <option value="Solid">Solid (صلب)</option>
+                                            <option value="Crystal">Crystal (بلوري)</option>
+                                            <option value="Powder">Powder (مسحوق)</option>
+                                            <option value="Paste">Paste (معجون)</option>
+                                            <option value="Waxy">Waxy (شمعي)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Flash Point (°C)</label>
+                                        <input type="text" name="flash_point" id="mat_flash" class="form-control" placeholder="e.g., 100">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Melting Point (°C)</label>
+                                        <input type="text" name="melting_point" id="mat_melting" class="form-control" placeholder="e.g., -20">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Boiling Point (°C)</label>
+                                        <input type="text" name="boiling_point" id="mat_boiling" class="form-control" placeholder="e.g., 250">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">pH</label>
+                                        <input type="text" name="ph" id="mat_ph" class="form-control" placeholder="e.g., 7.0">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Specific Gravity</label>
+                                        <input type="text" name="specific_gravity" id="mat_sg" class="form-control" placeholder="e.g., 0.95">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Refractive Index</label>
+                                        <input type="text" name="refractive_index" id="mat_refractive" class="form-control" placeholder="e.g., 1.45">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Vapor Density</label>
+                                        <input type="text" name="vapor_density" id="mat_vapor" class="form-control" placeholder="e.g., 5.2">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Solubility in Water</label>
+                                        <select name="solubility" id="mat_solubility" class="form-select">
+                                            <option value="">-- اختر --</option>
+                                            <option value="Soluble">Soluble (قابل للذوبان)</option>
+                                            <option value="Slightly Soluble">Slightly Soluble</option>
+                                            <option value="Insoluble">Insoluble (غير قابل)</option>
+                                            <option value="Miscible">Miscible (قابل للامتزاج)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- MSDS Tab -->
+                        <div class="tab-pane fade" id="msdsTab">
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i>
+                                اختر من القوائم أدناه لتحديد بيانات السلامة GHS للمادة
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label"><i class="bi bi-exclamation-triangle"></i> Signal Word</label>
+                                        <select name="signal_word" id="mat_signal_word" class="form-select">
+                                            <option value="">-- اختر --</option>
+                                            {% for sw in signal_words %}
+                                            <option value="{{ sw }}">{{ sw }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label"><i class="bi bi-tag"></i> GHS Classification</label>
+                                        <select name="ghs_classification" id="mat_ghs_class" class="form-select select2-multiple" multiple>
+                                            {% for c in classifications %}
+                                            <option value="{{ c }}">{{ c }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label"><i class="bi bi-images"></i> GHS Pictograms</label>
+                                <select name="pictograms" id="mat_pictograms" class="form-select select2-multiple" multiple>
+                                    {% for p in pictograms %}
+                                    <option value="{{ p.name }}">{{ p.name }} ({{ p.name_ar }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label"><i class="bi bi-exclamation-diamond"></i> H-Codes (Hazard Statements)</label>
+                                <select name="h_codes" id="mat_h_codes" class="form-select select2-multiple" multiple>
+                                    {% for h in h_codes %}
+                                    <option value="{{ h.code }}">{{ h.code }} – {{ h.desc }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label"><i class="bi bi-shield-check"></i> P-Codes (Precautionary Statements)</label>
+                                <select name="p_codes" id="mat_p_codes" class="form-select select2-multiple" multiple>
+                                    {% for p in p_codes %}
+                                    <option value="{{ p.code }}">{{ p.code }} – {{ p.desc }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="saveMaterial()">
+                    <i class="bi bi-check-circle"></i> حفظ
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let materials = [];
+const modal = new bootstrap.Modal(document.getElementById('materialModal'));
+
+function loadMaterials() {
+    fetch('/api/materials?action=list')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                materials = data.data;
+                renderTable();
+            }
+        });
+}
+
+function renderTable() {
+    const tbody = document.getElementById('materialsBody');
+    tbody.innerHTML = materials.map(m => `
+        <tr>
+            <td>
+                <strong>${m.name}</strong>
+                ${m.name_ar ? `<br><small class="text-muted">${m.name_ar}</small>` : ''}
+            </td>
+            <td><code>${m.cas_number || '-'}</code></td>
+            <td>${m.family_name || '-'}</td>
+            <td><span class="badge badge-profile badge-${m.profile?.toLowerCase() || 'heart'}">${m.profile || 'Heart'}</span></td>
+            <td>${m.ifra_limit ? m.ifra_limit + '%' : '-'}</td>
+            <td>${m.price_per_gram ? m.price_per_gram.toFixed(3) : '-'}</td>
+            <td>
+                ${m.msds?.signal_word ? `<span class="badge bg-${m.msds.signal_word === 'Danger' ? 'danger' : 'warning'}">${m.msds.signal_word}</span>` : '-'}
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="editMaterial(${m.id})">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteMaterial(${m.id}, '${m.name}')">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function filterTable() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const rows = document.querySelectorAll('#materialsBody tr');
+    rows.forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(search) ? '' : 'none';
+    });
+}
+
+function showMaterialModal() {
+    document.getElementById('modalTitle').textContent = 'إضافة مادة جديدة';
+    document.getElementById('materialForm').reset();
+    document.getElementById('mat_id').value = '';
+    
+    // Reset Select2
+    $('#mat_pictograms').val([]).trigger('change');
+    $('#mat_h_codes').val([]).trigger('change');
+    $('#mat_p_codes').val([]).trigger('change');
+    $('#mat_ghs_class').val([]).trigger('change');
+    
+    modal.show();
+}
+
+function editMaterial(id) {
+    fetch(`/api/materials?action=get&id=${id}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.data) {
+                const m = data.data;
+                document.getElementById('modalTitle').textContent = 'تعديل: ' + m.name;
+                document.getElementById('mat_id').value = m.id;
+                document.getElementById('mat_name').value = m.name || '';
+                document.getElementById('mat_name_ar').value = m.name_ar || '';
+                document.getElementById('mat_cas').value = m.cas_number || '';
+                document.getElementById('mat_family').value = m.family_id || '';
+                document.getElementById('mat_profile').value = m.profile || 'Heart';
+                document.getElementById('mat_supplier').value = m.supplier_id || '';
+                document.getElementById('mat_ifra').value = m.ifra_limit || '';
+                document.getElementById('mat_price').value = m.purchase_price || '';
+                document.getElementById('mat_qty').value = m.purchase_quantity || 1;
+                document.getElementById('mat_odor').value = m.odor_description || '';
+                document.getElementById('mat_notes').value = m.notes || '';
+                
+                // Physical Properties
+                document.getElementById('mat_flash').value = m.flash_point || '';
+                document.getElementById('mat_sg').value = m.specific_gravity || '';
+                document.getElementById('mat_color').value = m.color || '';
+                document.getElementById('mat_appearance').value = m.appearance || '';
+                document.getElementById('mat_physical_state').value = m.physical_state || '';
+                document.getElementById('mat_melting').value = m.melting_point || '';
+                document.getElementById('mat_boiling').value = m.boiling_point || '';
+                document.getElementById('mat_ph').value = m.ph || '';
+                document.getElementById('mat_refractive').value = m.refractive_index || '';
+                document.getElementById('mat_vapor').value = m.vapor_density || '';
+                document.getElementById('mat_solubility').value = m.solubility || '';
+                
+                // MSDS data
+                if (m.msds) {
+                    document.getElementById('mat_signal_word').value = m.msds.signal_word || '';
+                    $('#mat_pictograms').val(m.msds.pictograms ? m.msds.pictograms.split(',') : []).trigger('change');
+                    $('#mat_h_codes').val(m.msds.h_codes ? m.msds.h_codes.split(',') : []).trigger('change');
+                    $('#mat_p_codes').val(m.msds.p_codes ? m.msds.p_codes.split(',') : []).trigger('change');
+                    $('#mat_ghs_class').val(m.msds.ghs_classification ? m.msds.ghs_classification.split(',') : []).trigger('change');
+                } else {
+                    $('#mat_pictograms').val([]).trigger('change');
+                    $('#mat_h_codes').val([]).trigger('change');
+                    $('#mat_p_codes').val([]).trigger('change');
+                    $('#mat_ghs_class').val([]).trigger('change');
+                }
+                
+                modal.show();
+            }
+        });
+}
+
+function saveMaterial() {
+    const form = document.getElementById('materialForm');
+    const formData = new FormData(form);
+    
+    // Convert multi-select to comma-separated
+    formData.set('pictograms', $('#mat_pictograms').val().join(','));
+    formData.set('h_codes', $('#mat_h_codes').val().join(','));
+    formData.set('p_codes', $('#mat_p_codes').val().join(','));
+    formData.set('ghs_classification', $('#mat_ghs_class').val().join(','));
+    
+    fetch('/api/materials', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            modal.hide();
+            loadMaterials();
+            showAlert(data.message);
+        } else {
+            showAlert(data.message || 'خطأ', 'danger');
+        }
+    });
+}
+
+function deleteMaterial(id, name) {
+    if (confirm(`هل تريد حذف "${name}"؟`)) {
+        const formData = new FormData();
+        formData.append('action', 'delete');
+        formData.append('id', id);
+        
+        fetch('/api/materials', {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                loadMaterials();
+                showAlert(data.message);
+            } else {
+                showAlert(data.message || 'خطأ', 'danger');
+            }
+        });
+    }
+}
+
+// Initialize
+loadMaterials();
+</script>
+{% endblock %}
