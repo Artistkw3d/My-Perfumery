@@ -95,6 +95,7 @@ function renderFormulas(formulas) {
             <td>${f.created_at ? f.created_at.substring(0, 10) : '-'}</td>
             <td>
                 <a href="/formula/${f.id}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
+                <a href="/formula/${f.id}/card" class="btn btn-sm btn-outline-warning" title="بطاقة تعريفية"><i class="bi bi-card-heading"></i></a>
                 <button class="btn btn-sm btn-outline-success" onclick="duplicateFormula(${f.id})"><i class="bi bi-copy"></i></button>
                 <button class="btn btn-sm btn-outline-danger" onclick="deleteFormula(${f.id}, '${f.name}')"><i class="bi bi-trash"></i></button>
             </td>

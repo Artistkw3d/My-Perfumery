@@ -90,7 +90,7 @@
                                         <select name="family_id" id="mat_family" class="form-select">
                                             <option value="">-- اختر --</option>
                                             {% for f in families %}
-                                            <option value="{{ f.id }}">{{ f.name }} ({{ f.name_ar }})</option>
+                                            <option value="{{ f.id }}">{{ f.icon }} {{ f.name }} ({{ f.name_ar }})</option>
                                             {% endfor %}
                                         </select>
                                     </div>
@@ -347,7 +347,7 @@ function renderTable() {
                 ${m.name_ar ? `<br><small class="text-muted">${m.name_ar}</small>` : ''}
             </td>
             <td><code>${m.cas_number || '-'}</code></td>
-            <td>${m.family_name || '-'}</td>
+            <td>${m.family_icon ? '<span style="font-size:1.2em">' + m.family_icon + '</span> ' : ''}${m.family_name || '-'}</td>
             <td><span class="badge badge-profile badge-${m.profile?.toLowerCase() || 'heart'}">${m.profile || 'Heart'}</span></td>
             <td>${m.ifra_limit ? m.ifra_limit + '%' : '-'}</td>
             <td>${m.price_per_gram ? m.price_per_gram.toFixed(3) : '-'}</td>
