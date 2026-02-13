@@ -302,7 +302,7 @@ def init_db():
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS families (
-        id INTEGER PRIMARY KEY, name TEXT, name_ar TEXT, description TEXT
+        id INTEGER PRIMARY KEY, name TEXT, name_ar TEXT, description TEXT, icon TEXT
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS materials (
@@ -349,16 +349,16 @@ def init_db():
     # حذف العوائل القديمة وإعادة إضافتها بدون تكرار
     c.execute("DELETE FROM families")
     families = [
-        ('Floral', 'زهري'), ('Oriental', 'شرقي'), ('Woody', 'خشبي'), 
-        ('Fresh', 'منعش'), ('Citrus', 'حمضي'), ('Aromatic', 'عطري'), 
-        ('Musk', 'مسك'), ('Amber', 'عنبر'), ('Oud', 'عود'), ('Spicy', 'توابل'),
-        ('Fruity', 'فواكه'), ('Green', 'أخضر'), ('Aquatic', 'مائي'),
-        ('Gourmand', 'حلويات'), ('Leather', 'جلد'), ('Powdery', 'بودري'),
-        ('Balsamic', 'بلسمي'), ('Animalic', 'حيواني'), ('Herbal', 'أعشاب'),
-        ('Resinous', 'راتنجي'), ('Earthy', 'ترابي'), ('Smoky', 'دخاني')
+        ('Floral', 'زهري', '🌸'), ('Oriental', 'شرقي', '🌙'), ('Woody', 'خشبي', '🪵'),
+        ('Fresh', 'منعش', '🌬️'), ('Citrus', 'حمضي', '🍋'), ('Aromatic', 'عطري', '🌿'),
+        ('Musk', 'مسك', '🫧'), ('Amber', 'عنبر', '💎'), ('Oud', 'عود', '🪘'), ('Spicy', 'توابل', '🌶️'),
+        ('Fruity', 'فواكه', '🍑'), ('Green', 'أخضر', '🍃'), ('Aquatic', 'مائي', '🌊'),
+        ('Gourmand', 'حلويات', '🍯'), ('Leather', 'جلد', '🧳'), ('Powdery', 'بودري', '✨'),
+        ('Balsamic', 'بلسمي', '🍶'), ('Animalic', 'حيواني', '🐾'), ('Herbal', 'أعشاب', '🌱'),
+        ('Resinous', 'راتنجي', '🫗'), ('Earthy', 'ترابي', '🌍'), ('Smoky', 'دخاني', '🔥')
     ]
-    for i, (name, name_ar) in enumerate(families, 1):
-        c.execute("INSERT INTO families (id, name, name_ar) VALUES (?, ?, ?)", (i, name, name_ar))
+    for i, (name, name_ar, icon) in enumerate(families, 1):
+        c.execute("INSERT INTO families (id, name, name_ar, icon) VALUES (?, ?, ?, ?)", (i, name, name_ar, icon))
     
     conn.commit()
     
@@ -376,6 +376,7 @@ def init_db():
         ('materials', 'vapor_density', 'TEXT'),
         ('materials', 'appearance', 'TEXT'),
         ('material_msds', 'ghs_classification', 'TEXT'),
+        ('families', 'icon', 'TEXT'),
         ('formula_ingredients', 'diluent', 'TEXT'),
         ('formula_ingredients', 'diluent_other', 'TEXT'),
         ('formulas', 'active_ratio', 'REAL'),
@@ -538,7 +539,7 @@ def api_materials():
         action = request.args.get('action', 'list')
         if action == 'list':
             data = conn.execute('''
-                SELECT m.*, f.name as family_name, s.name as supplier_name
+                SELECT m.*, f.name as family_name, f.icon as family_icon, s.name as supplier_name
                 FROM materials m
                 LEFT JOIN families f ON m.family_id = f.id
                 LEFT JOIN suppliers s ON m.supplier_id = s.id
@@ -1159,6 +1160,89 @@ def api_ghs_data():
         'pictograms': GHS_PICTOGRAMS,
         'signal_words': GHS_SIGNAL_WORDS,
         'classifications': GHS_CLASSIFICATIONS
+    })
+
+# ===== بطاقة التركيبة =====
+@app.route('/formula/<int:id>/card')
+@login_required
+def formula_card(id):
+    conn = get_db()
+    formula = conn.execute("SELECT * FROM formulas WHERE id=?", (id,)).fetchone()
+    if not formula:
+        conn.close()
+        return redirect('/formulas')
+    company = conn.execute("SELECT * FROM company_info WHERE id=1").fetchone()
+    conn.close()
+    return render_template('formula_card.html', formula=formula, company=company)
+
+@app.route('/api/formula/<int:fid>/card')
+@login_required
+def api_formula_card(fid):
+    conn = get_db()
+    formula = conn.execute("SELECT * FROM formulas WHERE id=?", (fid,)).fetchone()
+    if not formula:
+        conn.close()
+        return jsonify({'success': False, 'message': 'التركيبة غير موجودة'})
+
+    ingredients = conn.execute('''
+        SELECT fi.*, m.name, m.name_ar, m.cas_number, m.profile, m.odor_description,
+               f.name as family_name, f.name_ar as family_name_ar, f.icon as family_icon
+        FROM formula_ingredients fi
+        JOIN materials m ON fi.material_id = m.id
+        LEFT JOIN families f ON m.family_id = f.id
+        WHERE fi.formula_id = ?
+        ORDER BY m.profile, fi.weight DESC
+    ''', (fid,)).fetchall()
+
+    total_weight = sum(i['weight'] for i in ingredients)
+
+    # تجميع العائلات
+    families = {}
+    for i in ingredients:
+        fname = i['family_name'] or 'Other'
+        if fname not in families:
+            families[fname] = {
+                'name': fname,
+                'name_ar': i['family_name_ar'] or '',
+                'icon': i['family_icon'] or '',
+                'total_weight': 0,
+                'count': 0
+            }
+        families[fname]['total_weight'] += i['weight']
+        families[fname]['count'] += 1
+
+    family_list = sorted(families.values(), key=lambda x: x['total_weight'], reverse=True)
+    for f in family_list:
+        f['percentage'] = round((f['total_weight'] / total_weight * 100) if total_weight > 0 else 0, 1)
+
+    # هرم العطر
+    pyramid = {'Top': [], 'Heart': [], 'Base': []}
+    for i in ingredients:
+        profile = i['profile'] or 'Heart'
+        if profile not in pyramid:
+            profile = 'Heart'
+        pyramid[profile].append({
+            'name': i['name'],
+            'name_ar': i['name_ar'] or '',
+            'family_name': i['family_name'] or '',
+            'family_name_ar': i['family_name_ar'] or '',
+            'family_icon': i['family_icon'] or '',
+            'weight': i['weight'],
+            'percentage': round((i['weight'] / total_weight * 100) if total_weight > 0 else 0, 1),
+            'odor_description': i['odor_description'] or ''
+        })
+
+    company = conn.execute("SELECT * FROM company_info WHERE id=1").fetchone()
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'formula': dict(formula),
+        'families': family_list,
+        'pyramid': pyramid,
+        'total_weight': total_weight,
+        'ingredients_count': len(ingredients),
+        'company': dict(company) if company else {}
     })
 
 if __name__ == '__main__':
