@@ -109,7 +109,7 @@
             <a class="nav-link {% if request.endpoint == 'materials' %}active{% endif %}" href="/materials">
                 <i class="bi bi-box-seam"></i> المواد الخام
             </a>
-            <a class="nav-link {% if request.endpoint in ['formulas', 'formula_detail'] %}active{% endif %}" href="/formulas">
+            <a class="nav-link {% if request.endpoint in ['formulas', 'formula_detail', 'formula_card'] %}active{% endif %}" href="/formulas">
                 <i class="bi bi-file-earmark-text"></i> التركيبات
             </a>
             <a class="nav-link {% if request.endpoint == 'production' %}active{% endif %}" href="/production">
