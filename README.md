@@ -1,45 +1,64 @@
-# Perfume Vault v3 🧴
+# Perfume Vault v3
 
 نظام متكامل لإدارة تركيبات العطور مع دعم كامل لـ IFRA و MSDS
 
 ## المميزات الرئيسية
 
 ### 1. إدارة المواد الخام
-- إضافة وتعديل المواد الخام
-- بيانات MSDS متكاملة (H-Codes, P-Codes, Pictograms)
+- إضافة وتعديل المواد مع بيانات كاملة (CAS, عائلة, مورد, سعر, مخزون)
+- **جلب تلقائي للبيانات** من 4 مصادر عبر رقم CAS:
+  - PubChem (خصائص فيزيائية)
+  - The Good Scents Company (بيانات عطرية)
+  - Scentree.co (بيانات عطرية)
+  - PubChem GHS/MSDS (بيانات السلامة)
+- بيانات MSDS متكاملة (H-Codes, P-Codes, Pictograms, Signal Word)
 - تصنيفات GHS كاملة
-- ربط بالموردين
+- **بروفايل عطري** (Olfactive Profile) - 14 محور مع Polar Area Chart
+- **تصنيف عطري تلقائي** من وصف الرائحة
+- تاب **IFRA** يعرض حدود الفئات الـ 18 تلقائياً من قاعدة بيانات IFRA
 
 ### 2. إدارة التركيبات
-- إنشاء تركيبات جديدة
-- إضافة مكونات مع نسب الوزن
+- إنشاء تركيبات مع بطاقات عرض وعجلة عطرية
+- مكونات مع نسب الوزن والتخفيف ومادة التخفيف (Diluent)
 - حقل التخفيف (Dilution):
-  - `0` = نقي/غير مخفف (100%)
-  - `10` = تركيز 10%
-  - `100` = تركيز 100%
-- حاسبة تكبير/تصغير التركيبة
+  - `1` = نقي/صافي (100%)
+  - `0.5` = تركيز 50%
+  - `0.1` = تركيز 10%
+- حسابات تلقائية: نسبة الزيت (H), نسبة الصافي (J), IFRA تصميم (N), IFRA نهائي (L)
+- **حدود IFRA حسب الفئة** - يستخدم بيانات IFRA 51st Amendment (263 مادة مقننة، 18 فئة)
+- حاسبة Scale متعددة الكميات
 - نسخ التركيبات
+- ملاحظات التركيبة
 
-### 3. شهادة IFRA 📜
-- توليد شهادة IFRA تلقائياً
-- 12 فئة استخدام كاملة
-- حساب الحدود لكل فئة
-- عرض حالة التوافق
-- طباعة احترافية
+### 3. معايير IFRA
+- قاعدة بيانات **IFRA 51st Amendment** (263 مادة مقننة)
+- **18 فئة استخدام** (Cat 1 - Cat 12 مع فئات فرعية 5A-5D, 7A-7B, 10A-10B, 11A-11B)
+- ربط تلقائي عبر CAS number
+- أنواع المعايير: Prohibition, Restriction, Specification
+- حساب التوافق لكل فئة بالتركيبة
+- شهادة IFRA قابلة للطباعة
 
-### 4. تقرير MSDS 📋
+### 4. تقرير MSDS
 - توليد تقرير SDS كامل (16 قسم)
 - تجميع H-Codes و P-Codes من جميع المكونات
 - الرموز التحذيرية (Pictograms)
 - كلمة الإشارة (Signal Word)
 - طباعة احترافية
 
-### 5. أوامر الإنتاج
+### 5. الاستيراد الذكي (Smart Import)
+- استيراد مواد من Excel/CSV بـ 4 خطوات:
+  1. رفع الملف
+  2. ربط الأعمدة
+  3. معاينة مع **جلب بيانات ناقصة** من المصادر الأربعة
+  4. تنفيذ الاستيراد
+- تصنيف عطري تلقائي عند الاستيراد
+
+### 6. أوامر الإنتاج
 - إنشاء أوامر إنتاج
 - تتبع الحالة
 - إدارة الكميات
 
-### 6. إدارة الموردين
+### 7. إدارة الموردين
 - قاعدة بيانات الموردين
 - معلومات الاتصال
 
@@ -48,16 +67,12 @@
 ### باستخدام Docker (موصى به)
 
 ```bash
-cd perfume_vault_v3
 docker-compose up -d --build
 ```
-
-ثم افتح المتصفح على: http://localhost:8585
 
 ### تشغيل مباشر
 
 ```bash
-cd perfume_vault_v3
 pip install flask
 python app.py
 ```
@@ -70,77 +85,69 @@ python app.py
 ## هيكل الملفات
 
 ```
-perfume_vault_v3/
-├── app.py              # التطبيق الرئيسي (Flask)
-├── Dockerfile          # تكوين Docker
-├── docker-compose.yml  # تكوين Docker Compose
-├── templates/          # قوالب HTML
-│   ├── base.html       # القالب الأساسي
-│   ├── login.html      # صفحة تسجيل الدخول
-│   ├── index.html      # لوحة التحكم
-│   ├── materials.html  # إدارة المواد الخام
-│   ├── formulas.html   # قائمة التركيبات
-│   ├── formula.html    # تفاصيل التركيبة
-│   ├── ifra_certificate.html  # شهادة IFRA
-│   ├── msds_generator.html    # تقرير MSDS
-│   ├── production.html # أوامر الإنتاج
-│   ├── suppliers.html  # الموردين
-│   ├── calculator.html # الحاسبة
-│   └── settings.html   # الإعدادات
-└── static/             # الملفات الثابتة
+My-Perfumery/
+├── app.py              # التطبيق الرئيسي (Flask) ~3000 سطر
+├── Dockerfile
+├── docker-compose.yml
+├── data/
+│   ├── ifra_standards.xlsx   # IFRA 51st Amendment (263 مادة)
+│   └── ifra_annex.xlsx       # IFRA Annex (مساهمات المصادر الطبيعية)
+├── templates/
+│   ├── base.html
+│   ├── login.html
+│   ├── index.html            # لوحة التحكم
+│   ├── materials.html        # إدارة المواد (5 تابات)
+│   ├── formulas.html         # قائمة التركيبات (بطاقات)
+│   ├── formula.html          # تفاصيل التركيبة
+│   ├── import.html           # الاستيراد الذكي (4 خطوات)
+│   ├── ifra_certificate.html
+│   ├── msds_generator.html
+│   ├── production.html
+│   ├── suppliers.html
+│   ├── calculator.html
+│   ├── formula_card.html     # بطاقة تعريفية
+│   └── settings.html
+├── static/
+└── database/
+    └── perfume.db            # SQLite (ينشأ تلقائياً)
 ```
-
-## بيانات GHS المضمنة
-
-### H-Codes (رموز الخطر)
-- +50 رمز خطر كامل
-- أخطار فيزيائية (H200-H290)
-- أخطار صحية (H300-H373)
-- أخطار بيئية (H400-H420)
-
-### P-Codes (عبارات التحذير)
-- +80 عبارة تحذير كاملة
-- عام (P101-P103)
-- الوقاية (P201-P285)
-- الاستجابة (P301-P391)
-- التخزين (P401-P422)
-- التخلص (P501)
-
-### الرموز التحذيرية (Pictograms)
-- قابل للانفجار
-- قابل للاشتعال
-- مؤكسد
-- غاز مضغوط
-- مادة أكالة
-- سام
-- مهيج
-- خطر صحي
-- خطر بيئي
-
-## فئات IFRA الـ 12
-
-1. المنتجات المطبقة على الشفاه
-2. منتجات الإبطين
-3. منتجات الجسم
-4. المنتجات المخففة
-5. منتجات العناية بالبشرة
-6. منتجات الشعر
-7. المنتجات الفموية
-8. منتجات الأطفال
-9. العطور الكحولية
-10. معطرات الهواء
-11. منتجات التنظيف
-12. منتجات اللا تلامس
 
 ## API Endpoints
 
 ```
-GET  /api/materials      # قائمة المواد
-POST /api/materials      # إضافة/تعديل مادة
-GET  /api/formulas       # قائمة التركيبات
-GET  /api/ghs-data       # بيانات GHS
-GET  /api/ifra-certificate/<id>  # شهادة IFRA
-GET  /api/msds/<id>      # تقرير MSDS
+# المواد
+GET  /api/materials                    # قائمة المواد
+POST /api/materials                    # إضافة/تعديل مادة
+
+# التركيبات
+GET  /api/formulas                     # قائمة التركيبات
+GET  /api/formula/<id>/ingredients     # مكونات التركيبة مع حسابات IFRA
+POST /api/formula/<id>/ingredients     # إضافة/تعديل/حذف مكون
+
+# IFRA
+GET  /api/ifra/lookup?cas=<cas>        # بحث IFRA بالـ CAS
+GET  /api/ifra/categories              # قائمة فئات IFRA الـ 18
+GET  /api/ifra/formula-check/<id>      # فحص توافق IFRA للتركيبة
+GET  /api/ifra-certificate/<id>        # شهادة IFRA
+
+# MSDS
+GET  /api/msds/<id>                    # تقرير MSDS
+
+# جلب بيانات خارجية
+GET  /api/cas-lookup?cas=<cas>         # PubChem (خصائص فيزيائية)
+GET  /api/tgsc-lookup?cas=<cas>        # The Good Scents Company
+GET  /api/scentree-lookup?q=<cas>      # Scentree.co
+GET  /api/msds-lookup?cas=<cas>        # PubChem GHS/MSDS
+
+# الاستيراد
+POST /api/import/upload                # رفع ملف
+POST /api/import/columns               # ربط الأعمدة
+POST /api/import/preview               # معاينة
+POST /api/import/execute               # تنفيذ
+
+# أخرى
+GET  /api/ghs-data                     # بيانات GHS
+GET  /api/dashboard                    # إحصائيات
 ```
 
 ## الترخيص
