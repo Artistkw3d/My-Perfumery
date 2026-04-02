@@ -195,7 +195,7 @@
                     <input type="hidden" name="action" value="add">
                     <div class="mb-3">
                         <label class="form-label">المادة</label>
-                        <select name="material_id" id="add_material" class="form-select select2" required>
+                        <select name="material_id" id="add_material" class="form-select select2-material" required>
                             <option value="">-- اختر --</option>
                             {% for m in materials %}
                             <option value="{{ m.id }}">{{ m.name }} {{ '(' + m.cas_number + ')' if m.cas_number else '' }}</option>
@@ -324,19 +324,16 @@ function updateFormulaWheel(profile) {
     if (formulaWheelChart) formulaWheelChart.destroy();
     const canvas = document.getElementById('formulaWheel');
     canvas.width = 280; canvas.height = 280;
+    const values = OLF_CATS.map(c => profile[c] || 0);
     formulaWheelChart = new Chart(canvas.getContext('2d'), {
-        type: 'radar',
+        type: 'polarArea',
         data: {
             labels: OLF_LABELS,
             datasets: [{
-                data: OLF_CATS.map(c => profile[c] || 0),
-                backgroundColor: 'rgba(111, 66, 193, 0.2)',
-                borderColor: '#6f42c1',
-                borderWidth: 2,
-                pointBackgroundColor: OLF_COLORS,
-                pointBorderColor: '#fff',
-                pointRadius: 4,
-                fill: true
+                data: values,
+                backgroundColor: OLF_COLORS.map(c => c + '66'),
+                borderColor: OLF_COLORS,
+                borderWidth: 2
             }]
         },
         options: {
@@ -345,10 +342,9 @@ function updateFormulaWheel(profile) {
             scales: {
                 r: {
                     min: 0, max: 10,
-                    ticks: { stepSize: 2, backdropColor: 'transparent', font: { size: 9 } },
-                    grid: { color: 'rgba(0,0,0,0.1)' },
-                    angleLines: { color: 'rgba(0,0,0,0.08)' },
-                    pointLabels: { font: { size: 9, weight: '600' }, color: OLF_COLORS }
+                    ticks: { stepSize: 2, backdropColor: 'transparent', color: '#555', font: { size: 8 } },
+                    grid: { color: 'rgba(0,0,0,0.06)' },
+                    pointLabels: { display: false }
                 }
             }
         }
@@ -761,6 +757,21 @@ function deleteNote(id) {
     .then(r => r.json())
     .then(data => { if (data.success) loadNotes(); });
 }
+
+// Initialize Select2 for material search
+$(document).ready(function() {
+    $('#add_material').select2({
+        theme: 'bootstrap-5',
+        dir: 'rtl',
+        placeholder: '-- ابحث عن مادة --',
+        allowClear: true,
+        dropdownParent: $('#addModal'),
+        language: {
+            noResults: function() { return "لا توجد نتائج"; },
+            searching: function() { return "جاري البحث..."; }
+        }
+    });
+});
 
 loadIngredients();
 loadNotes();

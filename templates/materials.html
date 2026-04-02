@@ -582,24 +582,20 @@ let detailChart = null;
 const modal = new bootstrap.Modal(document.getElementById('materialModal'));
 const wheelModal = new bootstrap.Modal(document.getElementById('wheelDetailModal'));
 
-// ===== Radar Chart Helper =====
-function createRadarChart(canvas, data, size='large') {
+// ===== Polar Area Chart Helper =====
+function createPolarChart(canvas, data, size='large') {
     const ctx = canvas.getContext('2d');
     const isSmall = (size === 'mini');
+    const values = OLF_CATS.map(c => data[c] || 0);
     return new Chart(ctx, {
-        type: 'radar',
+        type: 'polarArea',
         data: {
-            labels: isSmall ? OLF_CATS.map(c => '') : OLF_LABELS,
+            labels: OLF_LABELS,
             datasets: [{
-                data: OLF_CATS.map(c => data[c] || 0),
-                backgroundColor: 'rgba(111, 66, 193, 0.2)',
-                borderColor: '#6f42c1',
-                borderWidth: isSmall ? 1.5 : 2,
-                pointBackgroundColor: OLF_COLORS,
-                pointBorderColor: '#fff',
-                pointRadius: isSmall ? 0 : 4,
-                pointHoverRadius: isSmall ? 0 : 6,
-                fill: true
+                data: values,
+                backgroundColor: OLF_COLORS.map(c => c + '66'),
+                borderColor: OLF_COLORS,
+                borderWidth: isSmall ? 1 : 2
             }]
         },
         options: {
@@ -609,14 +605,9 @@ function createRadarChart(canvas, data, size='large') {
             scales: {
                 r: {
                     min: 0, max: 10,
-                    ticks: { display: !isSmall, stepSize: 2, backdropColor: 'transparent', font: { size: 9 } },
-                    grid: { color: isSmall ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.1)' },
-                    angleLines: { color: isSmall ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.08)' },
-                    pointLabels: {
-                        display: !isSmall,
-                        font: { size: size === 'detail' ? 11 : 10, weight: '600' },
-                        color: OLF_COLORS
-                    }
+                    ticks: { display: !isSmall, stepSize: 2, backdropColor: 'transparent', color: '#555', font: { size: isSmall ? 6 : 8 } },
+                    grid: { color: isSmall ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.06)' },
+                    pointLabels: { display: false }
                 }
             }
         }
@@ -640,19 +631,14 @@ function updateOverviewWheel() {
     const canvas = document.getElementById('overviewWheel');
     canvas.width = 320; canvas.height = 320;
     overviewChart = new Chart(canvas.getContext('2d'), {
-        type: 'radar',
+        type: 'polarArea',
         data: {
             labels: OLF_LABELS,
             datasets: [{
-                label: 'المتوسط',
                 data: OLF_CATS.map(c => avgScores[c]),
-                backgroundColor: 'rgba(111, 66, 193, 0.25)',
-                borderColor: '#8B5CF6',
-                borderWidth: 2.5,
-                pointBackgroundColor: OLF_COLORS,
-                pointBorderColor: '#fff',
-                pointRadius: 5,
-                fill: true
+                backgroundColor: OLF_COLORS.map(c => c + '66'),
+                borderColor: OLF_COLORS,
+                borderWidth: 2
             }]
         },
         options: {
@@ -661,10 +647,9 @@ function updateOverviewWheel() {
             scales: {
                 r: {
                     min: 0, max: 10,
-                    ticks: { stepSize: 2, backdropColor: 'transparent', color: '#a0aec0', font: { size: 9 } },
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    angleLines: { color: 'rgba(255,255,255,0.08)' },
-                    pointLabels: { font: { size: 11, weight: '600' }, color: OLF_COLORS }
+                    ticks: { stepSize: 2, backdropColor: 'transparent', color: '#a0aec0', font: { size: 8 } },
+                    grid: { color: 'rgba(255,255,255,0.08)' },
+                    pointLabels: { display: false }
                 }
             }
         }
@@ -763,7 +748,7 @@ function renderCards() {
         document.querySelectorAll('.mini-canvas').forEach(canvas => {
             const mid = parseInt(canvas.dataset.id);
             const m = materials.find(x => x.id === mid);
-            if (m && m.olfactive) createRadarChart(canvas, m.olfactive, 'mini');
+            if (m && m.olfactive) createPolarChart(canvas, m.olfactive, 'mini');
         });
     }, 50);
 }
@@ -795,7 +780,7 @@ function renderTable() {
         document.querySelectorAll('.mini-canvas-tbl').forEach(canvas => {
             const mid = parseInt(canvas.dataset.id);
             const m = materials.find(x => x.id === mid);
-            if (m && m.olfactive) createRadarChart(canvas, m.olfactive, 'mini');
+            if (m && m.olfactive) createPolarChart(canvas, m.olfactive, 'mini');
         });
     }, 50);
 }
@@ -823,7 +808,7 @@ function showWheelDetail(id) {
     if (detailChart) detailChart.destroy();
     const canvas = document.getElementById('detailWheel');
     canvas.width = 350; canvas.height = 350;
-    detailChart = createRadarChart(canvas, m.olfactive || {}, 'detail');
+    detailChart = createPolarChart(canvas, m.olfactive || {}, 'detail');
     wheelModal.show();
 }
 
@@ -850,7 +835,7 @@ function updateModalWheel() {
     if (modalChart) modalChart.destroy();
     const canvas = document.getElementById('modalWheel');
     canvas.width = 300; canvas.height = 300;
-    modalChart = createRadarChart(canvas, data, 'detail');
+    modalChart = createPolarChart(canvas, data, 'detail');
 }
 
 function setOlfactiveValues(values) {
