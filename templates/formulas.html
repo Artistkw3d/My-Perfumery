@@ -164,6 +164,35 @@ const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fru
 const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
 const OLF_COLORS = ['#FFD700','#B0C4DE','#2E8B57','#32CD32','#4169E1','#FF69B4','#FF6347','#FF4500','#8B6914','#654321','#DAA520','#9370DB','#6B4226','#800020'];
 
+// Plugin to draw labels around polar area charts
+const polarLabelsPlugin = {
+    id: 'polarLabels',
+    afterDraw(chart) {
+        if (chart.config.type !== 'polarArea') return;
+        if (chart.options.plugins.polarLabels && chart.options.plugins.polarLabels.display === false) return;
+        const { ctx, chartArea } = chart;
+        const cx = (chartArea.left + chartArea.right) / 2;
+        const cy = (chartArea.top + chartArea.bottom) / 2;
+        const r = Math.min(chartArea.right - chartArea.left, chartArea.bottom - chartArea.top) / 2;
+        const labels = chart.data.labels;
+        const n = labels.length;
+        const fontSize = chart.options.plugins.polarLabels?.fontSize || 9;
+        ctx.save();
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        labels.forEach((label, i) => {
+            const angle = (i / n) * 2 * Math.PI - Math.PI / 2 + Math.PI / n;
+            const x = cx + (r + 16) * Math.cos(angle);
+            const y = cy + (r + 16) * Math.sin(angle);
+            ctx.fillStyle = chart.data.datasets[0].borderColor[i] || '#666';
+            ctx.fillText(label, x, y);
+        });
+        ctx.restore();
+    }
+};
+Chart.register(polarLabelsPlugin);
+
 function loadFormulas() {
     fetch('/api/formulas')
         .then(r => r.json())
@@ -224,7 +253,7 @@ function renderFormulas(formulas) {
                 </div>
 
                 <div class="formula-wheel-section">
-                    ${hasOlf ? `<canvas id="fwheel_${f.id}" width="180" height="180"></canvas>` : '<div class="no-olf-msg"><i class="bi bi-bullseye"></i><br>لا يوجد بروفايل عطري</div>'}
+                    ${hasOlf ? `<canvas id="fwheel_${f.id}" width="230" height="230"></canvas>` : '<div class="no-olf-msg"><i class="bi bi-bullseye"></i><br>لا يوجد بروفايل عطري</div>'}
                 </div>
             </div>
             <div class="formula-footer">
@@ -262,13 +291,13 @@ function renderFormulas(formulas) {
                 options: {
                     responsive: false,
                     animation: { duration: 400 },
-                    plugins: { legend: { display: false } },
+                    layout: { padding: 28 },
+                    plugins: { legend: { display: false }, polarLabels: { display: true, fontSize: 8 } },
                     scales: {
                         r: {
                             min: 0, max: 10,
                             ticks: { stepSize: 2, backdropColor: 'transparent', color: '#999', font: { size: 7 } },
-                            grid: { color: 'rgba(0,0,0,0.06)' },
-                            pointLabels: { display: false }
+                            grid: { color: 'rgba(0,0,0,0.06)' }
                         }
                     }
                 }
