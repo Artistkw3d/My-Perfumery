@@ -730,7 +730,7 @@ def tgsc_lookup():
         # Step 1: Search by CAS number
         search_data = urllib.parse.urlencode({'qName': cas}).encode()
         req = urllib.request.Request(
-            'https://www.thegoodscentscompany.com/search3.php',
+            'https://www.thegoodscentscompany.com/search.php',
             data=search_data,
             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         )

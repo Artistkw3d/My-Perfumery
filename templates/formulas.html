@@ -277,13 +277,16 @@ function renderFormulas(formulas) {
             const canvas = document.getElementById('fwheel_' + f.id);
             if (!canvas) return;
             const data = OLF_CATS.map(c => f.olfactive_profile[c] || 0);
+            const fMax = Math.max(...data, 1);
+            const fDynMax = Math.ceil(fMax * 1.3);
+            const fStep = fDynMax <= 5 ? 1 : 2;
             new Chart(canvas.getContext('2d'), {
                 type: 'polarArea',
                 data: {
                     labels: OLF_LABELS,
                     datasets: [{
                         data: data,
-                        backgroundColor: OLF_COLORS.map(c => c + '66'),
+                        backgroundColor: OLF_COLORS.map(c => c + '88'),
                         borderColor: OLF_COLORS,
                         borderWidth: 2
                     }]
@@ -295,8 +298,8 @@ function renderFormulas(formulas) {
                     plugins: { legend: { display: false }, polarLabels: { display: true, fontSize: 8 } },
                     scales: {
                         r: {
-                            min: 0, max: 10,
-                            ticks: { stepSize: 2, backdropColor: 'transparent', color: '#999', font: { size: 7 } },
+                            min: 0, max: fDynMax,
+                            ticks: { stepSize: fStep, backdropColor: 'transparent', color: '#999', font: { size: 7 } },
                             grid: { color: 'rgba(0,0,0,0.06)' }
                         }
                     }
