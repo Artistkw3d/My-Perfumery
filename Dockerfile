@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir flask
 COPY app.py .
 COPY templates/ templates/
 COPY static/ static/
+COPY data/ data/
 
 RUN mkdir -p /app/database
 
