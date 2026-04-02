@@ -488,8 +488,11 @@
 
                         <!-- MSDS Tab -->
                         <div class="tab-pane fade" id="msdsTab">
-                            <div class="alert alert-info">
-                                <i class="bi bi-info-circle"></i> اختر من القوائم أدناه لتحديد بيانات السلامة GHS للمادة
+                            <div class="alert alert-info d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-info-circle"></i> اختر من القوائم أدناه لتحديد بيانات السلامة GHS للمادة</span>
+                                <button type="button" class="btn btn-sm btn-outline-info" onclick="fetchMSDSData()" id="msdsLookupBtn" title="جلب بيانات MSDS من PubChem">
+                                    <i class="bi bi-cloud-download"></i> جلب MSDS
+                                </button>
                             </div>
                             <div class="row">
                                 <div class="col-md-6">
@@ -1035,6 +1038,90 @@ function fetchCASData() {
         .catch(err => {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-cloud-download"></i>';
+            showAlert('خطأ في الاتصال: ' + err.message, 'danger');
+        });
+}
+
+// ===== MSDS Lookup - Fetch GHS/safety data from PubChem =====
+function fetchMSDSData() {
+    const cas = document.getElementById('mat_cas').value.trim();
+    if (!cas) {
+        showAlert('أدخل رقم CAS أولاً في تاب البيانات الأساسية', 'warning');
+        return;
+    }
+    const btn = document.getElementById('msdsLookupBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> جاري الجلب...';
+
+    fetch(`/api/msds-lookup?cas=${encodeURIComponent(cas)}`)
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-cloud-download"></i> جلب MSDS';
+            if (!data.success) {
+                showAlert(data.message || 'لم يتم العثور على بيانات MSDS', 'warning');
+                return;
+            }
+            const d = data.data;
+            let filled = 0;
+
+            // Signal Word
+            if (d.signal_word) {
+                const el = document.getElementById('mat_signal_word');
+                if (!el.value) {
+                    el.value = d.signal_word;
+                    el.style.transition = 'background 0.3s';
+                    el.style.background = '#d4edda';
+                    setTimeout(() => { el.style.background = ''; }, 2000);
+                    filled++;
+                }
+            }
+
+            // GHS Classification
+            if (d.classifications && d.classifications.length > 0) {
+                const current = $('#mat_ghs_class').val() || [];
+                if (current.length === 0) {
+                    $('#mat_ghs_class').val(d.classifications).trigger('change');
+                    filled++;
+                }
+            }
+
+            // Pictograms
+            if (d.pictograms && d.pictograms.length > 0) {
+                const current = $('#mat_pictograms').val() || [];
+                if (current.length === 0) {
+                    $('#mat_pictograms').val(d.pictograms).trigger('change');
+                    filled++;
+                }
+            }
+
+            // H-Codes
+            if (d.h_codes && d.h_codes.length > 0) {
+                const current = $('#mat_h_codes').val() || [];
+                if (current.length === 0) {
+                    $('#mat_h_codes').val(d.h_codes).trigger('change');
+                    filled++;
+                }
+            }
+
+            // P-Codes
+            if (d.p_codes && d.p_codes.length > 0) {
+                const current = $('#mat_p_codes').val() || [];
+                if (current.length === 0) {
+                    $('#mat_p_codes').val(d.p_codes).trigger('change');
+                    filled++;
+                }
+            }
+
+            if (filled > 0) {
+                showAlert(`تم جلب ${filled} حقل MSDS من PubChem ✓`, 'success');
+            } else {
+                showAlert('جميع حقول MSDS ممتلئة بالفعل أو لا توجد بيانات', 'info');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-cloud-download"></i> جلب MSDS';
             showAlert('خطأ في الاتصال: ' + err.message, 'danger');
         });
 }

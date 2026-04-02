@@ -846,6 +846,129 @@ def cas_lookup():
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
+# ===== MSDS/GHS Lookup API =====
+# Map PubChem GHS pictogram codes to our pictogram names
+_GHS_PICTO_MAP = {
+    'GHS01': 'Explosive',
+    'GHS02': 'Flammable',
+    'GHS03': 'Oxidizing',
+    'GHS04': 'Compressed Gas',
+    'GHS05': 'Corrosive',
+    'GHS06': 'Toxic',
+    'GHS07': 'Irritant',
+    'GHS08': 'Health Hazard',
+    'GHS09': 'Environmentally Damaging',
+}
+
+# Map H-code ranges to GHS classifications
+def _h_codes_to_classifications(h_codes):
+    classes = set()
+    for code in h_codes:
+        num = int(re.search(r'\d+', code).group()) if re.search(r'\d+', code) else 0
+        if 200 <= num <= 205: classes.add('Explosive')
+        elif 220 <= num <= 228: classes.add('Flammable')
+        elif 270 <= num <= 272: classes.add('Oxidizing')
+        elif 280 <= num <= 282: classes.add('Compressed Gas')
+        elif 290 <= num <= 290: classes.add('Corrosive')
+        elif 300 <= num <= 312: classes.add('Toxic')
+        elif 314 <= num <= 318: classes.add('Corrosive')
+        elif 315 <= num <= 317: classes.add('Irritant')
+        elif 319 <= num <= 319: classes.add('Irritant')
+        elif 330 <= num <= 336: classes.add('Toxic')
+        elif 340 <= num <= 373: classes.add('Health Hazard')
+        elif 400 <= num <= 413: classes.add('Environmentally Damaging')
+    return list(classes)
+
+@app.route('/api/msds-lookup', methods=['GET'])
+@login_required
+def msds_lookup():
+    """Fetch GHS/MSDS data from PubChem using CAS number"""
+    import urllib.request
+    import urllib.parse
+    cas = request.args.get('cas', '').strip()
+    if not cas:
+        return jsonify({'success': False, 'message': 'CAS number required'})
+
+    result = {'h_codes': [], 'p_codes': [], 'pictograms': [], 'signal_word': '', 'classifications': []}
+    try:
+        # Step 1: Get CID from CAS
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{urllib.parse.quote(cas)}/cids/JSON"
+        req = urllib.request.Request(url, headers={'User-Agent': 'PerfumeVault/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        cid = data['IdentifierList']['CID'][0]
+
+        # Step 2: Get GHS data from pug_view
+        url2 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/{cid}/JSON?heading=GHS+Classification"
+        req2 = urllib.request.Request(url2, headers={'User-Agent': 'PerfumeVault/1.0'})
+        with urllib.request.urlopen(req2, timeout=15) as resp2:
+            ghs_data = json.loads(resp2.read().decode())
+
+        h_codes_found = set()
+        p_codes_found = set()
+        pictos_found = set()
+        signal_words_found = set()
+
+        # Parse sections recursively
+        def parse_section(sec):
+            heading = sec.get('TOCHeading', '').lower()
+
+            for info in sec.get('Information', []):
+                val = info.get('Value', {})
+
+                # String values (H/P codes, signal words)
+                for sv in val.get('StringWithMarkup', []):
+                    text = sv.get('String', '')
+                    # Extract H-codes
+                    for m in re.finditer(r'H\d{3}[A-Za-z]?', text):
+                        h_codes_found.add(m.group())
+                    # Extract P-codes
+                    for m in re.finditer(r'P\d{3}', text):
+                        p_codes_found.add(m.group())
+                    # Signal word
+                    if 'signal' in heading:
+                        if 'danger' in text.lower():
+                            signal_words_found.add('Danger')
+                        elif 'warning' in text.lower():
+                            signal_words_found.add('Warning')
+
+                    # Pictogram URLs contain GHS01-GHS09
+                    for markup in sv.get('Markup', []):
+                        extra = markup.get('Extra', '') + markup.get('URL', '')
+                        for m in re.finditer(r'GHS\d{2}', extra):
+                            code = m.group()
+                            if code in _GHS_PICTO_MAP:
+                                pictos_found.add(_GHS_PICTO_MAP[code])
+
+            for child in sec.get('Section', []):
+                parse_section(child)
+
+        for sec in ghs_data.get('Record', {}).get('Section', []):
+            parse_section(sec)
+
+        # Valid H-codes (only keep ones that exist in our system)
+        valid_h = {h['code'] for h in GHS_H_CODES}
+        valid_p = {p['code'] for p in GHS_P_CODES}
+
+        result['h_codes'] = sorted([c for c in h_codes_found if c in valid_h])
+        result['p_codes'] = sorted([c for c in p_codes_found if c in valid_p])
+        result['pictograms'] = sorted(list(pictos_found))
+        result['signal_word'] = 'Danger' if 'Danger' in signal_words_found else ('Warning' if 'Warning' in signal_words_found else '')
+        result['classifications'] = _h_codes_to_classifications(result['h_codes'])
+
+        total = len(result['h_codes']) + len(result['p_codes']) + len(result['pictograms']) + (1 if result['signal_word'] else 0)
+        if total == 0:
+            return jsonify({'success': False, 'message': f'لا توجد بيانات GHS لـ CAS {cas} في PubChem'})
+
+        return jsonify({'success': True, 'data': result})
+
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return jsonify({'success': False, 'message': f'لا توجد بيانات GHS لـ CAS {cas} في PubChem'})
+        return jsonify({'success': False, 'message': f'PubChem error: {e.code}'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+
 # ===== API المواد =====
 @app.route('/api/materials', methods=['GET', 'POST'])
 @login_required
