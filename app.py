@@ -614,11 +614,19 @@ def import_ifra_standards():
         return
 
     conn = get_db()
-    # Check if already imported
+    # Check if already imported correctly (verify a known entry has valid cat4 data)
     count = conn.execute("SELECT COUNT(*) FROM ifra_standards").fetchone()[0]
     if count > 0:
-        conn.close()
-        return
+        # Verify data integrity - check if cat columns have data
+        sample = conn.execute("SELECT cat4 FROM ifra_standards WHERE ifra_key='IFRA_STD_001'").fetchone()
+        if sample and sample['cat4'] and sample['cat4'] > 0:
+            conn.close()
+            return
+        # Data is corrupt (old bug), re-import
+        log("[IFRA] Re-importing IFRA standards (fixing column mapping)...")
+        conn.execute("DELETE FROM ifra_cas_lookup")
+        conn.execute("DELETE FROM ifra_standards")
+        conn.commit()
 
     log("[IFRA] Importing IFRA 51st Amendment standards...")
 
@@ -652,8 +660,8 @@ def import_ifra_standards():
                     break
             result = 0
             for ch in col:
-                result = result * 26 + (ord(ch) - ord('A'))
-            return result
+                result = result * 26 + (ord(ch) - ord('A') + 1)
+            return result - 1  # A=0, B=1, ..., Z=25, AA=26, AB=27
 
         def get_cell_value(cell):
             t = cell.get('t', '')
