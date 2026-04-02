@@ -215,6 +215,11 @@
                         <li class="nav-item">
                             <a class="nav-link" data-bs-toggle="tab" href="#msdsTab">بيانات MSDS</a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-bs-toggle="tab" href="#ifraTab">
+                                <i class="bi bi-shield-check"></i> IFRA
+                            </a>
+                        </li>
                     </ul>
 
                     <div class="tab-content">
@@ -546,6 +551,51 @@
                                     <option value="{{ p.code }}">{{ p.code }} – {{ p.desc }}</option>
                                     {% endfor %}
                                 </select>
+                            </div>
+                        </div>
+
+                        <!-- IFRA Tab -->
+                        <div class="tab-pane fade" id="ifraTab">
+                            <div id="ifraNoData" class="text-center text-muted py-4">
+                                <i class="bi bi-shield-exclamation" style="font-size:2rem;"></i>
+                                <p class="mt-2">لا توجد بيانات IFRA لهذه المادة<br><small>يتم البحث تلقائياً عبر رقم CAS</small></p>
+                            </div>
+                            <div id="ifraData" style="display:none;">
+                                <div class="alert alert-info py-2 mb-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong id="ifra_std_name"></strong>
+                                            <span class="badge bg-primary ms-2" id="ifra_std_key"></span>
+                                        </div>
+                                        <span class="badge bg-secondary" id="ifra_std_type"></span>
+                                    </div>
+                                    <small class="text-muted d-block mt-1" id="ifra_risk_property"></small>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-6">
+                                        <small class="text-muted">التعديل:</small>
+                                        <span id="ifra_amendment" class="fw-bold"></span>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">سنة النشر:</small>
+                                        <span id="ifra_year" class="fw-bold"></span>
+                                    </div>
+                                </div>
+                                <div id="ifra_restriction_notes" class="small text-danger mb-2" style="display:none;"></div>
+                                <div id="ifra_spec_notes" class="small text-warning mb-2" style="display:none;"></div>
+                                <h6 class="mt-3 mb-2"><i class="bi bi-table"></i> حدود الفئات (% في المنتج النهائي)</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered" style="font-size:0.78rem;">
+                                        <thead>
+                                            <tr class="table-dark text-center">
+                                                <th>الفئة</th>
+                                                <th>الوصف</th>
+                                                <th>الحد %</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ifra_cat_table"></tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -987,9 +1037,82 @@ function editMaterial(id) {
                 }
                 // Olfactive
                 setOlfactiveValues(m.olfactive || {});
+                // IFRA Standards
+                populateIfraTab(m.ifra_standard || null);
                 modal.show();
             }
         });
+}
+
+const IFRA_CAT_INFO = [
+    {id:'cat1', name:'Cat 1', desc:'Lip products'},
+    {id:'cat2', name:'Cat 2', desc:'Axillae (armpit)'},
+    {id:'cat3', name:'Cat 3', desc:'Face/body (fingertips)'},
+    {id:'cat4', name:'Cat 4', desc:'Fine fragrance'},
+    {id:'cat5a', name:'Cat 5A', desc:'Body lotion'},
+    {id:'cat5b', name:'Cat 5B', desc:'Face moisturizer'},
+    {id:'cat5c', name:'Cat 5C', desc:'Hand cream'},
+    {id:'cat5d', name:'Cat 5D', desc:'Baby products'},
+    {id:'cat6', name:'Cat 6', desc:'Oral/lip exposure'},
+    {id:'cat7a', name:'Cat 7A', desc:'Rinse-off hair'},
+    {id:'cat7b', name:'Cat 7B', desc:'Leave-on hair'},
+    {id:'cat8', name:'Cat 8', desc:'Anogenital exposure'},
+    {id:'cat9', name:'Cat 9', desc:'Body rinse off'},
+    {id:'cat10a', name:'Cat 10A', desc:'Household (non-aerosol)'},
+    {id:'cat10b', name:'Cat 10B', desc:'Household aerosol'},
+    {id:'cat11a', name:'Cat 11A', desc:'Skin contact (no UV)'},
+    {id:'cat11b', name:'Cat 11B', desc:'Skin contact (UV)'},
+    {id:'cat12', name:'Cat 12', desc:'No direct skin contact'},
+];
+
+function populateIfraTab(ifra) {
+    const noData = document.getElementById('ifraNoData');
+    const dataDiv = document.getElementById('ifraData');
+    if (!ifra) {
+        noData.style.display = '';
+        dataDiv.style.display = 'none';
+        return;
+    }
+    noData.style.display = 'none';
+    dataDiv.style.display = '';
+    document.getElementById('ifra_std_name').textContent = ifra.name || '';
+    document.getElementById('ifra_std_key').textContent = ifra.ifra_key || '';
+    document.getElementById('ifra_std_type').textContent = ifra.standard_type || '';
+    document.getElementById('ifra_risk_property').textContent = ifra.risk_property || '';
+    document.getElementById('ifra_amendment').textContent = ifra.amendment || '';
+    document.getElementById('ifra_year').textContent = ifra.year_published || '';
+
+    const rn = document.getElementById('ifra_restriction_notes');
+    if (ifra.restriction_notes) {
+        rn.textContent = ifra.restriction_notes;
+        rn.style.display = '';
+    } else { rn.style.display = 'none'; }
+
+    const sn = document.getElementById('ifra_spec_notes');
+    if (ifra.specification_notes) {
+        sn.textContent = ifra.specification_notes;
+        sn.style.display = '';
+    } else { sn.style.display = 'none'; }
+
+    const tbody = document.getElementById('ifra_cat_table');
+    tbody.innerHTML = IFRA_CAT_INFO.map(c => {
+        const val = ifra[c.id];
+        let display, cls;
+        if (val === null || val === undefined) {
+            display = '-'; cls = '';
+        } else if (val === -1) {
+            display = 'No Restriction'; cls = 'text-success';
+        } else if (val === 0) {
+            display = 'PROHIBITED'; cls = 'text-danger fw-bold';
+        } else {
+            display = val + '%'; cls = 'text-primary';
+        }
+        return `<tr>
+            <td class="fw-bold">${c.name}</td>
+            <td class="text-muted">${c.desc}</td>
+            <td class="text-center ${cls}">${display}</td>
+        </tr>`;
+    }).join('');
 }
 
 // ===== CAS Lookup - Fetch missing data from PubChem =====
