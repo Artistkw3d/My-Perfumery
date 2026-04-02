@@ -238,7 +238,12 @@
                                 <div class="col-md-4">
                                     <div class="mb-3">
                                         <label class="form-label">CAS Number</label>
-                                        <input type="text" name="cas_number" id="mat_cas" class="form-control" placeholder="e.g., 123-45-6">
+                                        <div class="input-group">
+                                            <input type="text" name="cas_number" id="mat_cas" class="form-control" placeholder="e.g., 123-45-6">
+                                            <button type="button" class="btn btn-outline-info" onclick="fetchCASData()" title="جلب البيانات من PubChem" id="casLookupBtn">
+                                                <i class="bi bi-cloud-download"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="col-md-4">
@@ -556,7 +561,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center">
-                <canvas id="detailWheel" width="350" height="350"></canvas>
+                <canvas id="detailWheel" width="400" height="400"></canvas>
                 <div id="detailOdorDesc" class="mt-3 text-muted" style="font-style:italic;"></div>
             </div>
         </div>
@@ -567,6 +572,35 @@
 {% block extra_js %}
 <script>
 const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
+
+// Plugin to draw labels around polar area charts
+const polarLabelsPlugin = {
+    id: 'polarLabels',
+    afterDraw(chart) {
+        if (chart.config.type !== 'polarArea') return;
+        if (chart.options.plugins.polarLabels && chart.options.plugins.polarLabels.display === false) return;
+        const { ctx, chartArea } = chart;
+        const cx = (chartArea.left + chartArea.right) / 2;
+        const cy = (chartArea.top + chartArea.bottom) / 2;
+        const r = Math.min(chartArea.right - chartArea.left, chartArea.bottom - chartArea.top) / 2;
+        const labels = chart.data.labels;
+        const n = labels.length;
+        const fontSize = chart.options.plugins.polarLabels?.fontSize || 9;
+        ctx.save();
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        labels.forEach((label, i) => {
+            const angle = (i / n) * 2 * Math.PI - Math.PI / 2 + Math.PI / n;
+            const x = cx + (r + 16) * Math.cos(angle);
+            const y = cy + (r + 16) * Math.sin(angle);
+            ctx.fillStyle = chart.data.datasets[0].borderColor[i] || '#666';
+            ctx.fillText(label, x, y);
+        });
+        ctx.restore();
+    }
+};
+Chart.register(polarLabelsPlugin);
 const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
 const OLF_COLORS = [
     '#FFD700','#B0C4DE','#2E8B57','#32CD32','#4169E1','#FF69B4','#FF6347',
@@ -601,13 +635,13 @@ function createPolarChart(canvas, data, size='large') {
         options: {
             responsive: false,
             animation: { duration: isSmall ? 0 : 400 },
-            plugins: { legend: { display: false } },
+            layout: { padding: isSmall ? 0 : 30 },
+            plugins: { legend: { display: false }, polarLabels: { display: !isSmall, fontSize: size === 'detail' ? 10 : 9 } },
             scales: {
                 r: {
                     min: 0, max: 10,
                     ticks: { display: !isSmall, stepSize: 2, backdropColor: 'transparent', color: '#555', font: { size: isSmall ? 6 : 8 } },
-                    grid: { color: isSmall ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.06)' },
-                    pointLabels: { display: false }
+                    grid: { color: isSmall ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.06)' }
                 }
             }
         }
@@ -629,7 +663,7 @@ function updateOverviewWheel() {
 
     if (overviewChart) overviewChart.destroy();
     const canvas = document.getElementById('overviewWheel');
-    canvas.width = 320; canvas.height = 320;
+    canvas.width = 380; canvas.height = 380;
     overviewChart = new Chart(canvas.getContext('2d'), {
         type: 'polarArea',
         data: {
@@ -643,13 +677,13 @@ function updateOverviewWheel() {
         },
         options: {
             responsive: false,
-            plugins: { legend: { display: false } },
+            layout: { padding: 35 },
+            plugins: { legend: { display: false }, polarLabels: { display: true, fontSize: 10 } },
             scales: {
                 r: {
                     min: 0, max: 10,
                     ticks: { stepSize: 2, backdropColor: 'transparent', color: '#a0aec0', font: { size: 8 } },
-                    grid: { color: 'rgba(255,255,255,0.08)' },
-                    pointLabels: { display: false }
+                    grid: { color: 'rgba(255,255,255,0.08)' }
                 }
             }
         }
@@ -939,6 +973,69 @@ function editMaterial(id) {
                 setOlfactiveValues(m.olfactive || {});
                 modal.show();
             }
+        });
+}
+
+// ===== CAS Lookup - Fetch missing data from PubChem =====
+function fetchCASData() {
+    const cas = document.getElementById('mat_cas').value.trim();
+    if (!cas) {
+        showAlert('أدخل رقم CAS أولاً', 'warning');
+        return;
+    }
+    const btn = document.getElementById('casLookupBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch(`/api/cas-lookup?cas=${encodeURIComponent(cas)}`)
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-cloud-download"></i>';
+            if (!data.success) {
+                showAlert(data.message || 'لم يتم العثور على بيانات', 'warning');
+                return;
+            }
+            const d = data.data;
+            let filled = 0;
+
+            // Only fill empty fields (don't overwrite existing data)
+            const fillIfEmpty = (fieldId, value) => {
+                if (!value) return;
+                const el = document.getElementById(fieldId);
+                if (el && !el.value.trim()) {
+                    el.value = value;
+                    el.style.transition = 'background 0.3s';
+                    el.style.background = '#d4edda';
+                    setTimeout(() => { el.style.background = ''; }, 2000);
+                    filled++;
+                }
+            };
+
+            fillIfEmpty('mat_odor', d.odor_description);
+            fillIfEmpty('mat_flash', d.flash_point);
+            fillIfEmpty('mat_sg', d.specific_gravity);
+            fillIfEmpty('mat_color', d.color);
+            fillIfEmpty('mat_appearance', d.appearance);
+            fillIfEmpty('mat_melting', d.melting_point);
+            fillIfEmpty('mat_boiling', d.boiling_point);
+            fillIfEmpty('mat_ph', d.ph);
+            fillIfEmpty('mat_refractive', d.refractive_index);
+            fillIfEmpty('mat_vapor', d.vapor_density);
+            fillIfEmpty('mat_solubility', d.solubility);
+            fillIfEmpty('mat_synonyms', d.synonyms);
+            fillIfEmpty('mat_vapor_pressure', d.vapor_pressure);
+
+            if (filled > 0) {
+                showAlert(`تم جلب ${filled} حقل من PubChem ✓`, 'success');
+            } else {
+                showAlert('جميع الحقول ممتلئة بالفعل أو لا توجد بيانات إضافية', 'info');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-cloud-download"></i>';
+            showAlert('خطأ في الاتصال: ' + err.message, 'danger');
         });
 }
 

@@ -712,6 +712,114 @@ def settings():
     conn.close()
     return render_template('settings.html', company=company)
 
+# ===== CAS Lookup API =====
+@app.route('/api/cas-lookup', methods=['GET'])
+@login_required
+def cas_lookup():
+    """Fetch material data from PubChem using CAS number"""
+    import urllib.request
+    import urllib.parse
+    cas = request.args.get('cas', '').strip()
+    if not cas:
+        return jsonify({'success': False, 'message': 'CAS number required'})
+
+    result = {}
+    try:
+        # Step 1: Get CID from CAS number
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{urllib.parse.quote(cas)}/cids/JSON"
+        req = urllib.request.Request(url, headers={'User-Agent': 'PerfumeVault/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        cid = data['IdentifierList']['CID'][0]
+
+        # Step 2: Get compound properties
+        props = 'MolecularFormula,MolecularWeight,IUPACName,ExactMass'
+        url2 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/{props}/JSON"
+        req2 = urllib.request.Request(url2, headers={'User-Agent': 'PerfumeVault/1.0'})
+        with urllib.request.urlopen(req2, timeout=10) as resp2:
+            props_data = json.loads(resp2.read().decode())
+
+        if props_data.get('PropertyTable', {}).get('Properties'):
+            p = props_data['PropertyTable']['Properties'][0]
+            result['molecular_formula'] = p.get('MolecularFormula', '')
+            result['molecular_weight'] = p.get('MolecularWeight', '')
+            result['iupac_name'] = p.get('IUPACName', '')
+
+        # Step 3: Get synonyms
+        url3 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/synonyms/JSON"
+        req3 = urllib.request.Request(url3, headers={'User-Agent': 'PerfumeVault/1.0'})
+        with urllib.request.urlopen(req3, timeout=10) as resp3:
+            syn_data = json.loads(resp3.read().decode())
+
+        syns = syn_data.get('InformationList', {}).get('Information', [{}])[0].get('Synonym', [])
+        result['synonyms'] = '; '.join(syns[:10])  # First 10 synonyms
+
+        # Step 4: Get experimental properties (boiling point, melting point, flash point, etc.)
+        url4 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/{cid}/JSON?heading=Experimental+Properties"
+        req4 = urllib.request.Request(url4, headers={'User-Agent': 'PerfumeVault/1.0'})
+        try:
+            with urllib.request.urlopen(req4, timeout=15) as resp4:
+                exp_data = json.loads(resp4.read().decode())
+
+            # Parse experimental properties
+            sections = exp_data.get('Record', {}).get('Section', [])
+            for sec in sections:
+                for subsec in sec.get('Section', []):
+                    for item in subsec.get('Section', []):
+                        heading = item.get('TOCHeading', '')
+                        infos = item.get('Information', [])
+                        val = ''
+                        if infos:
+                            sv = infos[0].get('Value', {}).get('StringWithMarkup', [{}])
+                            if sv:
+                                val = sv[0].get('String', '')
+                            else:
+                                nv = infos[0].get('Value', {}).get('Number', [])
+                                unit = infos[0].get('Value', {}).get('Unit', '')
+                                if nv:
+                                    val = f"{nv[0]} {unit}".strip()
+
+                        if not val:
+                            continue
+                        h = heading.lower()
+                        if 'boiling' in h:
+                            result['boiling_point'] = val
+                        elif 'melting' in h:
+                            result['melting_point'] = val
+                        elif 'flash' in h:
+                            result['flash_point'] = val
+                        elif 'density' in h or 'specific gravity' in h:
+                            result['specific_gravity'] = val
+                        elif 'refractive' in h:
+                            result['refractive_index'] = val
+                        elif 'color' in h or 'colour' in h:
+                            result['color'] = val
+                        elif 'physical' in h or 'appearance' in h:
+                            result['appearance'] = val
+                        elif 'solubility' in h:
+                            result['solubility'] = val
+                        elif 'vapor pressure' in h:
+                            result['vapor_pressure'] = val
+                        elif 'vapor density' in h:
+                            result['vapor_density'] = val
+                        elif 'odor' in h or 'smell' in h:
+                            result['odor_description'] = val
+                        elif 'ph' == h.strip():
+                            result['ph'] = val
+        except:
+            pass  # Experimental properties may not be available
+
+        result['cid'] = cid
+        result['pubchem_url'] = f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}"
+        return jsonify({'success': True, 'data': result})
+
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return jsonify({'success': False, 'message': f'CAS {cas} not found in PubChem'})
+        return jsonify({'success': False, 'message': f'PubChem error: {e.code}'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+
 # ===== API المواد =====
 @app.route('/api/materials', methods=['GET', 'POST'])
 @login_required
