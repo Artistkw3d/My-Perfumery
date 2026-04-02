@@ -240,8 +240,11 @@
                                         <label class="form-label">CAS Number</label>
                                         <div class="input-group">
                                             <input type="text" name="cas_number" id="mat_cas" class="form-control" placeholder="e.g., 123-45-6">
-                                            <button type="button" class="btn btn-outline-info" onclick="fetchCASData()" title="جلب البيانات من PubChem" id="casLookupBtn">
+                                            <button type="button" class="btn btn-outline-info" onclick="fetchCASData()" title="جلب البيانات الفيزيائية من PubChem" id="casLookupBtn">
                                                 <i class="bi bi-cloud-download"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success" onclick="fetchTGSCData()" title="جلب بيانات عطرية من The Good Scents Company" id="tgscLookupBtn">
+                                                <i class="bi bi-flower1"></i>
                                             </button>
                                         </div>
                                     </div>
@@ -1038,6 +1041,67 @@ function fetchCASData() {
         .catch(err => {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-cloud-download"></i>';
+            showAlert('خطأ في الاتصال: ' + err.message, 'danger');
+        });
+}
+
+// ===== TGSC Lookup - Fetch perfumery data from The Good Scents Company =====
+function fetchTGSCData() {
+    const cas = document.getElementById('mat_cas').value.trim();
+    if (!cas) {
+        showAlert('أدخل رقم CAS أولاً', 'warning');
+        return;
+    }
+    const btn = document.getElementById('tgscLookupBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch(`/api/tgsc-lookup?cas=${encodeURIComponent(cas)}`)
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-flower1"></i>';
+            if (!data.success) {
+                showAlert(data.message || 'لم يتم العثور على بيانات', 'warning');
+                return;
+            }
+            const d = data.data;
+            let filled = 0;
+
+            const fillIfEmpty = (fieldId, value) => {
+                if (!value) return;
+                const el = document.getElementById(fieldId);
+                if (el && !el.value.trim()) {
+                    el.value = value;
+                    el.style.transition = 'background 0.3s';
+                    el.style.background = '#d4edda';
+                    setTimeout(() => { el.style.background = ''; }, 2000);
+                    filled++;
+                }
+            };
+
+            fillIfEmpty('mat_odor', d.odor_description);
+            fillIfEmpty('mat_strength_odor', d.strength_odor);
+            fillIfEmpty('mat_flash', d.flash_point);
+            fillIfEmpty('mat_sg', d.specific_gravity);
+            fillIfEmpty('mat_refractive', d.refractive_index);
+            fillIfEmpty('mat_appearance', d.appearance);
+            fillIfEmpty('mat_melting', d.melting_point);
+            fillIfEmpty('mat_boiling', d.boiling_point);
+            fillIfEmpty('mat_solubility', d.solubility);
+            fillIfEmpty('mat_synonyms', d.synonyms);
+            fillIfEmpty('mat_ifra', d.ifra_limit);
+            fillIfEmpty('mat_recommended_smell_pct', d.recommended_smell_pct);
+
+            if (filled > 0) {
+                showAlert(`تم جلب ${filled} حقل من The Good Scents Company ✓`, 'success');
+            } else {
+                showAlert('جميع الحقول ممتلئة بالفعل أو لا توجد بيانات إضافية', 'info');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-flower1"></i>';
             showAlert('خطأ في الاتصال: ' + err.message, 'danger');
         });
 }
