@@ -1,8 +1,8 @@
 services:
   perfume-vault:
     build: .
-    ports:
-      - "8585:8000"
+    expose:
+      - "8000"
     volumes:
       - perfume_data:/app/database
     restart: unless-stopped
