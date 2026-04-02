@@ -713,6 +713,33 @@ def settings():
     return render_template('settings.html', company=company)
 
 # ===== CAS Lookup API =====
+def _extract_celsius(text):
+    """Extract numeric value in Celsius from PubChem text like '232 °F (111.11 °C)' or '111 °C'"""
+    if not text:
+        return ''
+    # Try to find Celsius value in parentheses like (111.11 °C)
+    m = re.search(r'\(?\s*(-?[\d.]+)\s*°?\s*C\s*\)?', text)
+    if m:
+        return m.group(1) + ' °C'
+    # If only Fahrenheit, convert
+    m = re.search(r'(-?[\d.]+)\s*°?\s*F', text)
+    if m:
+        f_val = float(m.group(1))
+        c_val = round((f_val - 32) * 5 / 9, 1)
+        return str(c_val) + ' °C'
+    # Try plain number
+    m = re.search(r'(-?[\d.]+)', text)
+    if m:
+        return m.group(1)
+    return text
+
+def _extract_number(text):
+    """Extract just the first numeric value from text"""
+    if not text:
+        return ''
+    m = re.search(r'(-?[\d.]+)', text)
+    return m.group(1) if m else text
+
 @app.route('/api/cas-lookup', methods=['GET'])
 @login_required
 def cas_lookup():
@@ -752,16 +779,15 @@ def cas_lookup():
             syn_data = json.loads(resp3.read().decode())
 
         syns = syn_data.get('InformationList', {}).get('Information', [{}])[0].get('Synonym', [])
-        result['synonyms'] = '; '.join(syns[:10])  # First 10 synonyms
+        result['synonyms'] = '; '.join(syns[:10])
 
-        # Step 4: Get experimental properties (boiling point, melting point, flash point, etc.)
+        # Step 4: Get experimental properties
         url4 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/{cid}/JSON?heading=Experimental+Properties"
         req4 = urllib.request.Request(url4, headers={'User-Agent': 'PerfumeVault/1.0'})
         try:
             with urllib.request.urlopen(req4, timeout=15) as resp4:
                 exp_data = json.loads(resp4.read().decode())
 
-            # Parse experimental properties
             sections = exp_data.get('Record', {}).get('Section', [])
             for sec in sections:
                 for subsec in sec.get('Section', []):
@@ -783,15 +809,15 @@ def cas_lookup():
                             continue
                         h = heading.lower()
                         if 'boiling' in h:
-                            result['boiling_point'] = val
+                            result['boiling_point'] = _extract_celsius(val)
                         elif 'melting' in h:
-                            result['melting_point'] = val
+                            result['melting_point'] = _extract_celsius(val)
                         elif 'flash' in h:
-                            result['flash_point'] = val
+                            result['flash_point'] = _extract_celsius(val)
                         elif 'density' in h or 'specific gravity' in h:
-                            result['specific_gravity'] = val
+                            result['specific_gravity'] = _extract_number(val)
                         elif 'refractive' in h:
-                            result['refractive_index'] = val
+                            result['refractive_index'] = _extract_number(val)
                         elif 'color' in h or 'colour' in h:
                             result['color'] = val
                         elif 'physical' in h or 'appearance' in h:
@@ -799,15 +825,15 @@ def cas_lookup():
                         elif 'solubility' in h:
                             result['solubility'] = val
                         elif 'vapor pressure' in h:
-                            result['vapor_pressure'] = val
+                            result['vapor_pressure'] = _extract_number(val) + ' mmHg' if re.search(r'[\d.]', val) else val
                         elif 'vapor density' in h:
-                            result['vapor_density'] = val
+                            result['vapor_density'] = _extract_number(val)
                         elif 'odor' in h or 'smell' in h:
                             result['odor_description'] = val
                         elif 'ph' == h.strip():
-                            result['ph'] = val
+                            result['ph'] = _extract_number(val)
         except:
-            pass  # Experimental properties may not be available
+            pass
 
         result['cid'] = cid
         result['pubchem_url'] = f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}"
@@ -1767,6 +1793,12 @@ IMPORT_FIELDS = [
     {'key': 'synonyms', 'label': 'Synonyms', 'required': False},
     {'key': 'lot', 'label': 'Lot', 'required': False},
     {'key': 'strength_odor', 'label': 'Strength Odor (High/Mid/Low)', 'required': False},
+    {'key': 'melting_point', 'label': 'Melting Point', 'required': False},
+    {'key': 'boiling_point', 'label': 'Boiling Point', 'required': False},
+    {'key': 'refractive_index', 'label': 'Refractive Index', 'required': False},
+    {'key': 'solubility', 'label': 'Solubility', 'required': False},
+    {'key': 'vapor_density', 'label': 'Vapor Density', 'required': False},
+    {'key': 'ph', 'label': 'pH', 'required': False},
     {'key': 'vapor_pressure', 'label': 'Vapor Pressure', 'required': False},
     {'key': 'effect', 'label': 'Effect (High/Mid/Low)', 'required': False},
     {'key': 'recommended_smell_pct', 'label': 'درجة الشم الموصى بها (%)', 'required': False},
@@ -2087,6 +2119,8 @@ def api_import_execute():
                     profile=?, supplier_id=?, ifra_limit=?, purchase_price=?, purchase_quantity=?,
                     price_per_gram=?, odor_description=?, notes=?, flash_point=?, specific_gravity=?,
                     color=?, appearance=?, physical_state=?,
+                    melting_point=?, boiling_point=?, refractive_index=?, solubility=?,
+                    vapor_density=?, ph=?,
                     synonyms=?, lot=?, strength_odor=?, vapor_pressure=?,
                     effect=?, recommended_smell_pct=?, properties=?, in_stock=? WHERE id=?''',
                     (name, item.get('name_ar', ''), cas, family_id,
@@ -2095,6 +2129,9 @@ def api_import_execute():
                      item.get('flash_point', ''), item.get('specific_gravity', ''),
                      item.get('color', ''), item.get('appearance', ''),
                      item.get('physical_state', ''),
+                     item.get('melting_point', ''), item.get('boiling_point', ''),
+                     item.get('refractive_index', ''), item.get('solubility', ''),
+                     item.get('vapor_density', ''), item.get('ph', ''),
                      item.get('synonyms', ''), item.get('lot', ''),
                      item.get('strength_odor', ''), item.get('vapor_pressure', ''),
                      item.get('effect', ''), item.get('recommended_smell_pct', ''),
@@ -2109,14 +2146,18 @@ def api_import_execute():
                 cur = conn.execute('''INSERT INTO materials (name, name_ar, cas_number, family_id, profile,
                     supplier_id, ifra_limit, purchase_price, purchase_quantity, price_per_gram,
                     odor_description, notes, flash_point, specific_gravity, color, appearance, physical_state,
+                    melting_point, boiling_point, refractive_index, solubility, vapor_density, ph,
                     synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                     (name, item.get('name_ar', ''), cas, family_id,
                      profile, supplier_id, ifra, price, qty, ppg,
                      item.get('odor_description', ''), item.get('notes', ''),
                      item.get('flash_point', ''), item.get('specific_gravity', ''),
                      item.get('color', ''), item.get('appearance', ''),
                      item.get('physical_state', ''),
+                     item.get('melting_point', ''), item.get('boiling_point', ''),
+                     item.get('refractive_index', ''), item.get('solubility', ''),
+                     item.get('vapor_density', ''), item.get('ph', ''),
                      item.get('synonyms', ''), item.get('lot', ''),
                      item.get('strength_odor', ''), item.get('vapor_pressure', ''),
                      item.get('effect', ''), item.get('recommended_smell_pct', ''),
