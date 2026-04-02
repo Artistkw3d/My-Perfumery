@@ -246,6 +246,9 @@
                                             <button type="button" class="btn btn-outline-success" onclick="fetchTGSCData()" title="جلب بيانات عطرية من The Good Scents Company" id="tgscLookupBtn">
                                                 <i class="bi bi-flower1"></i>
                                             </button>
+                                            <button type="button" class="btn btn-outline-warning" onclick="fetchScentreeData()" title="جلب بيانات من Scentree.co" id="scentreeLookupBtn">
+                                                <i class="bi bi-tree"></i>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -1048,6 +1051,91 @@ function fetchCASData() {
         .catch(err => {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-cloud-download"></i>';
+            showAlert('خطأ في الاتصال: ' + err.message, 'danger');
+        });
+}
+
+// ===== Scentree Lookup - Fetch perfumery data from Scentree.co =====
+function fetchScentreeData() {
+    // Use material name first, fallback to CAS
+    const name = document.getElementById('mat_name').value.trim();
+    const cas = document.getElementById('mat_cas').value.trim();
+    const query = name || cas;
+    if (!query) {
+        showAlert('أدخل اسم المادة أو رقم CAS أولاً', 'warning');
+        return;
+    }
+    const btn = document.getElementById('scentreeLookupBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch(`/api/scentree-lookup?q=${encodeURIComponent(query)}`)
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-tree"></i>';
+            if (!data.success) {
+                showAlert(data.message || 'لم يتم العثور على بيانات', 'warning');
+                return;
+            }
+            const d = data.data;
+            let filled = 0;
+
+            const fillIfEmpty = (fieldId, value) => {
+                if (!value) return;
+                const el = document.getElementById(fieldId);
+                if (el && !el.value.trim()) {
+                    el.value = value;
+                    el.style.transition = 'background 0.3s';
+                    el.style.background = '#d4edda';
+                    setTimeout(() => { el.style.background = ''; }, 2000);
+                    filled++;
+                }
+            };
+
+            fillIfEmpty('mat_flash', d.flash_point);
+            fillIfEmpty('mat_sg', d.specific_gravity);
+            fillIfEmpty('mat_refractive', d.refractive_index);
+            fillIfEmpty('mat_appearance', d.appearance);
+            fillIfEmpty('mat_melting', d.melting_point);
+            fillIfEmpty('mat_boiling', d.boiling_point);
+            fillIfEmpty('mat_synonyms', d.synonyms);
+            fillIfEmpty('mat_vapor_pressure', d.vapor_pressure);
+
+            // Set profile if empty
+            if (d.profile) {
+                const profEl = document.getElementById('mat_profile');
+                if (profEl && !profEl.value) {
+                    const mapped = d.profile.toLowerCase().includes('head') ? 'Top' :
+                                   d.profile.toLowerCase().includes('heart') ? 'Heart' :
+                                   d.profile.toLowerCase().includes('base') ? 'Base' : '';
+                    if (mapped) {
+                        profEl.value = mapped;
+                        profEl.style.transition = 'background 0.3s';
+                        profEl.style.background = '#d4edda';
+                        setTimeout(() => { profEl.style.background = ''; }, 2000);
+                        filled++;
+                    }
+                }
+            }
+
+            // Show olfactive family + uses info
+            let extra = [];
+            if (d.olfactive_family) extra.push('🌸 ' + d.olfactive_family);
+            if (d.uses_in_perfumery) extra.push('📝 ' + d.uses_in_perfumery.substring(0, 150));
+            if (d.kind) extra.push('🏷️ ' + d.kind);
+
+            if (filled > 0 || extra.length > 0) {
+                let msg = filled > 0 ? `تم جلب ${filled} حقل من Scentree ✓` : '';
+                if (extra.length > 0) msg += (msg ? '<br>' : '') + extra.join('<br>');
+                showAlert(msg, 'success');
+            } else {
+                showAlert('جميع الحقول ممتلئة بالفعل أو لا توجد بيانات إضافية', 'info');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-tree"></i>';
             showAlert('خطأ في الاتصال: ' + err.message, 'danger');
         });
 }
