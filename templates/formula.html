@@ -134,6 +134,15 @@
             </div>
         </div>
         
+        <div class="card mb-3">
+            <div class="card-header" style="background: linear-gradient(135deg, #1a1a2e, #16213e); color: white;">
+                <i class="bi bi-bullseye"></i> Olfactive Profile
+            </div>
+            <div class="card-body text-center">
+                <canvas id="formulaWheel" width="280" height="280"></canvas>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card-header">
                 <i class="bi bi-info-circle"></i> شرح التخفيف
@@ -147,6 +156,29 @@
                 </ul>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Formula Notes -->
+<div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-journal-text"></i> ملاحظات التركيبة</span>
+        <button class="btn btn-sm btn-light" onclick="showNoteForm()">
+            <i class="bi bi-plus"></i> إضافة ملاحظة
+        </button>
+    </div>
+    <div class="card-body">
+        <div id="noteForm" style="display:none;" class="mb-3 p-3 border rounded bg-light">
+            <div class="mb-2">
+                <input type="text" id="note_title" class="form-control" placeholder="عنوان الملاحظة">
+            </div>
+            <div class="mb-2">
+                <textarea id="note_content" class="form-control" rows="3" placeholder="محتوى الملاحظة..."></textarea>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="saveNote()"><i class="bi bi-check"></i> حفظ</button>
+            <button class="btn btn-secondary btn-sm" onclick="hideNoteForm()">إلغاء</button>
+        </div>
+        <div id="notesList"></div>
     </div>
 </div>
 
@@ -283,6 +315,46 @@ const formulaId = {{ formula.id }};
 const addModal = new bootstrap.Modal(document.getElementById('addModal'));
 const scaleModal = new bootstrap.Modal(document.getElementById('scaleModal'));
 
+const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
+const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
+const OLF_COLORS = ['#FFD700','#B0C4DE','#2E8B57','#32CD32','#4169E1','#FF69B4','#FF6347','#FF4500','#8B6914','#654321','#DAA520','#9370DB','#6B4226','#800020'];
+let formulaWheelChart = null;
+
+function updateFormulaWheel(profile) {
+    if (formulaWheelChart) formulaWheelChart.destroy();
+    const canvas = document.getElementById('formulaWheel');
+    canvas.width = 280; canvas.height = 280;
+    formulaWheelChart = new Chart(canvas.getContext('2d'), {
+        type: 'radar',
+        data: {
+            labels: OLF_LABELS,
+            datasets: [{
+                data: OLF_CATS.map(c => profile[c] || 0),
+                backgroundColor: 'rgba(111, 66, 193, 0.2)',
+                borderColor: '#6f42c1',
+                borderWidth: 2,
+                pointBackgroundColor: OLF_COLORS,
+                pointBorderColor: '#fff',
+                pointRadius: 4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                r: {
+                    min: 0, max: 10,
+                    ticks: { stepSize: 2, backdropColor: 'transparent', font: { size: 9 } },
+                    grid: { color: 'rgba(0,0,0,0.1)' },
+                    angleLines: { color: 'rgba(0,0,0,0.08)' },
+                    pointLabels: { font: { size: 9, weight: '600' }, color: OLF_COLORS }
+                }
+            }
+        }
+    });
+}
+
 function loadIngredients() {
     fetch(`/api/formula/${formulaId}/ingredients`)
         .then(r => r.json())
@@ -304,6 +376,9 @@ function loadIngredients() {
                 }
                 if (data.ifra_final_limit !== undefined) {
                     document.getElementById('calc_ifra_final').textContent = data.ifra_final_limit.toFixed(4);
+                }
+                if (data.olfactive_profile) {
+                    updateFormulaWheel(data.olfactive_profile);
                 }
             }
         });
@@ -623,6 +698,71 @@ function calculateScale() {
     calculateScaleMulti();
 }
 
+function loadNotes() {
+    fetch(`/api/formula/${formulaId}/notes`)
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) renderNotes(data.data);
+    });
+}
+
+function renderNotes(notes) {
+    const container = document.getElementById('notesList');
+    if (!notes.length) {
+        container.innerHTML = '<p class="text-muted text-center">لا توجد ملاحظات</p>';
+        return;
+    }
+    container.innerHTML = notes.map(n => `
+        <div class="card mb-2" style="border-right: 4px solid var(--primary);">
+            <div class="card-body py-2 px-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <h6 class="mb-1 fw-bold">${n.title}</h6>
+                    <div>
+                        <small class="text-muted me-2">${new Date(n.created_at).toLocaleDateString('ar-SA')}</small>
+                        <button class="btn btn-sm btn-outline-danger p-0 px-1" onclick="deleteNote(${n.id})"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+                <p class="mb-0 text-muted" style="white-space: pre-wrap;">${n.content}</p>
+            </div>
+        </div>
+    `).join('');
+}
+
+function showNoteForm() { document.getElementById('noteForm').style.display = ''; }
+function hideNoteForm() { document.getElementById('noteForm').style.display = 'none'; }
+
+function saveNote() {
+    const title = document.getElementById('note_title').value.trim();
+    const content = document.getElementById('note_content').value.trim();
+    if (!title) { showAlert('أدخل العنوان', 'warning'); return; }
+    const fd = new FormData();
+    fd.append('action', 'add');
+    fd.append('title', title);
+    fd.append('content', content);
+    fetch(`/api/formula/${formulaId}/notes`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('note_title').value = '';
+            document.getElementById('note_content').value = '';
+            hideNoteForm();
+            loadNotes();
+            showAlert(data.message);
+        }
+    });
+}
+
+function deleteNote(id) {
+    if (!confirm('حذف هذه الملاحظة؟')) return;
+    const fd = new FormData();
+    fd.append('action', 'delete');
+    fd.append('id', id);
+    fetch(`/api/formula/${formulaId}/notes`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => { if (data.success) loadNotes(); });
+}
+
 loadIngredients();
+loadNotes();
 </script>
 {% endblock %}

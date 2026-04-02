@@ -300,6 +300,70 @@
                                 <label class="form-label">وصف الرائحة</label>
                                 <textarea name="odor_description" id="mat_odor" class="form-control" rows="2"></textarea>
                             </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Synonyms (أسماء بديلة)</label>
+                                        <input type="text" name="synonyms" id="mat_synonyms" class="form-control" placeholder="Alternative names">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Lot (رقم الدفعة)</label>
+                                        <input type="text" name="lot" id="mat_lot" class="form-control" placeholder="Lot/Batch number">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Strength Odor</label>
+                                        <select name="strength_odor" id="mat_strength_odor" class="form-select">
+                                            <option value="">-- اختر --</option>
+                                            <option value="High">High</option>
+                                            <option value="Medium">Medium</option>
+                                            <option value="Low">Low</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Vapor Pressure</label>
+                                        <input type="text" name="vapor_pressure" id="mat_vapor_pressure" class="form-control" placeholder="Vapor pressure">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Effect</label>
+                                        <select name="effect" id="mat_effect" class="form-select">
+                                            <option value="">-- اختر --</option>
+                                            <option value="High">High</option>
+                                            <option value="Medium">Medium</option>
+                                            <option value="Low">Low</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">درجة الشم الموصى بها (%)</label>
+                                        <input type="number" name="recommended_smell_pct" id="mat_recommended_smell_pct" class="form-control" step="0.01" min="0">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <div class="mb-3">
+                                        <label class="form-label">خصائص (Properties)</label>
+                                        <textarea name="properties" id="mat_properties" class="form-control" rows="2"></textarea>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">In Stock (المخزون)</label>
+                                        <input type="number" name="in_stock" id="mat_in_stock" class="form-control" step="0.01" min="0">
+                                    </div>
+                                </div>
+                            </div>
                             <div class="mb-3">
                                 <label class="form-label">ملاحظات</label>
                                 <textarea name="notes" id="mat_notes" class="form-control" rows="2"></textarea>
@@ -685,6 +749,7 @@ function renderCards() {
             </div>
             <div class="mat-card-footer">
                 <small>${m.family_icon||''} ${m.family_name||''}</small>
+                ${m.in_stock > 0 ? `<small class="text-success fw-bold"><i class="bi bi-box-seam"></i> ${m.in_stock}</small>` : ''}
                 <div>
                     <button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation();editMaterial(${m.id})"><i class="bi bi-pencil"></i></button>
                     <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation();deleteMaterial(${m.id},'${m.name.replace(/'/g,"\\'")}')"><i class="bi bi-trash"></i></button>
@@ -863,6 +928,15 @@ function editMaterial(id) {
                 document.getElementById('mat_refractive').value = m.refractive_index || '';
                 document.getElementById('mat_vapor').value = m.vapor_density || '';
                 document.getElementById('mat_solubility').value = m.solubility || '';
+                // New fields
+                document.getElementById('mat_synonyms').value = m.synonyms || '';
+                document.getElementById('mat_lot').value = m.lot || '';
+                document.getElementById('mat_strength_odor').value = m.strength_odor || '';
+                document.getElementById('mat_vapor_pressure').value = m.vapor_pressure || '';
+                document.getElementById('mat_effect').value = m.effect || '';
+                document.getElementById('mat_recommended_smell_pct').value = m.recommended_smell_pct || '';
+                document.getElementById('mat_properties').value = m.properties || '';
+                document.getElementById('mat_in_stock').value = m.in_stock || '';
                 // MSDS
                 if (m.msds) {
                     document.getElementById('mat_signal_word').value = m.msds.signal_word || '';

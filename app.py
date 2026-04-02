@@ -427,6 +427,14 @@ def get_db():
         leathery INTEGER DEFAULT 0, animal INTEGER DEFAULT 0,
         FOREIGN KEY (material_id) REFERENCES materials(id)
     )''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS formula_notes (
+        id INTEGER PRIMARY KEY,
+        formula_id INTEGER,
+        title TEXT,
+        content TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
+    )''')
     return conn
 
 def init_db():
@@ -458,7 +466,9 @@ def init_db():
         price_per_gram REAL DEFAULT 0, odor_description TEXT, notes TEXT,
         flash_point TEXT, specific_gravity TEXT, refractive_index TEXT,
         color TEXT, physical_state TEXT, ph TEXT, melting_point TEXT,
-        boiling_point TEXT, solubility TEXT, vapor_density TEXT, appearance TEXT
+        boiling_point TEXT, solubility TEXT, vapor_density TEXT, appearance TEXT,
+        synonyms TEXT, lot TEXT, strength_odor TEXT, vapor_pressure TEXT,
+        effect TEXT, recommended_smell_pct TEXT, properties TEXT, in_stock REAL DEFAULT 0
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS material_msds (
@@ -492,12 +502,21 @@ def init_db():
         FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
     )''')
     
+    c.execute('''CREATE TABLE IF NOT EXISTS formula_notes (
+        id INTEGER PRIMARY KEY,
+        formula_id INTEGER,
+        title TEXT,
+        content TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
+    )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS production_orders (
         id INTEGER PRIMARY KEY, order_number TEXT, formula_id INTEGER, target_quantity REAL,
         scale_factor REAL DEFAULT 1, customer_name TEXT, batch_number TEXT,
         status TEXT DEFAULT 'pending', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
-    
+
     # بيانات افتراضية
     c.execute("INSERT OR IGNORE INTO users (username, password, name, role) VALUES ('admin', 'admin123', 'المدير', 'admin')")
     c.execute("INSERT OR IGNORE INTO company_info (id, name, address, phone, email) VALUES (1, 'Perfume Vault', 'Kuwait', '+965 xxxx xxxx', 'info@perfumevault.com')")
@@ -531,6 +550,14 @@ def init_db():
         ('materials', 'solubility', 'TEXT'),
         ('materials', 'vapor_density', 'TEXT'),
         ('materials', 'appearance', 'TEXT'),
+        ('materials', 'synonyms', 'TEXT'),
+        ('materials', 'lot', 'TEXT'),
+        ('materials', 'strength_odor', 'TEXT'),
+        ('materials', 'vapor_pressure', 'TEXT'),
+        ('materials', 'effect', 'TEXT'),
+        ('materials', 'recommended_smell_pct', 'TEXT'),
+        ('materials', 'properties', 'TEXT'),
+        ('materials', 'in_stock', 'REAL DEFAULT 0'),
         ('material_msds', 'ghs_classification', 'TEXT'),
         ('families', 'icon', 'TEXT'),
         ('formula_ingredients', 'diluent', 'TEXT'),
@@ -742,8 +769,10 @@ def api_materials():
                     conn.execute('''UPDATE materials SET name=?, name_ar=?, cas_number=?, family_id=?,
                         profile=?, supplier_id=?, ifra_limit=?, purchase_price=?, purchase_quantity=?,
                         price_per_gram=?, odor_description=?, notes=?, flash_point=?, specific_gravity=?,
-                        color=?, physical_state=?, ph=?, melting_point=?, boiling_point=?, 
-                        solubility=?, vapor_density=?, appearance=?, refractive_index=? WHERE id=?''',
+                        color=?, physical_state=?, ph=?, melting_point=?, boiling_point=?,
+                        solubility=?, vapor_density=?, appearance=?, refractive_index=?,
+                        synonyms=?, lot=?, strength_odor=?, vapor_pressure=?,
+                        effect=?, recommended_smell_pct=?, properties=?, in_stock=? WHERE id=?''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
@@ -753,15 +782,21 @@ def api_materials():
                          request.form.get('ph'), request.form.get('melting_point'),
                          request.form.get('boiling_point'), request.form.get('solubility'),
                          request.form.get('vapor_density'), request.form.get('appearance'),
-                         request.form.get('refractive_index'), id))
+                         request.form.get('refractive_index'),
+                         request.form.get('synonyms'), request.form.get('lot'),
+                         request.form.get('strength_odor'), request.form.get('vapor_pressure'),
+                         request.form.get('effect'), request.form.get('recommended_smell_pct'),
+                         request.form.get('properties'),
+                         float(request.form.get('in_stock') or 0), id))
                     mat_id = id
                     msg = 'تم التحديث'
                 else:
                     cur = conn.execute('''INSERT INTO materials (name, name_ar, cas_number, family_id, profile,
                         supplier_id, ifra_limit, purchase_price, purchase_quantity, price_per_gram,
                         odor_description, notes, flash_point, specific_gravity, color, physical_state,
-                        ph, melting_point, boiling_point, solubility, vapor_density, appearance, refractive_index) 
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        ph, melting_point, boiling_point, solubility, vapor_density, appearance, refractive_index,
+                        synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
@@ -771,7 +806,12 @@ def api_materials():
                          request.form.get('ph'), request.form.get('melting_point'),
                          request.form.get('boiling_point'), request.form.get('solubility'),
                          request.form.get('vapor_density'), request.form.get('appearance'),
-                         request.form.get('refractive_index')))
+                         request.form.get('refractive_index'),
+                         request.form.get('synonyms'), request.form.get('lot'),
+                         request.form.get('strength_odor'), request.form.get('vapor_pressure'),
+                         request.form.get('effect'), request.form.get('recommended_smell_pct'),
+                         request.form.get('properties'),
+                         float(request.form.get('in_stock') or 0)))
                     mat_id = cur.lastrowid
                     msg = f'تم الإضافة (ID: {mat_id})'
                 
@@ -990,17 +1030,32 @@ def api_formula_ingredients(fid):
                 'cost': i['weight'] * (i['price_per_gram'] or 0)
             })
         
+        # Calculate combined olfactive profile
+        olf_cats = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal']
+        formula_olfactive = {c: 0 for c in olf_cats}
+        for t in temp_results:
+            mat_id = t['data']['material_id']
+            olf = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (mat_id,)).fetchone()
+            if olf:
+                pct = t['pure_pct']  # J (0-1)
+                for c in olf_cats:
+                    formula_olfactive[c] += (olf[c] or 0) * pct
+        # Round values
+        for c in olf_cats:
+            formula_olfactive[c] = round(formula_olfactive[c], 1)
+
         conn.close()
         return jsonify({
-            'success': True, 
-            'data': result, 
-            'total_weight': total_weight, 
+            'success': True,
+            'data': result,
+            'total_weight': total_weight,
             'total_pure': total_pure,
             'active_ratio': active_ratio,  # J2 محسوب
             'ifra_design_limit': ifra_design_limit,  # N3 محسوب
-            'ifra_final_limit': ifra_final_limit  # E3 محسوب
+            'ifra_final_limit': ifra_final_limit,  # E3 محسوب
+            'olfactive_profile': formula_olfactive
         })
-    
+
     elif request.method == 'POST':
         action = request.form.get('action')
         
@@ -1066,6 +1121,35 @@ def api_formula_ingredients(fid):
             conn.close()
             return jsonify({'success': True, 'data': result, 'factor': factor, 'total_cost': cost})
     
+    conn.close()
+    return jsonify({'success': False})
+
+# ===== API ملاحظات التركيبة =====
+@app.route('/api/formula/<int:fid>/notes', methods=['GET', 'POST'])
+@login_required
+def api_formula_notes(fid):
+    conn = get_db()
+    if request.method == 'GET':
+        notes = conn.execute("SELECT * FROM formula_notes WHERE formula_id=? ORDER BY created_at DESC", (fid,)).fetchall()
+        conn.close()
+        return jsonify({'success': True, 'data': [dict(n) for n in notes]})
+    elif request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'add':
+            title = request.form.get('title', '').strip()
+            content = request.form.get('content', '').strip()
+            if not title:
+                conn.close()
+                return jsonify({'success': False, 'message': 'العنوان مطلوب'})
+            conn.execute("INSERT INTO formula_notes (formula_id, title, content) VALUES (?,?,?)", (fid, title, content))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'تم إضافة الملاحظة'})
+        elif action == 'delete':
+            conn.execute("DELETE FROM formula_notes WHERE id=? AND formula_id=?", (request.form.get('id'), fid))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'تم الحذف'})
     conn.close()
     return jsonify({'success': False})
 
@@ -1542,6 +1626,14 @@ IMPORT_FIELDS = [
     {'key': 'color', 'label': 'اللون', 'required': False},
     {'key': 'appearance', 'label': 'المظهر', 'required': False},
     {'key': 'physical_state', 'label': 'الحالة الفيزيائية', 'required': False},
+    {'key': 'synonyms', 'label': 'Synonyms', 'required': False},
+    {'key': 'lot', 'label': 'Lot', 'required': False},
+    {'key': 'strength_odor', 'label': 'Strength Odor (High/Mid/Low)', 'required': False},
+    {'key': 'vapor_pressure', 'label': 'Vapor Pressure', 'required': False},
+    {'key': 'effect', 'label': 'Effect (High/Mid/Low)', 'required': False},
+    {'key': 'recommended_smell_pct', 'label': 'درجة الشم الموصى بها (%)', 'required': False},
+    {'key': 'properties', 'label': 'خصائص', 'required': False},
+    {'key': 'in_stock', 'label': 'In Stock', 'required': False},
 ]
 
 @app.route('/import')
@@ -1849,29 +1941,48 @@ def api_import_execute():
             except: pass
 
             if exist_id and update_existing:
+                in_stock_val = 0
+                try:
+                    in_stock_val = float(item.get('in_stock', 0) or 0)
+                except: pass
                 conn.execute('''UPDATE materials SET name=?, name_ar=?, cas_number=?, family_id=?,
                     profile=?, supplier_id=?, ifra_limit=?, purchase_price=?, purchase_quantity=?,
                     price_per_gram=?, odor_description=?, notes=?, flash_point=?, specific_gravity=?,
-                    color=?, appearance=?, physical_state=? WHERE id=?''',
+                    color=?, appearance=?, physical_state=?,
+                    synonyms=?, lot=?, strength_odor=?, vapor_pressure=?,
+                    effect=?, recommended_smell_pct=?, properties=?, in_stock=? WHERE id=?''',
                     (name, item.get('name_ar', ''), cas, family_id,
                      profile, supplier_id, ifra, price, qty, ppg,
                      item.get('odor_description', ''), item.get('notes', ''),
                      item.get('flash_point', ''), item.get('specific_gravity', ''),
                      item.get('color', ''), item.get('appearance', ''),
-                     item.get('physical_state', ''), exist_id))
+                     item.get('physical_state', ''),
+                     item.get('synonyms', ''), item.get('lot', ''),
+                     item.get('strength_odor', ''), item.get('vapor_pressure', ''),
+                     item.get('effect', ''), item.get('recommended_smell_pct', ''),
+                     item.get('properties', ''), in_stock_val, exist_id))
                 mat_id = exist_id
                 updated += 1
             else:
+                in_stock_val = 0
+                try:
+                    in_stock_val = float(item.get('in_stock', 0) or 0)
+                except: pass
                 cur = conn.execute('''INSERT INTO materials (name, name_ar, cas_number, family_id, profile,
                     supplier_id, ifra_limit, purchase_price, purchase_quantity, price_per_gram,
-                    odor_description, notes, flash_point, specific_gravity, color, appearance, physical_state)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    odor_description, notes, flash_point, specific_gravity, color, appearance, physical_state,
+                    synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                     (name, item.get('name_ar', ''), cas, family_id,
                      profile, supplier_id, ifra, price, qty, ppg,
                      item.get('odor_description', ''), item.get('notes', ''),
                      item.get('flash_point', ''), item.get('specific_gravity', ''),
                      item.get('color', ''), item.get('appearance', ''),
-                     item.get('physical_state', '')))
+                     item.get('physical_state', ''),
+                     item.get('synonyms', ''), item.get('lot', ''),
+                     item.get('strength_odor', ''), item.get('vapor_pressure', ''),
+                     item.get('effect', ''), item.get('recommended_smell_pct', ''),
+                     item.get('properties', ''), in_stock_val))
                 mat_id = cur.lastrowid
                 existing[name.lower()] = mat_id
                 if cas:
