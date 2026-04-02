@@ -448,24 +448,29 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
         
         // عرض M (تجاوز التصميم)
         let mDisplay = '-';
-        if (i.ifra_limit) {
-            mDisplay = i.ifra_design_exceeded ? 
-                '<span class="text-danger fw-bold">⚠️</span>' : 
+        const hasIfraLimit = (i.ifra_cat_limit && i.ifra_cat_limit > 0) || (i.ifra_limit && i.ifra_limit > 0);
+        if (hasIfraLimit) {
+            mDisplay = i.ifra_design_exceeded ?
+                '<span class="text-danger fw-bold">⚠️</span>' :
                 '<span class="text-success">✓</span>';
+        } else if (i.ifra_cat_limit === 0 && i.ifra_std_name) {
+            mDisplay = '<span class="text-danger fw-bold">⛔</span>';
         }
-        
+
         // عرض L (حساب النهائي)
         let lDisplay = '-';
         if (i.ifra_final_calc !== null && i.ifra_final_calc !== undefined) {
             lDisplay = i.ifra_final_calc.toFixed(3);
         }
-        
+
         // عرض K (تجاوز النهائي)
         let kDisplay = '-';
-        if (i.ifra_limit) {
-            kDisplay = i.ifra_final_exceeded ? 
-                '<span class="text-danger fw-bold">⚠️</span>' : 
+        if (hasIfraLimit) {
+            kDisplay = i.ifra_final_exceeded ?
+                '<span class="text-danger fw-bold">⚠️</span>' :
                 '<span class="text-success">✓</span>';
+        } else if (i.ifra_cat_limit === 0 && i.ifra_std_name) {
+            kDisplay = '<span class="text-danger fw-bold">⛔</span>';
         }
         
         return `
@@ -486,7 +491,7 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
                     value="${i.dilution || 1}" step="0.001" min="0" max="1"
                     onchange="updateIngredientFull(${i.id}, ${i.weight}, this.value, '${i.diluent || ''}', '${escapedDiluentOther}')">
             </td>
-            <td class="text-center">${i.ifra_limit || '-'}</td>
+            <td class="text-center">${i.ifra_cat_limit === -1 ? '<span class="text-success" title="No Restriction">NR</span>' : i.ifra_cat_limit > 0 ? i.ifra_cat_limit + '%' : (i.ifra_cat_limit === 0 && i.ifra_std_name ? '<span class="text-danger">⛔</span>' : (i.ifra_limit || '-'))}</td>
             <td>
                 <input type="number" class="form-control form-control-sm text-center" style="width: 65px;" 
                     value="${i.weight}" step="0.0001" min="0"

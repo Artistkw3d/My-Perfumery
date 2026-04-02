@@ -471,6 +471,33 @@ def init_db():
         effect TEXT, recommended_smell_pct TEXT, properties TEXT, in_stock REAL DEFAULT 0
     )''')
     
+    c.execute('''CREATE TABLE IF NOT EXISTS ifra_standards (
+        id INTEGER PRIMARY KEY,
+        ifra_key TEXT UNIQUE,
+        name TEXT,
+        cas_numbers TEXT,
+        synonyms TEXT,
+        standard_type TEXT,
+        amendment INTEGER,
+        year_published TEXT,
+        risk_property TEXT,
+        restriction_notes TEXT,
+        specification_notes TEXT,
+        contributions TEXT,
+        cat1 REAL, cat2 REAL, cat3 REAL, cat4 REAL,
+        cat5a REAL, cat5b REAL, cat5c REAL, cat5d REAL,
+        cat6 REAL, cat7a REAL, cat7b REAL, cat8 REAL,
+        cat9 REAL, cat10a REAL, cat10b REAL,
+        cat11a REAL, cat11b REAL, cat12 REAL
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS ifra_cas_lookup (
+        id INTEGER PRIMARY KEY,
+        cas_number TEXT,
+        ifra_standard_id INTEGER,
+        FOREIGN KEY (ifra_standard_id) REFERENCES ifra_standards(id)
+    )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS material_msds (
         id INTEGER PRIMARY KEY, material_id INTEGER UNIQUE,
         h_codes TEXT, p_codes TEXT, pictograms TEXT, signal_word TEXT, ghs_classification TEXT,
@@ -575,6 +602,172 @@ def init_db():
     conn.commit()
     conn.close()
     log("[DB] Database initialized!")
+
+def import_ifra_standards():
+    """Import IFRA standards from the downloaded XLSX file"""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    xlsx_path = os.path.join(os.path.dirname(__file__), 'data', 'ifra_standards.xlsx')
+    if not os.path.exists(xlsx_path):
+        log("[IFRA] Standards file not found, skipping import")
+        return
+
+    conn = get_db()
+    # Check if already imported
+    count = conn.execute("SELECT COUNT(*) FROM ifra_standards").fetchone()[0]
+    if count > 0:
+        conn.close()
+        return
+
+    log("[IFRA] Importing IFRA 51st Amendment standards...")
+
+    try:
+        zf = zipfile.ZipFile(xlsx_path)
+        ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+
+        # Read shared strings
+        shared = []
+        try:
+            ss_tree = ET.parse(zf.open('xl/sharedStrings.xml'))
+            for si in ss_tree.findall('.//s:si', ns):
+                parts = []
+                for t in si.iter('{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t'):
+                    if t.text:
+                        parts.append(t.text)
+                shared.append(''.join(parts))
+        except:
+            pass
+
+        # Read sheet1
+        sheet_tree = ET.parse(zf.open('xl/worksheets/sheet1.xml'))
+        rows = sheet_tree.findall('.//s:sheetData/s:row', ns)
+
+        def cell_ref_to_col(ref):
+            col = ''
+            for ch in ref:
+                if ch.isalpha():
+                    col += ch
+                else:
+                    break
+            result = 0
+            for ch in col:
+                result = result * 26 + (ord(ch) - ord('A'))
+            return result
+
+        def get_cell_value(cell):
+            t = cell.get('t', '')
+            v_el = cell.find('s:v', ns)
+            if v_el is None or v_el.text is None:
+                return ''
+            if t == 's':
+                idx = int(v_el.text)
+                return shared[idx] if idx < len(shared) else ''
+            return v_el.text
+
+        # Category column indices (T=19 through AK=36)
+        cat_cols = {
+            19: 'cat1', 20: 'cat2', 21: 'cat3', 22: 'cat4',
+            23: 'cat5a', 24: 'cat5b', 25: 'cat5c', 26: 'cat5d',
+            27: 'cat6', 28: 'cat7a', 29: 'cat7b', 30: 'cat8',
+            31: 'cat9', 32: 'cat10a', 33: 'cat10b',
+            34: 'cat11a', 35: 'cat11b', 36: 'cat12'
+        }
+
+        def parse_cat_value(val):
+            """Parse category limit value to float or None"""
+            if not val:
+                return None
+            val = val.strip()
+            if not val or val.lower() in ('', 'none'):
+                return None
+            if 'no restriction' in val.lower():
+                return -1  # -1 = no restriction
+            if 'prohibited' in val.lower():
+                return 0
+            if 'see notebox' in val.lower():
+                return None
+            # Handle comma decimals (European format)
+            val = val.replace(',', '.').strip("'").strip()
+            # Extract first number
+            m = re.match(r'(-?[\d.]+)', val)
+            if m:
+                try:
+                    return float(m.group(1))
+                except:
+                    return None
+            return None
+
+        imported = 0
+        for row_el in rows:
+            row_num = int(row_el.get('r', '0'))
+            if row_num < 4:  # Skip header rows
+                continue
+
+            cells = {}
+            for cell in row_el.findall('s:c', ns):
+                ref = cell.get('r', '')
+                col_idx = cell_ref_to_col(ref)
+                cells[col_idx] = get_cell_value(cell)
+
+            ifra_key = cells.get(0, '').strip()
+            if not ifra_key or not ifra_key.startswith('IFRA_STD'):
+                continue
+
+            name = cells.get(6, '').strip()
+            cas_raw = cells.get(7, '').strip()
+            amendment = cells.get(1, '')
+            year_pub = cells.get(3, '')
+            std_type = cells.get(10, '').strip()
+            risk_prop = cells.get(11, '').strip()
+            synonyms = cells.get(9, '').strip()
+            restriction_notes = cells.get(15, '').strip()
+            spec_notes = cells.get(16, '').strip()
+            contributions = cells.get(17, '').strip()
+
+            try:
+                amendment = int(float(amendment)) if amendment else 0
+            except:
+                amendment = 0
+
+            # Parse category limits
+            cat_values = {}
+            for col_idx, cat_name in cat_cols.items():
+                cat_values[cat_name] = parse_cat_value(cells.get(col_idx, ''))
+
+            conn.execute('''INSERT OR REPLACE INTO ifra_standards
+                (ifra_key, name, cas_numbers, synonyms, standard_type, amendment, year_published,
+                 risk_property, restriction_notes, specification_notes, contributions,
+                 cat1, cat2, cat3, cat4, cat5a, cat5b, cat5c, cat5d,
+                 cat6, cat7a, cat7b, cat8, cat9, cat10a, cat10b, cat11a, cat11b, cat12)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (ifra_key, name, cas_raw, synonyms, std_type, amendment, year_pub,
+                 risk_prop, restriction_notes, spec_notes, contributions,
+                 cat_values.get('cat1'), cat_values.get('cat2'), cat_values.get('cat3'), cat_values.get('cat4'),
+                 cat_values.get('cat5a'), cat_values.get('cat5b'), cat_values.get('cat5c'), cat_values.get('cat5d'),
+                 cat_values.get('cat6'), cat_values.get('cat7a'), cat_values.get('cat7b'), cat_values.get('cat8'),
+                 cat_values.get('cat9'), cat_values.get('cat10a'), cat_values.get('cat10b'),
+                 cat_values.get('cat11a'), cat_values.get('cat11b'), cat_values.get('cat12')))
+
+            std_id = conn.execute("SELECT id FROM ifra_standards WHERE ifra_key=?", (ifra_key,)).fetchone()['id']
+
+            # Insert CAS lookup entries
+            cas_list = re.split(r'[\n\r\s]+', cas_raw)
+            for cas in cas_list:
+                cas = cas.strip()
+                if cas and re.match(r'\d+-\d+-\d+', cas):
+                    conn.execute("INSERT OR IGNORE INTO ifra_cas_lookup (cas_number, ifra_standard_id) VALUES (?,?)",
+                                 (cas, std_id))
+
+            imported += 1
+
+        conn.commit()
+        zf.close()
+        log(f"[IFRA] Imported {imported} IFRA standards")
+    except Exception as e:
+        log(f"[IFRA] Error importing: {e}")
+    finally:
+        conn.close()
 
 def get_concentration(dilution):
     """
@@ -1218,6 +1411,152 @@ def msds_lookup():
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
+# ===== IFRA Standards API =====
+IFRA_CATEGORIES = [
+    ('cat1', 'Cat 1 - Lip Products'),
+    ('cat2', 'Cat 2 - Deodorants'),
+    ('cat3', 'Cat 3 - Fine Fragrance'),
+    ('cat4', 'Cat 4 - Body Creams'),
+    ('cat5a', 'Cat 5A - Face Cream'),
+    ('cat5b', 'Cat 5B - Face Masks'),
+    ('cat5c', 'Cat 5C - Hand Cream'),
+    ('cat5d', 'Cat 5D - Baby Products'),
+    ('cat6', 'Cat 6 - Mouthwash'),
+    ('cat7a', 'Cat 7A - Hair Rinse-off'),
+    ('cat7b', 'Cat 7B - Hair Leave-on'),
+    ('cat8', 'Cat 8 - Intimate Wipes'),
+    ('cat9', 'Cat 9 - Soap/Shower'),
+    ('cat10a', 'Cat 10A - Household Cleaning'),
+    ('cat10b', 'Cat 10B - Household Aerosol'),
+    ('cat11a', 'Cat 11A - Diapers'),
+    ('cat11b', 'Cat 11B - Candles/Air Fresh'),
+    ('cat12', 'Cat 12 - Other/Industrial'),
+]
+
+@app.route('/api/ifra/lookup', methods=['GET'])
+@login_required
+def api_ifra_lookup():
+    """Get IFRA standard for a material by CAS number"""
+    cas = request.args.get('cas', '').strip()
+    if not cas:
+        return jsonify({'success': False, 'message': 'CAS required'})
+
+    conn = get_db()
+    row = conn.execute('''
+        SELECT s.* FROM ifra_standards s
+        JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+        WHERE l.cas_number = ?
+    ''', (cas,)).fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'success': False, 'message': f'No IFRA standard found for CAS {cas}'})
+
+    data = dict(row)
+    return jsonify({'success': True, 'data': data})
+
+@app.route('/api/ifra/categories')
+@login_required
+def api_ifra_categories():
+    """Get list of IFRA categories"""
+    return jsonify({'success': True, 'categories': IFRA_CATEGORIES})
+
+@app.route('/api/ifra/formula-check/<int:fid>', methods=['GET'])
+@login_required
+def api_ifra_formula_check(fid):
+    """Check IFRA compliance for a formula - sums grouped materials"""
+    conn = get_db()
+
+    formula = conn.execute("SELECT * FROM formulas WHERE id=?", (fid,)).fetchone()
+    if not formula:
+        conn.close()
+        return jsonify({'success': False, 'message': 'Formula not found'})
+
+    cat_key = formula['ifra_category'] or 'cat4'
+
+    # Get all ingredients with their materials
+    ingredients = conn.execute('''
+        SELECT fi.*, m.name, m.cas_number, m.ifra_limit
+        FROM formula_ingredients fi
+        JOIN materials m ON fi.material_id = m.id
+        WHERE fi.formula_id = ?
+    ''', (fid,)).fetchall()
+
+    total_weight = sum(i['weight'] for i in ingredients)
+    if total_weight == 0:
+        conn.close()
+        return jsonify({'success': True, 'results': [], 'total_weight': 0})
+
+    # For each ingredient, find IFRA limit for the selected category
+    results = []
+    warnings = []
+
+    for i in ingredients:
+        cas = i['cas_number'] or ''
+        conc = get_concentration(i['dilution'])
+        pure_weight = i['weight'] * conc
+        weight_pct = (i['weight'] / total_weight * 100) if total_weight > 0 else 0
+        pure_pct = (pure_weight / sum(ing['weight'] * get_concentration(ing['dilution']) for ing in ingredients) * 100) if total_weight > 0 else 0
+
+        # Get IFRA limit for this category
+        ifra_data = None
+        ifra_limit = None
+        if cas:
+            row = conn.execute('''
+                SELECT s.* FROM ifra_standards s
+                JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+                WHERE l.cas_number = ?
+            ''', (cas,)).fetchone()
+            if row:
+                ifra_data = dict(row)
+                cat_val = row[cat_key]
+                if cat_val is not None:
+                    if cat_val == -1:
+                        ifra_limit = None  # No restriction
+                    elif cat_val == 0:
+                        ifra_limit = 0  # Prohibited
+                    else:
+                        ifra_limit = cat_val
+
+        # Fallback to manual ifra_limit if no IFRA standard found
+        if ifra_limit is None and ifra_data is None and i['ifra_limit']:
+            ifra_limit = i['ifra_limit']
+
+        exceeded = False
+        if ifra_limit is not None and ifra_limit >= 0:
+            if ifra_limit == 0:
+                exceeded = True  # Prohibited
+            elif weight_pct > ifra_limit:
+                exceeded = True
+
+        result_item = {
+            'material_name': i['name'],
+            'cas_number': cas,
+            'weight_pct': round(weight_pct, 4),
+            'pure_pct': round(pure_pct, 4),
+            'ifra_limit': ifra_limit,
+            'ifra_type': ifra_data['standard_type'] if ifra_data else None,
+            'ifra_key': ifra_data['ifra_key'] if ifra_data else None,
+            'exceeded': exceeded,
+            'no_restriction': (ifra_data and ifra_data.get(cat_key) == -1) if ifra_data else False,
+        }
+        results.append(result_item)
+
+        if exceeded:
+            if ifra_limit == 0:
+                warnings.append(f"⛔ {i['name']}: PROHIBITED in {cat_key}")
+            else:
+                warnings.append(f"⚠️ {i['name']}: {weight_pct:.4f}% exceeds IFRA limit {ifra_limit}%")
+
+    conn.close()
+    return jsonify({
+        'success': True,
+        'category': cat_key,
+        'results': results,
+        'warnings': warnings,
+        'total_weight': total_weight
+    })
+
 # ===== API المواد =====
 @app.route('/api/materials', methods=['GET', 'POST'])
 @login_required
@@ -1257,6 +1596,15 @@ def api_materials():
                     result['olfactive'] = {cat: dict(olfactive).get(cat, 0) or 0 for cat in OLFACTIVE_CATEGORIES}
                 else:
                     result['olfactive'] = {cat: 0 for cat in OLFACTIVE_CATEGORIES}
+                # IFRA standard data
+                if result.get('cas_number'):
+                    ifra_row = conn.execute('''
+                        SELECT s.* FROM ifra_standards s
+                        JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+                        WHERE l.cas_number = ?
+                    ''', (result['cas_number'],)).fetchone()
+                    if ifra_row:
+                        result['ifra_standard'] = dict(ifra_row)
             conn.close()
             return jsonify({'success': True, 'data': result})
     
@@ -1481,13 +1829,17 @@ def api_formula_ingredients(fid):
     conn = get_db()
     
     if request.method == 'GET':
+        # Get formula's IFRA category
+        formula = conn.execute("SELECT ifra_category FROM formulas WHERE id=?", (fid,)).fetchone()
+        cat_key = formula['ifra_category'] or 'cat4' if formula else 'cat4'
+
         data = conn.execute('''
             SELECT fi.*, m.name, m.name_ar, m.cas_number, m.ifra_limit, m.price_per_gram, m.profile
             FROM formula_ingredients fi
             JOIN materials m ON fi.material_id = m.id
             WHERE fi.formula_id = ?
         ''', (fid,)).fetchall()
-        
+
         # الحسابات مطابقة للإكسل:
         # G = وزن الزيت (weight)
         # E = التخفيف (dilution) - 1=صافي، 0.1=10%
@@ -1496,42 +1848,72 @@ def api_formula_ingredients(fid):
         # J = نسبة الصافي = I / ΣI
         # N = F / H (حساب IFRA للتصميم)
         # L = F / J (حساب IFRA النهائي)
-        
+
         total_weight = sum(i['weight'] for i in data)  # ΣG
         total_pure = sum(i['weight'] * get_concentration(i['dilution']) for i in data)  # ΣI
-        
+
         # J2 = نسبة المادة الفعالة = ΣI / ΣG × 100
         active_ratio = (total_pure / total_weight * 100) if total_weight > 0 else 0
-        
+
         # حساب N و L لكل مادة أولاً
         temp_results = []
         n_values = []  # قيم N للمواد التي لها IFRA
         l_values = []  # قيم L للمواد التي لها IFRA
-        
+
         for i in data:
             conc = get_concentration(i['dilution'])  # E
             pure_weight = i['weight'] * conc  # I = G × E
             weight_pct = (i['weight'] / total_weight) if total_weight > 0 else 0  # H (كنسبة 0-1)
             pure_pct = (pure_weight / total_pure) if total_pure > 0 else 0  # J (كنسبة 0-1)
-            
-            ifra_limit = i['ifra_limit'] or 0  # F
-            
+
+            # F - Look up IFRA limit from ifra_standards table by CAS + category
+            ifra_limit = 0
+            ifra_std_name = None
+            ifra_std_type = None
+            cas = i['cas_number'] or ''
+            if cas:
+                ifra_row = conn.execute('''
+                    SELECT s.* FROM ifra_standards s
+                    JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+                    WHERE l.cas_number = ?
+                ''', (cas,)).fetchone()
+                if ifra_row:
+                    cat_val = ifra_row[cat_key]
+                    ifra_std_name = ifra_row['name']
+                    ifra_std_type = ifra_row['standard_type']
+                    if cat_val is not None:
+                        if cat_val == -1:
+                            ifra_limit = -1  # No restriction
+                        elif cat_val == 0:
+                            ifra_limit = 0  # Prohibited
+                        else:
+                            ifra_limit = cat_val
+            # Fallback to manual ifra_limit if no IFRA standard found
+            if ifra_limit == 0 and ifra_std_name is None and (i['ifra_limit'] or 0) > 0:
+                ifra_limit = i['ifra_limit']
+
+            # For calculations, treat -1 (no restriction) as no limit
+            calc_limit = ifra_limit if ifra_limit > 0 else 0
+
             # N = F / H (للتصميم)
-            ifra_design_calc = (ifra_limit / weight_pct) if (ifra_limit > 0 and weight_pct > 0) else None
+            ifra_design_calc = (calc_limit / weight_pct) if (calc_limit > 0 and weight_pct > 0) else None
             if ifra_design_calc is not None:
                 n_values.append(ifra_design_calc)
-            
+
             # L = F / J (النهائي)
-            ifra_final_calc = (ifra_limit / pure_pct) if (ifra_limit > 0 and pure_pct > 0) else None
+            ifra_final_calc = (calc_limit / pure_pct) if (calc_limit > 0 and pure_pct > 0) else None
             if ifra_final_calc is not None:
                 l_values.append(ifra_final_calc)
-            
+
             temp_results.append({
                 'data': i,
                 'conc': conc,
                 'pure_weight': pure_weight,
                 'weight_pct': weight_pct,
                 'pure_pct': pure_pct,
+                'ifra_limit': ifra_limit,
+                'ifra_std_name': ifra_std_name,
+                'ifra_std_type': ifra_std_type,
                 'ifra_design_calc': ifra_design_calc,
                 'ifra_final_calc': ifra_final_calc
             })
@@ -1559,6 +1941,9 @@ def api_formula_ingredients(fid):
                 'pure_weight': t['pure_weight'],
                 'weight_percentage': t['weight_pct'] * 100,  # H بالنسبة المئوية
                 'percentage': t['pure_pct'] * 100,  # J بالنسبة المئوية
+                'ifra_cat_limit': t['ifra_limit'],  # F from IFRA standards (category-specific)
+                'ifra_std_name': t.get('ifra_std_name'),
+                'ifra_std_type': t.get('ifra_std_type'),
                 'ifra_design_calc': t['ifra_design_calc'],  # N
                 'ifra_design_exceeded': ifra_design_exceeded,  # M
                 'ifra_final_calc': t['ifra_final_calc'],  # L
@@ -1587,6 +1972,7 @@ def api_formula_ingredients(fid):
             'total_weight': total_weight,
             'total_pure': total_pure,
             'active_ratio': active_ratio,  # J2 محسوب
+            'ifra_category': cat_key,
             'ifra_design_limit': ifra_design_limit,  # N3 محسوب
             'ifra_final_limit': ifra_final_limit,  # E3 محسوب
             'olfactive_profile': formula_olfactive
@@ -1705,51 +2091,65 @@ def api_ifra_certificate(fid):
         JOIN materials m ON fi.material_id = m.id
         WHERE fi.formula_id = ?
     ''', (fid,)).fetchall()
-    
+
     total_weight = sum(i['weight'] for i in ingredients)
-    total_pure = sum(i['weight'] * get_concentration(i['dilution']) / 100 for i in ingredients)
-    
+    total_pure = sum(i['weight'] * get_concentration(i['dilution']) for i in ingredients)
+
+    # For each category, check compliance using ifra_standards table
     category_limits = []
+    cat_ids = [c['id'] for c in IFRA_CATEGORIES]
+
     for cat in IFRA_CATEGORIES:
-        if cat['limit'] is None:
-            category_limits.append({
-                'id': cat['id'],
-                'name': cat['name'],
-                'desc': cat['desc'],
-                'limit': 'No Restriction',
-                'compliant': True
-            })
-            continue
-        
+        cat_id = cat['id']
         max_fragrance_pct = None
         restricted_materials = []
-        
+
         for ing in ingredients:
-            if ing['ifra_limit'] and ing['ifra_limit'] > 0:
+            cas = ing['cas_number'] or ''
+            # Look up IFRA limit for this category from ifra_standards
+            ifra_limit_val = None
+            if cas:
+                ifra_row = conn.execute('''
+                    SELECT s.* FROM ifra_standards s
+                    JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+                    WHERE l.cas_number = ?
+                ''', (cas,)).fetchone()
+                if ifra_row:
+                    cv = ifra_row[cat_id]
+                    if cv is not None and cv >= 0:
+                        ifra_limit_val = cv
+                    elif cv == -1:
+                        ifra_limit_val = None  # No restriction for this category
+
+            # Fallback to manual ifra_limit
+            if ifra_limit_val is None and not cas:
+                if ing['ifra_limit'] and ing['ifra_limit'] > 0:
+                    ifra_limit_val = ing['ifra_limit']
+
+            if ifra_limit_val is not None and ifra_limit_val >= 0:
                 conc = get_concentration(ing['dilution'])
-                pure_weight = ing['weight'] * conc / 100
+                pure_weight = ing['weight'] * conc
                 pure_pct_in_formula = (pure_weight / total_pure * 100) if total_pure > 0 else 0
-                
-                if pure_pct_in_formula > 0:
-                    max_frag = (ing['ifra_limit'] / pure_pct_in_formula) * 100
+
+                if ifra_limit_val == 0:
+                    restricted_materials.append(f"{ing['name']} (PROHIBITED)")
+                elif pure_pct_in_formula > 0:
+                    # max fragrance % in final product = ifra_limit / pure_pct_in_formula * 100
+                    max_frag = (ifra_limit_val / pure_pct_in_formula) * 100
                     if max_fragrance_pct is None or max_frag < max_fragrance_pct:
                         max_fragrance_pct = max_frag
-                        
-                    actual_in_product = pure_pct_in_formula * cat['limit'] / 100
-                    if actual_in_product > ing['ifra_limit']:
-                        restricted_materials.append(ing['name'])
-        
-        limit_value = round(max_fragrance_pct, 3) if max_fragrance_pct else cat['limit'] * 100
-        
+
+        limit_value = round(max_fragrance_pct, 3) if max_fragrance_pct else None
+
         category_limits.append({
-            'id': cat['id'],
+            'id': cat_id,
             'name': cat['name'],
             'desc': cat['desc'],
-            'limit': min(limit_value, 100) if max_fragrance_pct else cat['limit'] * 100,
+            'limit': limit_value if limit_value else 'No Restriction',
             'compliant': len(restricted_materials) == 0,
             'restricted': restricted_materials
         })
-    
+
     conn.close()
     return jsonify({
         'success': True,
@@ -2612,4 +3012,5 @@ def api_import_execute():
 if __name__ == '__main__':
     log("Starting Perfume Vault v3...")
     init_db()
+    import_ifra_standards()
     app.run(host='0.0.0.0', port=8000, debug=True)
