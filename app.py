@@ -712,6 +712,145 @@ def settings():
     conn.close()
     return render_template('settings.html', company=company)
 
+# ===== Scentree Data Lookup =====
+@app.route('/api/scentree-lookup', methods=['GET'])
+@login_required
+def scentree_lookup():
+    """Fetch perfumery data from Scentree.co using material name or CAS"""
+    import urllib.request
+    import urllib.parse
+
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({'success': False, 'message': 'Material name or CAS required'})
+
+    result = {}
+    try:
+        # Step 1: Search via autocomplete
+        url = f"https://www.scentree.co/sliced-names-autocomplete?q={urllib.parse.quote(query)}"
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            ac_data = json.loads(resp.read().decode())
+
+        results = ac_data.get('results', [])
+        if not results:
+            return jsonify({'success': False, 'message': f'"{query}" not found on Scentree'})
+
+        # Find first published, known result
+        match = None
+        for r in results:
+            if r.get('is_published') and not r.get('is_unknown'):
+                match = r
+                break
+        if not match:
+            match = results[0]
+
+        page_url = match.get('url_en', '')
+        if not page_url:
+            return jsonify({'success': False, 'message': 'No page URL found'})
+
+        # Basic info from autocomplete
+        result['name'] = (match.get('name', {}).get('text', '') or '').replace('\u00ae', '').replace('\u2122', '').strip()
+        syn_text = match.get('synonyms', {}).get('text', '') or ''
+        if syn_text:
+            result['synonyms'] = syn_text.replace(' ; ', '; ')
+        cas_text = match.get('cas_number', {}).get('text', '') or ''
+        if cas_text:
+            result['cas_number'] = cas_text
+
+        # Step 2: Fetch the ingredient page
+        full_url = f"https://www.scentree.co/en/{page_url}"
+        req2 = urllib.request.Request(full_url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        with urllib.request.urlopen(req2, timeout=15) as resp2:
+            html = resp2.read().decode('utf-8', errors='replace')
+
+        # Olfactive family path (e.g., "Floral > Fresh Flowers > Zesty > Rosy")
+        olf_m = re.search(r'textorange-dark[^>]*>([^<]+)<', html)
+        if olf_m:
+            result['olfactive_family'] = olf_m.group(1).replace('&gt;', '>').strip()
+
+        # Extract label/value pairs
+        def extract_field(label_pattern):
+            pattern = rf'{label_pattern}[^<]*</span>\s*(?:</h3>\s*)?<span[^>]*label-info[^>]*>([^<]+)<'
+            m = re.search(pattern, html, re.IGNORECASE)
+            if m:
+                val = m.group(1).strip()
+                if val and 'indisponible' not in val.lower():
+                    return val
+            return ''
+
+        # General info
+        vol = extract_field('Volatility')
+        if vol:
+            result['profile'] = vol  # Head/Heart/Base
+
+        # Physical properties
+        density = extract_field('Density')
+        if density:
+            result['specific_gravity'] = _extract_number(density)
+
+        ri = extract_field('Refractive Index')
+        if ri:
+            result['refractive_index'] = _extract_number(ri)
+
+        fp = extract_field('Flash Point')
+        if fp:
+            result['flash_point'] = _extract_celsius(fp)
+
+        bp = extract_field('Boiling Point')
+        if bp:
+            result['boiling_point'] = _extract_celsius(bp)
+
+        mp = extract_field('Fusion Point')
+        if mp:
+            result['melting_point'] = _extract_celsius(mp)
+
+        vp = extract_field('Vapor pressure')
+        if vp:
+            result['vapor_pressure'] = _extract_number(vp)
+
+        mw = extract_field('Molecular Weight')
+        if mw:
+            result['molecular_weight'] = _extract_number(mw)
+
+        logp = extract_field('Log P')
+        if logp:
+            result['logp'] = _extract_number(logp)
+
+        appear = extract_field('Appearance')
+        if appear:
+            result['appearance'] = appear
+
+        # Uses in perfumery (longer text block)
+        uses_m = re.search(r'Uses in perfumery\s*:?\s*</span>\s*</h3>\s*<p[^>]*label-info[^>]*>(.+?)</p>', html, re.DOTALL | re.IGNORECASE)
+        if uses_m:
+            uses_text = re.sub(r'<[^>]+>', '', uses_m.group(1)).strip()
+            if uses_text and 'indisponible' not in uses_text.lower():
+                result['uses_in_perfumery'] = uses_text
+
+        # Kind of ingredient (synthetic/natural) from dataLayer
+        kind_m = re.search(r"kind_of_ingredient['\"]?\s*:\s*['\"](\w+)['\"]", html)
+        if kind_m:
+            result['kind'] = kind_m.group(1)
+
+        result['source_url'] = full_url
+
+        if len(result) <= 2:
+            return jsonify({'success': False, 'message': f'No detailed data found for "{query}"'})
+
+        return jsonify({'success': True, 'data': result})
+
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return jsonify({'success': False, 'message': f'"{query}" not found on Scentree'})
+        return jsonify({'success': False, 'message': f'HTTP error: {e.code}'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+
 # ===== Perfumery Data Lookup (The Good Scents Company) =====
 @app.route('/api/tgsc-lookup', methods=['GET'])
 @login_required
