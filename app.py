@@ -761,7 +761,8 @@ def scentree_lookup():
             result['cas_number'] = cas_text
 
         # Step 2: Fetch the ingredient page
-        full_url = f"https://www.scentree.co/en/{page_url}"
+        encoded_page = urllib.parse.quote(page_url, safe='/.html')
+        full_url = f"https://www.scentree.co/en/{encoded_page}"
         req2 = urllib.request.Request(full_url, headers={
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
@@ -858,7 +859,6 @@ def tgsc_lookup():
     """Fetch perfumery data from The Good Scents Company using CAS number"""
     import urllib.request
     import urllib.parse
-    from html.parser import HTMLParser
 
     cas = request.args.get('cas', '').strip()
     if not cas:
@@ -876,12 +876,12 @@ def tgsc_lookup():
         with urllib.request.urlopen(req, timeout=15) as resp:
             search_html = resp.read().decode('utf-8', errors='replace')
 
-        # Find link to data page
-        data_match = re.search(r'href="(/data/rw\d+\.html)"', search_html)
+        # Find link - TGSC uses openMainWindow('data/rw123.html') not href
+        data_match = re.search(r"openMainWindow\('(data/rw\d+\.html)'\)", search_html)
         if not data_match:
             return jsonify({'success': False, 'message': f'CAS {cas} not found on The Good Scents Company'})
 
-        data_url = 'https://www.thegoodscentscompany.com' + data_match.group(1)
+        data_url = 'https://www.thegoodscentscompany.com/' + data_match.group(1)
 
         # Step 2: Fetch the ingredient page
         req2 = urllib.request.Request(data_url, headers={
@@ -890,81 +890,64 @@ def tgsc_lookup():
         with urllib.request.urlopen(req2, timeout=15) as resp2:
             page_html = resp2.read().decode('utf-8', errors='replace')
 
-        # Parse key data from HTML
-        # Odor type and description
-        odor_type_m = re.search(r'Odor Type:\s*</td>\s*<td[^>]*>\s*<b>([^<]+)</b>', page_html, re.IGNORECASE)
+        # Clean HTML entities
+        page_html = page_html.replace('&#176;', '°').replace('&deg;', '°')
+
+        # Odor Type - single cell: class="qinfr2">Odor Type: floral</td>
+        odor_type_m = re.search(r'Odor Type:\s*([^<]+)</td>', page_html, re.IGNORECASE)
         if odor_type_m:
             result['odor_type'] = odor_type_m.group(1).strip()
 
-        odor_str_m = re.search(r'Odor Strength:\s*</td>\s*<td[^>]*>\s*<b>([^<]+)</b>', page_html, re.IGNORECASE)
+        # Odor Strength - class="radw5">Odor Strength:<span>medium</span>
+        odor_str_m = re.search(r'Odor Strength:<span>([^<]*)</span>', page_html, re.IGNORECASE)
         if odor_str_m:
             result['strength_odor'] = odor_str_m.group(1).strip()
 
-        odor_desc_m = re.search(r'Odor Description:\s*</td>\s*<td[^>]*>\s*<b>([^<]+)</b>', page_html, re.IGNORECASE)
-        if odor_desc_m:
-            result['odor_description'] = odor_desc_m.group(1).strip()
+        # Odor Description - multiple rows, get first meaningful one
+        odor_descs = re.findall(r'Odor Description:<span>[^<]*</span>\s*(?:<span>)?([^<]+)', page_html, re.IGNORECASE)
+        for desc in odor_descs:
+            clean = desc.strip()
+            if clean and len(clean) > 3 and 'at ' not in clean[:5]:
+                result['odor_description'] = clean
+                break
 
-        # Substantivity
-        subst_m = re.search(r'Substantivity[^<]*</td>\s*<td[^>]*>\s*<b>([^<]+)</b>', page_html, re.IGNORECASE)
-        if subst_m:
-            result['substantivity'] = subst_m.group(1).strip()
-
-        # Physical properties
-        def extract_prop(label):
-            pattern = rf'{label}[^<]*</td>\s*<td[^>]*>\s*(?:<b>)?([^<]+?)(?:</b>)?\s*</td>'
+        # Two-cell properties: <td class="radw4">Label:</td><td class="radw11">value</td>
+        def extract_two_cell(label):
+            pattern = rf'{label}:</td>\s*<td[^>]*radw11[^>]*>\s*([^<]+)'
             m = re.search(pattern, page_html, re.IGNORECASE)
             return m.group(1).strip() if m else ''
 
-        sg = extract_prop('Specific Gravity')
+        sg = extract_two_cell('Specific Gravity')
         if sg:
             result['specific_gravity'] = _extract_number(sg)
 
-        ri = extract_prop('Refractive Index')
+        ri = extract_two_cell('Refractive Index')
         if ri:
             result['refractive_index'] = _extract_number(ri)
 
-        fp = extract_prop('Flash Point')
+        fp = extract_two_cell('Flash Point')
         if fp:
             result['flash_point'] = _extract_celsius(fp)
 
-        bp = extract_prop('Boiling Point')
+        bp = extract_two_cell('Boiling Point')
         if bp:
             result['boiling_point'] = _extract_celsius(bp)
 
-        mp = extract_prop('Melting Point')
+        mp = extract_two_cell('Melting Point')
         if mp:
             result['melting_point'] = _extract_celsius(mp)
 
-        logp = extract_prop('logP')
+        logp = extract_two_cell('logP')
         if logp:
             result['logp'] = _extract_number(logp)
 
-        # Appearance
-        appear_m = re.search(r'Appearance[^<]*</td>\s*<td[^>]*>\s*(?:<b>)?([^<]+)', page_html, re.IGNORECASE)
-        if appear_m:
-            result['appearance'] = appear_m.group(1).strip()
+        appear = extract_two_cell('Appearance')
+        if appear:
+            result['appearance'] = appear
 
-        # Solubility
-        sol_m = re.search(r'Solub(?:ility|le)[^<]*</td>\s*<td[^>]*>\s*(?:<b>)?([^<]+)', page_html, re.IGNORECASE)
-        if sol_m:
-            result['solubility'] = sol_m.group(1).strip()
-
-        # IFRA limit
-        ifra_m = re.search(r'(?:IFRA|Restriction)[^<]*Limit[^<]*</td>\s*<td[^>]*>\s*(?:<b>)?([^<]+)', page_html, re.IGNORECASE)
-        if ifra_m:
-            val = _extract_number(ifra_m.group(1))
-            if val:
-                result['ifra_limit'] = val
-
-        # Recommended use levels
-        use_m = re.search(r'Use Level[^<]*(?:Fragrance|Perfume)[^<]*</td>\s*<td[^>]*>\s*(?:<b>)?([^<]+)', page_html, re.IGNORECASE)
-        if use_m:
-            result['recommended_smell_pct'] = use_m.group(1).strip()
-
-        # Synonyms
-        syn_m = re.search(r'(?:Synonym|Other Name)[^<]*</td>\s*<td[^>]*>\s*(?:<b>)?([^<]+)', page_html, re.IGNORECASE)
-        if syn_m:
-            result['synonyms'] = syn_m.group(1).strip()
+        solub = extract_two_cell('Solubility')
+        if solub:
+            result['solubility'] = solub
 
         result['source_url'] = data_url
 
