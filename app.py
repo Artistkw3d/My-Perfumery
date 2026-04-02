@@ -46,6 +46,136 @@ IFRA_CATEGORIES = [
     {'id': 'cat12', 'name': 'Category 12', 'desc': 'Products not intended for direct skin contact, minimal or insignificant transfer to skin', 'limit': None},
 ]
 
+# ===== Olfactive Wheel Categories (14 axes) =====
+OLFACTIVE_CATEGORIES = [
+    'citrus', 'aldehydic', 'aromatic', 'green', 'marine', 'floral', 'fruity',
+    'spicy', 'balsamic', 'woody', 'ambery', 'musky', 'leathery', 'animal'
+]
+
+OLFACTIVE_LABELS = {
+    'citrus': 'Citrus', 'aldehydic': 'Aldehydic', 'aromatic': 'Aromatic',
+    'green': 'Green', 'marine': 'Marine', 'floral': 'Floral', 'fruity': 'Fruity',
+    'spicy': 'Spicy', 'balsamic': 'Balsamic', 'woody': 'Woody',
+    'ambery': 'Ambery', 'musky': 'Musky', 'leathery': 'Leathery', 'animal': 'Animal'
+}
+
+# Keyword mapping for auto-classification (EN + AR)
+ODOR_KEYWORD_MAP = {
+    # CITRUS
+    'citrus': ('citrus', 10), 'lemon': ('citrus', 9), 'lime': ('citrus', 9),
+    'orange': ('citrus', 8), 'bergamot': ('citrus', 9), 'grapefruit': ('citrus', 9),
+    'mandarin': ('citrus', 8), 'neroli': ('citrus', 7), 'petitgrain': ('citrus', 7),
+    'yuzu': ('citrus', 9), 'citric': ('citrus', 8), 'zesty': ('citrus', 7),
+    'حمضي': ('citrus', 10), 'حمضيات': ('citrus', 10), 'الحمضيات': ('citrus', 10),
+    'ليمون': ('citrus', 9), 'برتقال': ('citrus', 8), 'الحمضية': ('citrus', 9),
+    # ALDEHYDIC
+    'aldehydic': ('aldehydic', 10), 'aldehyde': ('aldehydic', 10), 'waxy': ('aldehydic', 7),
+    'soapy': ('aldehydic', 6), 'clean': ('aldehydic', 5), 'laundered': ('aldehydic', 6),
+    'metallic': ('aldehydic', 6), 'شمعي': ('aldehydic', 7),
+    # AROMATIC
+    'aromatic': ('aromatic', 10), 'camphor': ('aromatic', 9), 'eucalyptus': ('aromatic', 9),
+    'herbal': ('aromatic', 8), 'medicinal': ('aromatic', 7), 'terpenic': ('aromatic', 7),
+    'terpene': ('aromatic', 7), 'rosemary': ('aromatic', 8), 'thyme': ('aromatic', 8),
+    'lavender': ('aromatic', 8), 'sage': ('aromatic', 7), 'basil': ('aromatic', 7),
+    'mint': ('aromatic', 7), 'minty': ('aromatic', 7), 'absinthe': ('aromatic', 7),
+    'عشبي': ('aromatic', 8), 'كامفوري': ('aromatic', 9), 'أعشاب': ('aromatic', 8),
+    'العشبية': ('aromatic', 8), 'نعناع': ('aromatic', 7), 'التربينية': ('aromatic', 7),
+    'الكافورية': ('aromatic', 9),
+    # GREEN
+    'green': ('green', 10), 'galbanum': ('green', 10), 'grassy': ('green', 9),
+    'leafy': ('green', 9), 'stem': ('green', 7), 'cortex': ('green', 6),
+    'أخضر': ('green', 10), 'خضراء': ('green', 9), 'الخضراء': ('green', 9),
+    # MARINE
+    'marine': ('marine', 10), 'aquatic': ('marine', 10), 'watery': ('marine', 9),
+    'ozonic': ('marine', 9), 'oceanic': ('marine', 9), 'مائي': ('marine', 10),
+    'مائية': ('marine', 9), 'بحري': ('marine', 10),
+    # FLORAL
+    'floral': ('floral', 10), 'rose': ('floral', 9), 'rosy': ('floral', 9),
+    'jasmine': ('floral', 9), 'jasmin': ('floral', 9), 'lily': ('floral', 8),
+    'violet': ('floral', 8), 'peony': ('floral', 8), 'gardenia': ('floral', 8),
+    'magnolia': ('floral', 8), 'hyacinth': ('floral', 8), 'tuberose': ('floral', 9),
+    'narcissus': ('floral', 7), 'geranium': ('floral', 7), 'iris': ('floral', 8),
+    'orris': ('floral', 8), 'mimosa': ('floral', 7), 'hawthorn': ('floral', 6),
+    'زهري': ('floral', 10), 'وردي': ('floral', 9), 'أزهار': ('floral', 10),
+    'الأزهار': ('floral', 10), 'زهر': ('floral', 9), 'الزهور': ('floral', 9),
+    # FRUITY
+    'fruity': ('fruity', 10), 'berry': ('fruity', 9), 'berries': ('fruity', 9),
+    'apple': ('fruity', 8), 'tropical': ('fruity', 8), 'pear': ('fruity', 8),
+    'peach': ('fruity', 9), 'strawberry': ('fruity', 9), 'raspberry': ('fruity', 9),
+    'plum': ('fruity', 8), 'cherry': ('fruity', 8), 'coconut': ('fruity', 6),
+    'pineapple': ('fruity', 9), 'melon': ('fruity', 8), 'lactonic': ('fruity', 6),
+    'فاكهي': ('fruity', 10), 'فواكه': ('fruity', 9), 'توت': ('fruity', 9),
+    'الفواكه': ('fruity', 9), 'الاستوائية': ('fruity', 8), 'فاكهة': ('fruity', 9),
+    # SPICY
+    'spicy': ('spicy', 10), 'pepper': ('spicy', 9), 'peppery': ('spicy', 9),
+    'cinnamon': ('spicy', 9), 'clove': ('spicy', 9), 'nutmeg': ('spicy', 8),
+    'ginger': ('spicy', 8), 'cardamom': ('spicy', 8), 'cumin': ('spicy', 7),
+    'anise': ('spicy', 7), 'saffron': ('spicy', 8), 'mace': ('spicy', 7),
+    'cubeb': ('spicy', 7), 'juniper': ('spicy', 6),
+    'توابل': ('spicy', 10), 'التوابل': ('spicy', 10), 'حار': ('spicy', 8),
+    # BALSAMIC
+    'balsamic': ('balsamic', 10), 'resin': ('balsamic', 9), 'resinous': ('balsamic', 9),
+    'vanilla': ('balsamic', 8), 'vanillic': ('balsamic', 8), 'tonka': ('balsamic', 8),
+    'benzoin': ('balsamic', 9), 'incense': ('balsamic', 8), 'myrrh': ('balsamic', 8),
+    'frankincense': ('balsamic', 8), 'coumarinic': ('balsamic', 8), 'coumarin': ('balsamic', 8),
+    'sweet': ('balsamic', 4), 'powdery': ('balsamic', 5), 'styrene': ('balsamic', 7),
+    'olibanum': ('balsamic', 8), 'caramellic': ('balsamic', 6),
+    'بلسمي': ('balsamic', 10), 'البلسمي': ('balsamic', 10), 'البلسمية': ('balsamic', 10),
+    'بلسم': ('balsamic', 9), 'الفانيليا': ('balsamic', 8), 'الكومارين': ('balsamic', 8),
+    'الغورماند': ('balsamic', 7), 'الفانيليك': ('balsamic', 8), 'معسل': ('balsamic', 6),
+    # WOODY
+    'woody': ('woody', 10), 'cedar': ('woody', 9), 'cedarwood': ('woody', 9),
+    'sandalwood': ('woody', 9), 'vetiver': ('woody', 9), 'patchouli': ('woody', 9),
+    'oud': ('woody', 10), 'agarwood': ('woody', 10), 'pine': ('woody', 7),
+    'guaiacwood': ('woody', 8), 'rosewood': ('woody', 7), 'driftwood': ('woody', 7),
+    'birch': ('woody', 7), 'rooty': ('woody', 7), 'earthy': ('woody', 6),
+    'moss': ('woody', 6), 'forest': ('woody', 7),
+    'خشبي': ('woody', 10), 'أخشاب': ('woody', 9), 'الخشب': ('woody', 10),
+    'الخشبية': ('woody', 10), 'خشب': ('woody', 9), 'الأرز': ('woody', 9),
+    'الصندل': ('woody', 9), 'ترابي': ('woody', 6), 'طحلب': ('woody', 6),
+    # AMBERY
+    'amber': ('ambery', 10), 'ambery': ('ambery', 10), 'ambergris': ('ambery', 9),
+    'ambrette': ('ambery', 8), 'ambroxan': ('ambery', 9), 'warm': ('ambery', 5),
+    'honey': ('ambery', 6), 'honeyed': ('ambery', 6),
+    'العنبر': ('ambery', 10), 'عنبر': ('ambery', 10),
+    # MUSKY
+    'musk': ('musky', 10), 'musky': ('musky', 10), 'المسك': ('musky', 10),
+    'مسك': ('musky', 10), 'creamy': ('musky', 5), 'milky': ('musky', 5),
+    'حليبي': ('musky', 5), 'النظيف': ('musky', 6),
+    # LEATHERY
+    'leather': ('leathery', 10), 'leathery': ('leathery', 10), 'suede': ('leathery', 9),
+    'smoky': ('leathery', 7), 'tobacco': ('leathery', 8), 'phenolic': ('leathery', 6),
+    'burnt': ('leathery', 7), 'tar': ('leathery', 8),
+    'جلد': ('leathery', 10), 'جلدي': ('leathery', 10), 'دخاني': ('leathery', 7),
+    'دخان': ('leathery', 7), 'الدخانية': ('leathery', 7), 'محترق': ('leathery', 7),
+    # ANIMAL
+    'animal': ('animal', 10), 'animalic': ('animal', 10), 'civet': ('animal', 10),
+    'castoreum': ('animal', 10), 'fecal': ('animal', 9), 'indolic': ('animal', 8),
+    'indole': ('animal', 8), 'costus': ('animal', 7),
+    'حيوان': ('animal', 10), 'حيواني': ('animal', 10),
+}
+
+def auto_classify_odor(description):
+    """تحليل وصف الرائحة وتحويله لقيم على عجلة الرائحة"""
+    if not description:
+        return {cat: 0 for cat in OLFACTIVE_CATEGORIES}
+
+    # تنظيف النص وتقسيمه
+    import re
+    text = description.lower().strip()
+    # فصل بـ > أو , أو مسافة
+    tokens = re.split(r'[>,/\s]+', text)
+    tokens = [t.strip() for t in tokens if t.strip()]
+
+    scores = {cat: 0 for cat in OLFACTIVE_CATEGORIES}
+
+    for token in tokens:
+        if token in ODOR_KEYWORD_MAP:
+            cat, intensity = ODOR_KEYWORD_MAP[token]
+            scores[cat] = max(scores[cat], intensity)
+
+    return scores
+
 # ===== GHS Pictograms =====
 GHS_PICTOGRAMS = [
     {'id': 'explosive', 'name': 'Explosive', 'name_ar': 'متفجر'},
@@ -281,6 +411,16 @@ def get_db():
         init_db()
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    # إنشاء جدول البروفايل العطري لو ما كان موجود
+    conn.execute('''CREATE TABLE IF NOT EXISTS material_olfactive (
+        material_id INTEGER PRIMARY KEY,
+        citrus INTEGER DEFAULT 0, aldehydic INTEGER DEFAULT 0, aromatic INTEGER DEFAULT 0,
+        green INTEGER DEFAULT 0, marine INTEGER DEFAULT 0, floral INTEGER DEFAULT 0,
+        fruity INTEGER DEFAULT 0, spicy INTEGER DEFAULT 0, balsamic INTEGER DEFAULT 0,
+        woody INTEGER DEFAULT 0, ambery INTEGER DEFAULT 0, musky INTEGER DEFAULT 0,
+        leathery INTEGER DEFAULT 0, animal INTEGER DEFAULT 0,
+        FOREIGN KEY (material_id) REFERENCES materials(id)
+    )''')
     return conn
 
 def init_db():
@@ -318,6 +458,16 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS material_msds (
         id INTEGER PRIMARY KEY, material_id INTEGER UNIQUE,
         h_codes TEXT, p_codes TEXT, pictograms TEXT, signal_word TEXT, ghs_classification TEXT,
+        FOREIGN KEY (material_id) REFERENCES materials(id)
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS material_olfactive (
+        material_id INTEGER PRIMARY KEY,
+        citrus INTEGER DEFAULT 0, aldehydic INTEGER DEFAULT 0, aromatic INTEGER DEFAULT 0,
+        green INTEGER DEFAULT 0, marine INTEGER DEFAULT 0, floral INTEGER DEFAULT 0,
+        fruity INTEGER DEFAULT 0, spicy INTEGER DEFAULT 0, balsamic INTEGER DEFAULT 0,
+        woody INTEGER DEFAULT 0, ambery INTEGER DEFAULT 0, musky INTEGER DEFAULT 0,
+        leathery INTEGER DEFAULT 0, animal INTEGER DEFAULT 0,
         FOREIGN KEY (material_id) REFERENCES materials(id)
     )''')
     
@@ -545,15 +695,29 @@ def api_materials():
                 LEFT JOIN suppliers s ON m.supplier_id = s.id
                 ORDER BY m.name
             ''').fetchall()
+            # جلب البروفايل العطري لكل مادة
+            olfactive_data = conn.execute("SELECT * FROM material_olfactive").fetchall()
+            olf_map = {row['material_id']: {cat: row[cat] or 0 for cat in OLFACTIVE_CATEGORIES} for row in olfactive_data}
+            result = []
+            for d in data:
+                item = dict(d)
+                item['olfactive'] = olf_map.get(item['id'], None)
+                result.append(item)
             conn.close()
-            return jsonify({'success': True, 'data': [dict(d) for d in data]})
+            return jsonify({'success': True, 'data': result})
         elif action == 'get':
             mid = request.args.get('id')
             data = conn.execute("SELECT * FROM materials WHERE id=?", (mid,)).fetchone()
             msds = conn.execute("SELECT * FROM material_msds WHERE material_id=?", (mid,)).fetchone()
+            olfactive = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (mid,)).fetchone()
             result = dict(data) if data else None
             if result and msds:
                 result['msds'] = dict(msds)
+            if result:
+                if olfactive:
+                    result['olfactive'] = {cat: dict(olfactive).get(cat, 0) or 0 for cat in OLFACTIVE_CATEGORIES}
+                else:
+                    result['olfactive'] = {cat: 0 for cat in OLFACTIVE_CATEGORIES}
             conn.close()
             return jsonify({'success': True, 'data': result})
     
@@ -612,11 +776,19 @@ def api_materials():
                 signal_word = request.form.get('signal_word', '')
                 ghs_classification = request.form.get('ghs_classification', '')
                 
-                conn.execute("""INSERT OR REPLACE INTO material_msds 
-                    (material_id, h_codes, p_codes, pictograms, signal_word, ghs_classification) 
+                conn.execute("""INSERT OR REPLACE INTO material_msds
+                    (material_id, h_codes, p_codes, pictograms, signal_word, ghs_classification)
                     VALUES (?,?,?,?,?,?)""",
                     (mat_id, h_codes, p_codes, pictograms, signal_word, ghs_classification))
-                
+
+                # حفظ البروفايل العطري
+                olf_values = {cat: int(request.form.get(f'olf_{cat}', 0) or 0) for cat in OLFACTIVE_CATEGORIES}
+                conn.execute("""INSERT OR REPLACE INTO material_olfactive
+                    (material_id, citrus, aldehydic, aromatic, green, marine, floral, fruity,
+                     spicy, balsamic, woody, ambery, musky, leathery, animal)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (mat_id, *[olf_values[cat] for cat in OLFACTIVE_CATEGORIES]))
+
                 conn.commit()
                 conn.close()
                 return jsonify({'success': True, 'message': msg})
@@ -632,6 +804,7 @@ def api_materials():
                 conn.close()
                 return jsonify({'success': False, 'message': f'مستخدمة في {used} تركيبة'})
             conn.execute("DELETE FROM material_msds WHERE material_id=?", (id,))
+            conn.execute("DELETE FROM material_olfactive WHERE material_id=?", (id,))
             conn.execute("DELETE FROM materials WHERE id=?", (id,))
             conn.commit()
             conn.close()
@@ -639,6 +812,14 @@ def api_materials():
     
     conn.close()
     return jsonify({'success': False})
+
+# ===== API التصنيف العطري التلقائي =====
+@app.route('/api/olfactive/auto-classify', methods=['POST'])
+@login_required
+def api_auto_classify():
+    description = request.form.get('description', '')
+    scores = auto_classify_odor(description)
+    return jsonify({'success': True, 'scores': scores})
 
 # ===== API التركيبات =====
 @app.route('/api/formulas', methods=['GET', 'POST'])
