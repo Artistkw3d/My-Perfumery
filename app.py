@@ -876,8 +876,8 @@ def tgsc_lookup():
         with urllib.request.urlopen(req, timeout=15) as resp:
             search_html = resp.read().decode('utf-8', errors='replace')
 
-        # Find link - TGSC uses openMainWindow('data/rw123.html') not href
-        data_match = re.search(r"openMainWindow\('(data/rw\d+\.html)'\)", search_html)
+        # Find link - TGSC uses openMainWindow('data/XX123.html') where XX = rw, es, tl, etc.
+        data_match = re.search(r"openMainWindow\('(data/[a-z]+\d+\.html)'\)", search_html)
         if not data_match:
             return jsonify({'success': False, 'message': f'CAS {cas} not found on The Good Scents Company'})
 
