@@ -2360,6 +2360,24 @@ def api_import_execute():
     mapping = json.loads(request.form.get('mapping', '{}'))
     update_existing = request.form.get('update_existing', 'false') == 'true'
     auto_olfactive = request.form.get('auto_olfactive', 'true') == 'true'
+
+    # Enriched data from client-side CAS lookups
+    enriched_raw = request.form.get('enriched_data', '')
+    enriched_by_cas = {}
+    enriched_by_name = {}
+    if enriched_raw:
+        try:
+            enriched_list = json.loads(enriched_raw)
+            for ed in enriched_list:
+                cas_key = (ed.get('cas_number') or '').strip()
+                name_key = (ed.get('name') or '').strip().lower()
+                if cas_key:
+                    enriched_by_cas[cas_key] = ed
+                if name_key:
+                    enriched_by_name[name_key] = ed
+        except:
+            pass
+
     filepath = session.get('import_file')
     ext = session.get('import_ext', 'xlsx')
     sheet_index = session.get('import_sheet_index', 0)
@@ -2427,6 +2445,21 @@ def api_import_execute():
                 continue
 
             cas = item.get('cas_number', '').strip()
+
+            # Merge enriched data (only fill empty fields)
+            enriched = enriched_by_cas.get(cas) or enriched_by_name.get(name.lower()) or {}
+            for ekey, eval_ in enriched.items():
+                if ekey.startswith('_') or ekey in ('source_url', 'cid', 'pubchem_url', 'kind', 'uses_in_perfumery', 'molecular_formula', 'molecular_weight', 'iupac_name', 'logp', 'olfactive_family'):
+                    continue
+                if eval_ and not item.get(ekey):
+                    item[ekey] = str(eval_)
+
+            # MSDS data from enrichment
+            msds_signal = enriched.get('_msds_signal', '')
+            msds_h_codes = enriched.get('_msds_h_codes', '')
+            msds_p_codes = enriched.get('_msds_p_codes', '')
+            msds_pictograms = enriched.get('_msds_pictograms', '')
+            msds_classification = enriched.get('_msds_classification', '')
 
             # تحقق من الموجود
             exist_id = existing.get(name.lower()) or (existing.get('cas:' + cas) if cas else None)
@@ -2539,6 +2572,13 @@ def api_import_execute():
                 if cas:
                     existing['cas:' + cas] = mat_id
                 added += 1
+
+            # Save MSDS data from enrichment
+            if msds_signal or msds_h_codes or msds_p_codes or msds_pictograms:
+                conn.execute("""INSERT OR REPLACE INTO material_msds
+                    (material_id, h_codes, p_codes, pictograms, signal_word, ghs_classification)
+                    VALUES (?,?,?,?,?,?)""",
+                    (mat_id, msds_h_codes, msds_p_codes, msds_pictograms, msds_signal, msds_classification))
 
             # تصنيف عطري تلقائي
             if auto_olfactive and item.get('odor_description'):

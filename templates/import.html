@@ -197,11 +197,28 @@
                 <tbody id="previewBody"></tbody>
             </table>
         </div>
+        <!-- Enrichment progress -->
+        <div id="enrichProgress" style="display:none;" class="mt-3">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <strong id="enrichStatusText">جاري جلب البيانات...</strong>
+                <span class="badge bg-info" id="enrichCountBadge">0/0</span>
+            </div>
+            <div class="progress" style="height: 8px;">
+                <div class="progress-bar bg-info progress-bar-striped progress-bar-animated" id="enrichBar" style="width:0%"></div>
+            </div>
+            <div id="enrichLog" class="mt-2" style="max-height:150px;overflow-y:auto;font-size:0.8rem;color:#666;"></div>
+        </div>
+
         <div class="d-flex justify-content-between mt-3">
             <button class="btn btn-secondary" onclick="goToStep(2)"><i class="bi bi-arrow-right"></i> السابق</button>
-            <button class="btn btn-success btn-lg" onclick="executeImport()" id="btnExecute">
-                <i class="bi bi-check-circle"></i> استيراد <span id="importCountBadge" class="badge bg-light text-dark"></span>
-            </button>
+            <div class="d-flex gap-2">
+                <button class="btn btn-info btn-lg" onclick="enrichAllMaterials()" id="btnEnrich">
+                    <i class="bi bi-cloud-download"></i> جلب البيانات الناقصة
+                </button>
+                <button class="btn btn-success btn-lg" onclick="executeImport()" id="btnExecute">
+                    <i class="bi bi-check-circle"></i> استيراد <span id="importCountBadge" class="badge bg-light text-dark"></span>
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -427,6 +444,108 @@ function runPreview() {
     });
 }
 
+// ===== Enrich: Fetch missing data for all materials =====
+async function enrichAllMaterials() {
+    if (!previewData || !previewData.preview.length) {
+        showAlert('لا توجد بيانات للمعاينة', 'warning');
+        return;
+    }
+
+    // Collect materials with CAS numbers
+    const materials = previewData.preview.filter(row => row.cas_number && row.cas_number.trim());
+    if (materials.length === 0) {
+        showAlert('لا توجد مواد برقم CAS - الجلب يحتاج رقم CAS', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('btnEnrich');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> جاري الجلب...';
+    document.getElementById('enrichProgress').style.display = '';
+    const bar = document.getElementById('enrichBar');
+    const badge = document.getElementById('enrichCountBadge');
+    const log = document.getElementById('enrichLog');
+    const statusText = document.getElementById('enrichStatusText');
+    log.innerHTML = '';
+
+    let done = 0;
+    let totalFilled = 0;
+
+    for (const mat of materials) {
+        const cas = mat.cas_number.trim();
+        const name = mat.name || cas;
+        done++;
+        const pct = Math.round((done / materials.length) * 100);
+        bar.style.width = pct + '%';
+        badge.textContent = `${done}/${materials.length}`;
+        statusText.textContent = `جاري جلب بيانات: ${name}...`;
+
+        try {
+            // Fetch from all 3 sources in parallel
+            const [pubchemRes, tgscRes, scentreeRes] = await Promise.allSettled([
+                fetch(`/api/cas-lookup?cas=${encodeURIComponent(cas)}`).then(r => r.json()),
+                fetch(`/api/tgsc-lookup?cas=${encodeURIComponent(cas)}`).then(r => r.json()),
+                fetch(`/api/scentree-lookup?q=${encodeURIComponent(cas)}`).then(r => r.json())
+            ]);
+
+            let filled = 0;
+            const sources = [
+                { res: pubchemRes, name: 'PubChem' },
+                { res: tgscRes, name: 'TGSC' },
+                { res: scentreeRes, name: 'Scentree' }
+            ];
+
+            // Also fetch MSDS
+            let msdsRes = null;
+            try {
+                msdsRes = await fetch(`/api/msds-lookup?cas=${encodeURIComponent(cas)}`).then(r => r.json());
+            } catch(e) {}
+
+            // Merge data from all sources into the preview row (only fill empty fields)
+            for (const src of sources) {
+                if (src.res.status === 'fulfilled' && src.res.value.success) {
+                    const d = src.res.value.data;
+                    for (const [key, val] of Object.entries(d)) {
+                        if (val && !mat[key]) {
+                            mat[key] = String(val);
+                            filled++;
+                        }
+                    }
+                }
+            }
+
+            // MSDS data
+            if (msdsRes && msdsRes.success) {
+                const md = msdsRes.data;
+                if (md.signal_word && !mat._msds_signal) mat._msds_signal = md.signal_word;
+                if (md.h_codes && md.h_codes.length) mat._msds_h_codes = md.h_codes.join(',');
+                if (md.p_codes && md.p_codes.length) mat._msds_p_codes = md.p_codes.join(',');
+                if (md.pictograms && md.pictograms.length) mat._msds_pictograms = md.pictograms.join(',');
+                if (md.classifications && md.classifications.length) mat._msds_classification = md.classifications.join(',');
+            }
+
+            totalFilled += filled;
+            const color = filled > 0 ? '#28a745' : '#999';
+            log.innerHTML += `<div style="color:${color}">✓ ${name}: ${filled > 0 ? filled + ' حقل' : 'لا توجد بيانات جديدة'}</div>`;
+            log.scrollTop = log.scrollHeight;
+
+        } catch(err) {
+            log.innerHTML += `<div style="color:#dc3545">✗ ${name}: خطأ - ${err.message}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // Small delay to not overwhelm servers
+        if (done < materials.length) await new Promise(r => setTimeout(r, 300));
+    }
+
+    statusText.textContent = `تم الانتهاء! تم جلب ${totalFilled} حقل لـ ${materials.length} مادة`;
+    bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+    bar.classList.add('bg-success');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-circle"></i> تم الجلب';
+    showAlert(`تم جلب ${totalFilled} حقل بيانات لـ ${materials.length} مادة ✓`, 'success');
+}
+
 // ===== Step 4: Execute =====
 function executeImport() {
     const btn = document.getElementById('btnExecute');
@@ -437,6 +556,11 @@ function executeImport() {
     fd.append('mapping', JSON.stringify(currentMapping));
     fd.append('update_existing', document.getElementById('chkUpdateExisting').checked);
     fd.append('auto_olfactive', document.getElementById('chkAutoOlfactive').checked);
+
+    // Send enriched data if available
+    if (previewData && previewData.preview) {
+        fd.append('enriched_data', JSON.stringify(previewData.preview));
+    }
 
     fetch('/api/import/execute', { method: 'POST', body: fd })
     .then(r => r.json())
