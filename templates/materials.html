@@ -1057,19 +1057,16 @@ function fetchCASData() {
 
 // ===== Scentree Lookup - Fetch perfumery data from Scentree.co =====
 function fetchScentreeData() {
-    // Use material name first, fallback to CAS
-    const name = document.getElementById('mat_name').value.trim();
     const cas = document.getElementById('mat_cas').value.trim();
-    const query = name || cas;
-    if (!query) {
-        showAlert('أدخل اسم المادة أو رقم CAS أولاً', 'warning');
+    if (!cas) {
+        showAlert('أدخل رقم CAS أولاً', 'warning');
         return;
     }
     const btn = document.getElementById('scentreeLookupBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
-    fetch(`/api/scentree-lookup?q=${encodeURIComponent(query)}`)
+    fetch(`/api/scentree-lookup?q=${encodeURIComponent(cas)}`)
         .then(r => r.json())
         .then(data => {
             btn.disabled = false;
