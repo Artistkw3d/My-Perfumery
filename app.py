@@ -6,6 +6,12 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 import sqlite3
 import os
 import sys
+import re
+import json
+import zipfile
+import xml.etree.ElementTree as ET
+import tempfile
+import uuid
 from datetime import datetime
 from functools import wraps
 
@@ -1425,6 +1431,481 @@ def api_formula_card(fid):
         'ingredients_count': len(ingredients),
         'company': dict(company) if company else {}
     })
+
+# ===== Smart Import - قراءة Excel =====
+IMPORT_TEMP_DIR = os.path.join(tempfile.gettempdir(), 'perfume_vault_import')
+os.makedirs(IMPORT_TEMP_DIR, exist_ok=True)
+
+def read_xlsx_sheets(filepath):
+    """قراءة ملف xlsx عبر XML مباشرة (يتجنب مشاكل openpyxl)"""
+    zf = zipfile.ZipFile(filepath)
+    ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+
+    # Shared strings
+    shared = []
+    try:
+        ss_tree = ET.parse(zf.open('xl/sharedStrings.xml'))
+        for si in ss_tree.findall('.//s:si', ns):
+            parts = []
+            for t in si.iter('{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t'):
+                if t.text:
+                    parts.append(t.text)
+            shared.append(''.join(parts))
+    except:
+        pass
+
+    # Sheet names + rId mapping
+    wb = ET.parse(zf.open('xl/workbook.xml'))
+    sheets_info = []
+    for s in wb.findall('.//s:sheet', ns):
+        sheets_info.append({
+            'name': s.get('name'),
+            'rId': s.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+        })
+
+    rels = ET.parse(zf.open('xl/_rels/workbook.xml.rels'))
+    rns = {'r': 'http://schemas.openxmlformats.org/package/2006/relationships'}
+    rid_map = {}
+    for r in rels.findall('.//r:Relationship', rns):
+        rid_map[r.get('Id')] = r.get('Target')
+
+    return zf, ns, shared, sheets_info, rid_map
+
+def read_xlsx_sheet_data(zf, ns, shared, target, max_rows=None):
+    """قراءة بيانات شيت معين"""
+    filepath_in_zip = 'xl/' + target if not target.startswith('xl/') else target
+    sheet_xml = ET.parse(zf.open(filepath_in_zip))
+    rows = sheet_xml.findall('.//s:sheetData/s:row', ns)
+
+    # اكتشاف كل الأعمدة المستخدمة
+    all_cols = set()
+    data = []
+    for i, row in enumerate(rows):
+        if max_rows and i >= max_rows:
+            break
+        cells = {}
+        for c in row.findall('s:c', ns):
+            ref = c.get('r')
+            col = re.match(r'([A-Z]+)', ref).group(1)
+            all_cols.add(col)
+            typ = c.get('t')
+            val_el = c.find('s:v', ns)
+            if val_el is not None and val_el.text is not None:
+                if typ == 's':
+                    try:
+                        cells[col] = shared[int(val_el.text)]
+                    except:
+                        cells[col] = val_el.text
+                else:
+                    cells[col] = val_el.text
+            else:
+                cells[col] = ''
+        data.append(cells)
+
+    sorted_cols = sorted(all_cols, key=lambda c: (len(c), c))
+    return data, sorted_cols
+
+def read_csv_data(filepath, max_rows=None):
+    """قراءة ملف CSV"""
+    import csv
+    data = []
+    cols = []
+    with open(filepath, 'r', encoding='utf-8-sig') as f:
+        reader = csv.reader(f)
+        for i, row in enumerate(reader):
+            if max_rows and i >= max_rows:
+                break
+            if i == 0:
+                cols = [f'C{j}' for j in range(len(row))]
+            cells = {}
+            for j, val in enumerate(row):
+                if j < len(cols):
+                    cells[cols[j]] = val
+            data.append(cells)
+    return data, cols
+
+# حقول النظام المتاحة للربط
+IMPORT_FIELDS = [
+    {'key': 'name', 'label': 'الاسم (English)', 'required': True},
+    {'key': 'name_ar', 'label': 'الاسم (العربي)', 'required': False},
+    {'key': 'cas_number', 'label': 'CAS Number', 'required': False},
+    {'key': 'family', 'label': 'العائلة العطرية', 'required': False},
+    {'key': 'profile', 'label': 'الموقع (Top/Heart/Base)', 'required': False},
+    {'key': 'supplier', 'label': 'المورد', 'required': False},
+    {'key': 'ifra_limit', 'label': 'IFRA Limit (%)', 'required': False},
+    {'key': 'purchase_price', 'label': 'سعر الشراء', 'required': False},
+    {'key': 'purchase_quantity', 'label': 'الكمية المشتراه', 'required': False},
+    {'key': 'odor_description', 'label': 'وصف الرائحة', 'required': False},
+    {'key': 'notes', 'label': 'ملاحظات', 'required': False},
+    {'key': 'flash_point', 'label': 'Flash Point', 'required': False},
+    {'key': 'specific_gravity', 'label': 'Specific Gravity', 'required': False},
+    {'key': 'color', 'label': 'اللون', 'required': False},
+    {'key': 'appearance', 'label': 'المظهر', 'required': False},
+    {'key': 'physical_state', 'label': 'الحالة الفيزيائية', 'required': False},
+]
+
+@app.route('/import')
+@login_required
+def import_page():
+    return render_template('import.html')
+
+@app.route('/api/import/upload', methods=['POST'])
+@login_required
+def api_import_upload():
+    """رفع ملف واستخراج الشيتات"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'لم يتم اختيار ملف'})
+
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'success': False, 'message': 'لم يتم اختيار ملف'})
+
+    ext = f.filename.rsplit('.', 1)[-1].lower()
+    if ext not in ('xlsx', 'xls', 'csv'):
+        return jsonify({'success': False, 'message': 'الملف لازم يكون xlsx أو csv'})
+
+    # حفظ مؤقت
+    file_id = str(uuid.uuid4())
+    save_path = os.path.join(IMPORT_TEMP_DIR, f'{file_id}.{ext}')
+    f.save(save_path)
+    session['import_file'] = save_path
+    session['import_ext'] = ext
+
+    if ext == 'csv':
+        return jsonify({'success': True, 'file_id': file_id, 'sheets': [{'name': 'CSV Data', 'index': 0}]})
+
+    try:
+        zf, ns, shared, sheets_info, rid_map = read_xlsx_sheets(save_path)
+        sheets = [{'name': s['name'], 'index': i} for i, s in enumerate(sheets_info)]
+        # حفظ معلومات الشيتات
+        session['import_sheets'] = json.dumps([{
+            'name': s['name'], 'rId': s['rId'], 'target': rid_map.get(s['rId'], '')
+        } for s in sheets_info])
+        zf.close()
+        return jsonify({'success': True, 'file_id': file_id, 'sheets': sheets})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'خطأ في قراءة الملف: {str(e)}'})
+
+@app.route('/api/import/columns', methods=['POST'])
+@login_required
+def api_import_columns():
+    """جلب أعمدة الشيت المختار مع عينات"""
+    sheet_index = int(request.form.get('sheet_index', 0))
+    filepath = session.get('import_file')
+    ext = session.get('import_ext', 'xlsx')
+
+    if not filepath or not os.path.exists(filepath):
+        return jsonify({'success': False, 'message': 'ارفع الملف مرة ثانية'})
+
+    try:
+        if ext == 'csv':
+            all_data, all_cols = read_csv_data(filepath)
+            sample_data = all_data[:10]
+            cols = all_cols
+        else:
+            zf, ns, shared, sheets_info, rid_map = read_xlsx_sheets(filepath)
+            target = rid_map.get(sheets_info[sheet_index]['rId'], '')
+            all_data, cols = read_xlsx_sheet_data(zf, ns, shared, target)
+            sample_data = all_data[:10]
+            zf.close()
+
+        if not all_data:
+            return jsonify({'success': False, 'message': 'الشيت فاضي'})
+
+        # أول صف = headers
+        header_row = all_data[0]
+        sample_rows = all_data[1:6]  # 5 صفوف عينة
+
+        columns = []
+        for col in cols:
+            header = str(header_row.get(col, '')).strip()
+            samples = [str(r.get(col, '')).strip() for r in sample_rows if r.get(col, '')]
+            if header or samples:
+                columns.append({
+                    'key': col,
+                    'header': header,
+                    'samples': samples[:3]
+                })
+
+        session['import_sheet_index'] = sheet_index
+        return jsonify({
+            'success': True,
+            'columns': columns,
+            'fields': IMPORT_FIELDS,
+            'total_rows': len(all_data) - 1
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/import/preview', methods=['POST'])
+@login_required
+def api_import_preview():
+    """معاينة البيانات بعد الربط"""
+    mapping = json.loads(request.form.get('mapping', '{}'))
+    filepath = session.get('import_file')
+    ext = session.get('import_ext', 'xlsx')
+    sheet_index = session.get('import_sheet_index', 0)
+
+    if not filepath or not os.path.exists(filepath):
+        return jsonify({'success': False, 'message': 'ارفع الملف مرة ثانية'})
+
+    if 'name' not in mapping.values():
+        return jsonify({'success': False, 'message': 'لازم تربط حقل "الاسم (English)" على الأقل'})
+
+    try:
+        if ext == 'csv':
+            data, cols = read_csv_data(filepath)
+        else:
+            zf, ns, shared, sheets_info, rid_map = read_xlsx_sheets(filepath)
+            target = rid_map.get(sheets_info[sheet_index]['rId'], '')
+            data, cols = read_xlsx_sheet_data(zf, ns, shared, target)
+            zf.close()
+
+        if len(data) < 2:
+            return jsonify({'success': False, 'message': 'لا توجد بيانات'})
+
+        # reverse mapping: system_field -> excel_column
+        field_to_col = {}
+        for excel_col, sys_field in mapping.items():
+            if sys_field:
+                field_to_col[sys_field] = excel_col
+
+        rows = data[1:]  # skip header
+        preview = []
+        # Check existing in DB
+        conn = get_db()
+        existing_names = set()
+        existing_cas = set()
+        for row in conn.execute("SELECT name, cas_number FROM materials"):
+            existing_names.add((row['name'] or '').lower().strip())
+            if row['cas_number']:
+                existing_cas.add(row['cas_number'].strip())
+        conn.close()
+
+        for row in rows[:30]:
+            item = {}
+            for sys_field, excel_col in field_to_col.items():
+                val = str(row.get(excel_col, '')).strip()
+                if val and val != '#DIV/0!':
+                    item[sys_field] = val
+                else:
+                    item[sys_field] = ''
+
+            name = item.get('name', '').strip()
+            if not name:
+                continue
+
+            cas = item.get('cas_number', '').strip()
+            item['_exists'] = (name.lower() in existing_names) or (cas and cas in existing_cas)
+            preview.append(item)
+
+        total_valid = 0
+        total_existing = 0
+        for row in rows:
+            name = str(row.get(field_to_col.get('name', ''), '')).strip()
+            if name:
+                total_valid += 1
+                cas = str(row.get(field_to_col.get('cas_number', ''), '')).strip()
+                if name.lower() in existing_names or (cas and cas in existing_cas):
+                    total_existing += 1
+
+        return jsonify({
+            'success': True,
+            'preview': preview,
+            'total_valid': total_valid,
+            'total_existing': total_existing,
+            'total_new': total_valid - total_existing
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/import/execute', methods=['POST'])
+@login_required
+def api_import_execute():
+    """تنفيذ الاستيراد"""
+    mapping = json.loads(request.form.get('mapping', '{}'))
+    update_existing = request.form.get('update_existing', 'false') == 'true'
+    auto_olfactive = request.form.get('auto_olfactive', 'true') == 'true'
+    filepath = session.get('import_file')
+    ext = session.get('import_ext', 'xlsx')
+    sheet_index = session.get('import_sheet_index', 0)
+
+    if not filepath or not os.path.exists(filepath):
+        return jsonify({'success': False, 'message': 'ارفع الملف مرة ثانية'})
+
+    try:
+        if ext == 'csv':
+            data, cols = read_csv_data(filepath)
+        else:
+            zf, ns, shared, sheets_info, rid_map = read_xlsx_sheets(filepath)
+            target = rid_map.get(sheets_info[sheet_index]['rId'], '')
+            data, cols = read_xlsx_sheet_data(zf, ns, shared, target)
+            zf.close()
+
+        field_to_col = {}
+        for excel_col, sys_field in mapping.items():
+            if sys_field:
+                field_to_col[sys_field] = excel_col
+
+        rows = data[1:]
+        conn = get_db()
+
+        # بناء lookup للموجود
+        existing = {}
+        for row in conn.execute("SELECT id, name, cas_number FROM materials"):
+            existing[(row['name'] or '').lower().strip()] = row['id']
+            if row['cas_number']:
+                existing[('cas:' + row['cas_number']).strip()] = row['id']
+
+        # بناء lookup للعائلات والموردين
+        families = {}
+        for row in conn.execute("SELECT id, name FROM families"):
+            families[row['name'].lower()] = row['id']
+
+        suppliers = {}
+        for row in conn.execute("SELECT id, name FROM suppliers"):
+            suppliers[row['name'].lower()] = row['id']
+
+        # خريطة أسماء العائلات المختلفة
+        family_aliases = {
+            'flower': 'floral', 'flowers': 'floral', 'frutiy': 'fruity', 'fruit': 'fruity',
+            'marine': 'aquatic', 'wood': 'woody', 'woods': 'woody', 'spice': 'spicy',
+            'balsam': 'balsamic', 'anisic': 'aromatic', 'mint': 'aromatic',
+            'musk': 'musk', 'leather': 'leather',
+        }
+
+        added = 0
+        updated = 0
+        skipped = 0
+
+        for row in rows:
+            item = {}
+            for sys_field, excel_col in field_to_col.items():
+                val = str(row.get(excel_col, '')).strip()
+                if val and val != '#DIV/0!':
+                    item[sys_field] = val
+                else:
+                    item[sys_field] = ''
+
+            name = item.get('name', '').strip()
+            if not name:
+                skipped += 1
+                continue
+
+            cas = item.get('cas_number', '').strip()
+
+            # تحقق من الموجود
+            exist_id = existing.get(name.lower()) or (existing.get('cas:' + cas) if cas else None)
+
+            if exist_id and not update_existing:
+                skipped += 1
+                continue
+
+            # ربط العائلة
+            family_id = None
+            family_text = item.get('family', '').strip().lower()
+            if family_text:
+                resolved = family_aliases.get(family_text, family_text)
+                family_id = families.get(resolved) or families.get(family_text)
+                if not family_id:
+                    # إنشاء عائلة جديدة
+                    cur = conn.execute("INSERT INTO families (name, name_ar, icon) VALUES (?, ?, ?)",
+                                       (item.get('family', '').strip(), '', '🏷️'))
+                    family_id = cur.lastrowid
+                    families[family_text] = family_id
+
+            # ربط المورد
+            supplier_id = None
+            supplier_text = item.get('supplier', '').strip()
+            if supplier_text:
+                supplier_id = suppliers.get(supplier_text.lower())
+                if not supplier_id:
+                    cur = conn.execute("INSERT INTO suppliers (name) VALUES (?)", (supplier_text,))
+                    supplier_id = cur.lastrowid
+                    suppliers[supplier_text.lower()] = supplier_id
+
+            # حساب السعر
+            price = 0
+            qty = 1
+            try:
+                price = float(item.get('purchase_price', 0) or 0)
+            except: pass
+            try:
+                qty = float(item.get('purchase_quantity', 1) or 1)
+            except: pass
+            ppg = price / qty if qty > 0 else 0
+
+            # Profile
+            profile = item.get('profile', '').strip()
+            if profile and profile.lower() in ('top', 'heart', 'base'):
+                profile = profile.capitalize()
+            else:
+                profile = 'Heart'
+
+            # IFRA
+            ifra = None
+            try:
+                ifra = float(item.get('ifra_limit', '') or 0) or None
+            except: pass
+
+            if exist_id and update_existing:
+                conn.execute('''UPDATE materials SET name=?, name_ar=?, cas_number=?, family_id=?,
+                    profile=?, supplier_id=?, ifra_limit=?, purchase_price=?, purchase_quantity=?,
+                    price_per_gram=?, odor_description=?, notes=?, flash_point=?, specific_gravity=?,
+                    color=?, appearance=?, physical_state=? WHERE id=?''',
+                    (name, item.get('name_ar', ''), cas, family_id,
+                     profile, supplier_id, ifra, price, qty, ppg,
+                     item.get('odor_description', ''), item.get('notes', ''),
+                     item.get('flash_point', ''), item.get('specific_gravity', ''),
+                     item.get('color', ''), item.get('appearance', ''),
+                     item.get('physical_state', ''), exist_id))
+                mat_id = exist_id
+                updated += 1
+            else:
+                cur = conn.execute('''INSERT INTO materials (name, name_ar, cas_number, family_id, profile,
+                    supplier_id, ifra_limit, purchase_price, purchase_quantity, price_per_gram,
+                    odor_description, notes, flash_point, specific_gravity, color, appearance, physical_state)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (name, item.get('name_ar', ''), cas, family_id,
+                     profile, supplier_id, ifra, price, qty, ppg,
+                     item.get('odor_description', ''), item.get('notes', ''),
+                     item.get('flash_point', ''), item.get('specific_gravity', ''),
+                     item.get('color', ''), item.get('appearance', ''),
+                     item.get('physical_state', '')))
+                mat_id = cur.lastrowid
+                existing[name.lower()] = mat_id
+                if cas:
+                    existing['cas:' + cas] = mat_id
+                added += 1
+
+            # تصنيف عطري تلقائي
+            if auto_olfactive and item.get('odor_description'):
+                scores = auto_classify_odor(item['odor_description'])
+                if any(v > 0 for v in scores.values()):
+                    conn.execute("""INSERT OR REPLACE INTO material_olfactive
+                        (material_id, citrus, aldehydic, aromatic, green, marine, floral, fruity,
+                         spicy, balsamic, woody, ambery, musky, leathery, animal)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (mat_id, *[scores[cat] for cat in OLFACTIVE_CATEGORIES]))
+
+        conn.commit()
+        conn.close()
+
+        # حذف الملف المؤقت
+        try:
+            os.remove(filepath)
+        except: pass
+
+        return jsonify({
+            'success': True,
+            'message': f'تم الاستيراد بنجاح',
+            'added': added,
+            'updated': updated,
+            'skipped': skipped
+        })
+    except Exception as e:
+        log(f"[IMPORT ERROR] {e}")
+        return jsonify({'success': False, 'message': str(e)})
 
 if __name__ == '__main__':
     log("Starting Perfume Vault v3...")
