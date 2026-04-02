@@ -1,34 +1,129 @@
 {% extends "base.html" %}
 {% block title %}Perfume Vault - التركيبات{% endblock %}
 
+{% block extra_css %}
+<style>
+    .formula-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+        margin-bottom: 20px;
+        overflow: hidden;
+        transition: all 0.3s;
+        border: 2px solid transparent;
+    }
+    .formula-card:hover {
+        box-shadow: 0 6px 28px rgba(111,66,193,0.15);
+        border-color: var(--primary);
+        transform: translateY(-2px);
+    }
+    .formula-card-body {
+        display: flex;
+        gap: 20px;
+        padding: 20px;
+    }
+    .formula-info {
+        flex: 1;
+        min-width: 0;
+    }
+    .formula-wheel-section {
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-width: 200px;
+        padding: 10px;
+        background: linear-gradient(135deg, #f8f6ff, #fdf2f8);
+        border-radius: 12px;
+    }
+    .formula-name {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 4px;
+    }
+    .formula-name a {
+        text-decoration: none;
+        color: inherit;
+    }
+    .formula-name a:hover { color: var(--primary); }
+    .formula-desc {
+        font-size: 0.85rem;
+        color: #888;
+        margin-bottom: 12px;
+    }
+    .formula-ingredients-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 12px;
+    }
+    .ing-tag {
+        font-size: 0.72rem;
+        padding: 3px 10px;
+        border-radius: 20px;
+        background: rgba(111,66,193,0.08);
+        color: #6f42c1;
+        font-weight: 600;
+    }
+    .ing-tag.more {
+        background: rgba(0,0,0,0.05);
+        color: #999;
+    }
+    .formula-stats {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+    }
+    .formula-stat {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.82rem;
+        color: #666;
+    }
+    .formula-stat i { color: var(--primary); }
+    .formula-stat .val { font-weight: 700; color: #333; }
+    .formula-actions {
+        display: flex;
+        gap: 8px;
+        padding-top: 12px;
+        border-top: 1px solid #f0f0f0;
+    }
+    .formula-footer {
+        background: #fafbfc;
+        padding: 14px 20px;
+        border-top: 1px solid #f0f0f0;
+    }
+    .dilution-info {
+        font-size: 0.78rem;
+        color: #888;
+    }
+    .dilution-info code { font-size: 0.75rem; }
+    .no-olf-msg {
+        font-size: 0.78rem;
+        color: #bbb;
+        text-align: center;
+        padding: 20px 0;
+    }
+    @media (max-width: 768px) {
+        .formula-card-body { flex-direction: column; }
+        .formula-wheel-section { min-width: unset; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-file-earmark-text"></i> التركيبات</h2>
+    <h2><i class="bi bi-file-earmark-text"></i> التركيبات <span id="formulaCount" class="badge bg-secondary fs-6"></span></h2>
     <button class="btn btn-primary" onclick="showCreateModal()">
         <i class="bi bi-plus-circle"></i> تركيبة جديدة
     </button>
 </div>
 
-<div class="card">
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>الاسم</th>
-                        <th>المكونات</th>
-                        <th>الوزن</th>
-                        <th>التكلفة</th>
-                        <th>الحالة</th>
-                        <th>التاريخ</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody id="formulasBody"></tbody>
-            </table>
-        </div>
-    </div>
-</div>
+<div id="formulasContainer"></div>
 
 <!-- Create Modal -->
 <div class="modal fade" id="createModal" tabindex="-1">
@@ -65,6 +160,9 @@
 {% block extra_js %}
 <script>
 const createModal = new bootstrap.Modal(document.getElementById('createModal'));
+const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
+const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
+const OLF_COLORS = ['#FFD700','#B0C4DE','#2E8B57','#32CD32','#4169E1','#FF69B4','#FF6347','#FF4500','#8B6914','#654321','#DAA520','#9370DB','#6B4226','#800020'];
 
 function loadFormulas() {
     fetch('/api/formulas')
@@ -72,35 +170,111 @@ function loadFormulas() {
         .then(data => {
             if (data.success) {
                 renderFormulas(data.data);
+                document.getElementById('formulaCount').textContent = data.data.length;
             }
         });
 }
 
 function renderFormulas(formulas) {
-    const tbody = document.getElementById('formulasBody');
-    tbody.innerHTML = formulas.map(f => `
-        <tr>
-            <td>
-                <a href="/formula/${f.id}" class="fw-bold text-decoration-none">${f.name}</a>
-                ${f.description ? `<br><small class="text-muted">${f.description.substring(0, 50)}...</small>` : ''}
-            </td>
-            <td>${f.ingredients_count}</td>
-            <td>${f.total_weight ? f.total_weight.toFixed(2) + ' g' : '-'}</td>
-            <td>${f.total_cost ? f.total_cost.toFixed(2) : '-'}</td>
-            <td>
-                <span class="badge bg-${f.status === 'final' ? 'success' : f.status === 'testing' ? 'warning' : 'secondary'}">
-                    ${f.status}
-                </span>
-            </td>
-            <td>${f.created_at ? f.created_at.substring(0, 10) : '-'}</td>
-            <td>
-                <a href="/formula/${f.id}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
-                <a href="/formula/${f.id}/card" class="btn btn-sm btn-outline-warning" title="بطاقة تعريفية"><i class="bi bi-card-heading"></i></a>
-                <button class="btn btn-sm btn-outline-success" onclick="duplicateFormula(${f.id})"><i class="bi bi-copy"></i></button>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteFormula(${f.id}, '${f.name}')"><i class="bi bi-trash"></i></button>
-            </td>
-        </tr>
-    `).join('');
+    const container = document.getElementById('formulasContainer');
+    if (!formulas.length) {
+        container.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-inbox" style="font-size:3rem;"></i><p class="mt-2">لا توجد تركيبات بعد</p></div>';
+        return;
+    }
+    container.innerHTML = formulas.map((f, idx) => {
+        const maxShow = 8;
+        const names = f.ingredient_names || [];
+        const shown = names.slice(0, maxShow);
+        const extra = names.length - maxShow;
+
+        const statusColors = { final: 'success', testing: 'warning', draft: 'secondary' };
+        const statusLabels = { final: 'نهائي', testing: 'تجريب', draft: 'مسودة' };
+
+        const hasOlf = f.olfactive_profile && OLF_CATS.some(c => (f.olfactive_profile[c] || 0) > 0);
+
+        return `
+        <div class="formula-card">
+            <div class="formula-card-body">
+                <div class="formula-info">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <div class="formula-name"><a href="/formula/${f.id}">${f.name}</a></div>
+                        <span class="badge bg-${statusColors[f.status] || 'secondary'}">${statusLabels[f.status] || f.status}</span>
+                    </div>
+                    ${f.description ? `<div class="formula-desc">${f.description}</div>` : ''}
+
+                    <div class="formula-ingredients-list">
+                        ${shown.map(n => `<span class="ing-tag">${n}</span>`).join('')}
+                        ${extra > 0 ? `<span class="ing-tag more">+${extra} أخرى</span>` : ''}
+                        ${!names.length ? '<span class="text-muted" style="font-size:0.8rem;">لا توجد مكونات</span>' : ''}
+                    </div>
+
+                    <div class="formula-stats">
+                        <div class="formula-stat"><i class="bi bi-layers"></i> مكونات: <span class="val">${f.ingredients_count}</span></div>
+                        <div class="formula-stat"><i class="bi bi-speedometer2"></i> الوزن: <span class="val">${f.total_weight ? f.total_weight.toFixed(2) + ' g' : '-'}</span></div>
+                        <div class="formula-stat"><i class="bi bi-cash-coin"></i> التكلفة: <span class="val">${f.total_cost ? f.total_cost.toFixed(2) : '-'}</span></div>
+                        <div class="formula-stat"><i class="bi bi-calendar3"></i> <span class="val">${f.created_at ? f.created_at.substring(0, 10) : '-'}</span></div>
+                    </div>
+
+                    <div class="formula-actions">
+                        <a href="/formula/${f.id}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> عرض</a>
+                        <a href="/formula/${f.id}/card" class="btn btn-sm btn-outline-warning"><i class="bi bi-card-heading"></i> بطاقة</a>
+                        <button class="btn btn-sm btn-outline-success" onclick="duplicateFormula(${f.id})"><i class="bi bi-copy"></i> نسخ</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteFormula(${f.id}, '${f.name.replace(/'/g, "\\'")}')"><i class="bi bi-trash"></i> حذف</button>
+                    </div>
+                </div>
+
+                <div class="formula-wheel-section">
+                    ${hasOlf ? `<canvas id="fwheel_${f.id}" width="180" height="180"></canvas>` : '<div class="no-olf-msg"><i class="bi bi-bullseye"></i><br>لا يوجد بروفايل عطري</div>'}
+                </div>
+            </div>
+            <div class="formula-footer">
+                <div class="dilution-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>التخفيف:</strong>
+                    <code>1</code> = صافي 100% &nbsp;|&nbsp;
+                    <code>0.5</code> = 50% &nbsp;|&nbsp;
+                    <code>0.1</code> = 10% &nbsp;|&nbsp;
+                    النسب الصافية (J%) تحسب تلقائياً بناءً على التخفيف
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    // Draw polar area charts
+    setTimeout(() => {
+        formulas.forEach(f => {
+            const hasOlf = f.olfactive_profile && OLF_CATS.some(c => (f.olfactive_profile[c] || 0) > 0);
+            if (!hasOlf) return;
+            const canvas = document.getElementById('fwheel_' + f.id);
+            if (!canvas) return;
+            const data = OLF_CATS.map(c => f.olfactive_profile[c] || 0);
+            new Chart(canvas.getContext('2d'), {
+                type: 'polarArea',
+                data: {
+                    labels: OLF_LABELS,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: OLF_COLORS.map(c => c + '66'),
+                        borderColor: OLF_COLORS,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: false,
+                    animation: { duration: 400 },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        r: {
+                            min: 0, max: 10,
+                            ticks: { stepSize: 2, backdropColor: 'transparent', color: '#999', font: { size: 7 } },
+                            grid: { color: 'rgba(0,0,0,0.06)' },
+                            pointLabels: { display: false }
+                        }
+                    }
+                }
+            });
+        });
+    }, 100);
 }
 
 function showCreateModal() {
@@ -143,7 +317,7 @@ function duplicateFormula(id) {
 }
 
 function deleteFormula(id, name) {
-    if (confirm(`هل تريد حذف "${name}"؟`)) {
+    if (confirm('هل تريد حذف "' + name + '"؟')) {
         const formData = new FormData();
         formData.append('action', 'delete');
         formData.append('id', id);
