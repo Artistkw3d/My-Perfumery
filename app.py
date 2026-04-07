@@ -544,6 +544,17 @@ def init_db():
         status TEXT DEFAULT 'pending', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS ifra_contributions (
+        id INTEGER PRIMARY KEY,
+        source_type TEXT NOT NULL,
+        ncs_cas TEXT NOT NULL,
+        ncs_name TEXT,
+        ncs_botanical TEXT,
+        constituent_cas TEXT NOT NULL,
+        constituent_name TEXT,
+        concentration_pct REAL NOT NULL
+    )''')
+
     # بيانات افتراضية
     c.execute("INSERT OR IGNORE INTO users (username, password, name, role) VALUES ('admin', 'admin123', 'المدير', 'admin')")
     c.execute("INSERT OR IGNORE INTO company_info (id, name, address, phone, email) VALUES (1, 'Perfume Vault', 'Kuwait', '+965 xxxx xxxx', 'info@perfumevault.com')")
@@ -774,6 +785,151 @@ def import_ifra_standards():
         log(f"[IFRA] Imported {imported} IFRA standards")
     except Exception as e:
         log(f"[IFRA] Error importing: {e}")
+    finally:
+        conn.close()
+
+def import_ifra_contributions():
+    """Import IFRA contributions from other sources (naturals + Schiff bases)"""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    xlsx_path = os.path.join(os.path.dirname(__file__), 'data', 'ifra_annex_contributions.xlsx')
+    if not os.path.exists(xlsx_path):
+        log("[IFRA] Contributions annex file not found, skipping import")
+        return
+
+    conn = get_db()
+    count = conn.execute("SELECT COUNT(*) FROM ifra_contributions").fetchone()[0]
+    if count > 0:
+        conn.close()
+        return
+
+    log("[IFRA] Importing IFRA contributions from other sources...")
+
+    try:
+        zf = zipfile.ZipFile(xlsx_path)
+        ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+
+        # Read shared strings
+        shared = []
+        try:
+            ss_tree = ET.parse(zf.open('xl/sharedStrings.xml'))
+            for si in ss_tree.findall('.//s:si', ns):
+                parts = []
+                for t in si.iter('{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t'):
+                    if t.text:
+                        parts.append(t.text)
+                shared.append(''.join(parts))
+        except:
+            pass
+
+        def cell_ref_to_col(ref):
+            col = ''
+            for ch in ref:
+                if ch.isalpha():
+                    col += ch
+                else:
+                    break
+            result = 0
+            for ch in col:
+                result = result * 26 + (ord(ch) - ord('A') + 1)
+            return result - 1
+
+        def get_cell_value(cell):
+            t = cell.get('t', '')
+            v_el = cell.find('s:v', ns)
+            if v_el is None or v_el.text is None:
+                return ''
+            if t == 's':
+                idx = int(v_el.text)
+                return shared[idx] if idx < len(shared) else ''
+            return v_el.text
+
+        imported = 0
+
+        # === Sheet 1: Natural Contributions ===
+        # Columns: D=NCS CAS, F=NCS Name, G=Botanical, H=Constituent CAS, I=Constituent Name, J=Concentration %
+        sheet1 = ET.parse(zf.open('xl/worksheets/sheet1.xml'))
+        rows1 = sheet1.findall('.//s:sheetData/s:row', ns)
+
+        for row_el in rows1:
+            row_num = int(row_el.get('r', '0'))
+            if row_num < 8:  # Skip header rows (data starts at row 8)
+                continue
+
+            cells = {}
+            for cell in row_el.findall('s:c', ns):
+                ref = cell.get('r', '')
+                col_idx = cell_ref_to_col(ref)
+                cells[col_idx] = get_cell_value(cell)
+
+            ncs_cas = cells.get(3, '').strip()  # D = col 3
+            ncs_name = cells.get(5, '').strip()  # F = col 5
+            botanical = cells.get(6, '').strip()  # G = col 6
+            constituent_cas = cells.get(7, '').strip()  # H = col 7
+            constituent_name = cells.get(8, '').strip()  # I = col 8
+            conc_str = cells.get(9, '').strip()  # J = col 9
+
+            if not ncs_cas or not constituent_cas or not conc_str:
+                continue
+
+            try:
+                concentration = float(conc_str.replace(',', '.'))
+            except:
+                continue
+
+            conn.execute('''INSERT INTO ifra_contributions
+                (source_type, ncs_cas, ncs_name, ncs_botanical, constituent_cas, constituent_name, concentration_pct)
+                VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                ('natural', ncs_cas, ncs_name, botanical, constituent_cas, constituent_name, concentration))
+            imported += 1
+
+        # === Sheet 3: Schiff Bases ===
+        # Columns: A=Aldehyde Name, B=Aldehyde CAS, C=Schiff Base Name, D=Schiff Base CAS, E=Concentration %
+        sheet3 = ET.parse(zf.open('xl/worksheets/sheet3.xml'))
+        rows3 = sheet3.findall('.//s:sheetData/s:row', ns)
+
+        for row_el in rows3:
+            row_num = int(row_el.get('r', '0'))
+            if row_num < 5:  # Skip header rows (data starts at row 5)
+                continue
+
+            cells = {}
+            for cell in row_el.findall('s:c', ns):
+                ref = cell.get('r', '')
+                col_idx = cell_ref_to_col(ref)
+                cells[col_idx] = get_cell_value(cell)
+
+            aldehyde_name = cells.get(0, '').strip()  # A = col 0
+            aldehyde_cas = cells.get(1, '').strip()  # B = col 1
+            schiff_name = cells.get(2, '').strip()  # C = col 2
+            schiff_cas = cells.get(3, '').strip()  # D = col 3
+            conc_str = cells.get(4, '').strip()  # E = col 4
+
+            if not schiff_cas or not aldehyde_cas or not conc_str:
+                continue
+
+            # Schiff base CAS may have multiple (separated by ;)
+            for cas in schiff_cas.split(';'):
+                cas = cas.strip()
+                if not cas:
+                    continue
+                try:
+                    concentration = float(conc_str.replace(',', '.'))
+                except:
+                    continue
+
+                conn.execute('''INSERT INTO ifra_contributions
+                    (source_type, ncs_cas, ncs_name, ncs_botanical, constituent_cas, constituent_name, concentration_pct)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                    ('schiff_base', cas, schiff_name, None, aldehyde_cas, aldehyde_name, concentration))
+                imported += 1
+
+        conn.commit()
+        zf.close()
+        log(f"[IFRA] Imported {imported} contribution entries")
+    except Exception as e:
+        log(f"[IFRA] Error importing contributions: {e}")
     finally:
         conn.close()
 
@@ -1556,11 +1712,104 @@ def api_ifra_formula_check(fid):
             else:
                 warnings.append(f"⚠️ {i['name']}: {weight_pct:.4f}% exceeds IFRA limit {ifra_limit}%")
 
+    # === Contributions from other sources ===
+    # For each ingredient, check if it contains restricted IFRA constituents
+    # (from naturals or Schiff bases), sum contributions per constituent, check limits
+    contribution_map = {}  # constituent_cas -> {name, sources: [{material, ncs_cas, contributed_pct}], total_pct, ifra_limit, exceeded}
+
+    for i in ingredients:
+        cas = i['cas_number'] or ''
+        if not cas:
+            continue
+
+        weight_pct = (i['weight'] / total_weight * 100) if total_weight > 0 else 0
+
+        # Look up contributions where this material's CAS matches ncs_cas
+        contribs = conn.execute('''
+            SELECT * FROM ifra_contributions WHERE ncs_cas = ?
+        ''', (cas,)).fetchall()
+
+        for c in contribs:
+            c_cas = c['constituent_cas']
+            contributed_pct = weight_pct * c['concentration_pct'] / 100
+
+            if c_cas not in contribution_map:
+                contribution_map[c_cas] = {
+                    'constituent_name': c['constituent_name'],
+                    'constituent_cas': c_cas,
+                    'sources': [],
+                    'total_pct': 0,
+                    'ifra_limit': None,
+                    'exceeded': False,
+                    'no_restriction': False,
+                }
+
+            contribution_map[c_cas]['sources'].append({
+                'material_name': i['name'],
+                'ncs_cas': cas,
+                'ncs_name': c['ncs_name'],
+                'source_type': c['source_type'],
+                'concentration_in_ncs': c['concentration_pct'],
+                'material_pct_in_formula': round(weight_pct, 4),
+                'contributed_pct': round(contributed_pct, 6),
+            })
+            contribution_map[c_cas]['total_pct'] += contributed_pct
+
+    # Now check IFRA limits for each contributed constituent
+    contribution_results = []
+    for c_cas, data in contribution_map.items():
+        # Also add any direct usage of this constituent from Layer 1
+        for r in results:
+            if r['cas_number'] == c_cas:
+                data['total_pct'] += r['weight_pct']
+                data['sources'].insert(0, {
+                    'material_name': r['material_name'],
+                    'ncs_cas': c_cas,
+                    'ncs_name': r['material_name'],
+                    'source_type': 'direct',
+                    'concentration_in_ncs': 100,
+                    'material_pct_in_formula': r['weight_pct'],
+                    'contributed_pct': r['weight_pct'],
+                })
+                break
+
+        data['total_pct'] = round(data['total_pct'], 6)
+
+        # Look up IFRA limit for the constituent
+        row = conn.execute('''
+            SELECT s.* FROM ifra_standards s
+            JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+            WHERE l.cas_number = ?
+        ''', (c_cas,)).fetchone()
+
+        if row:
+            cat_val = row[cat_key]
+            if cat_val is not None:
+                if cat_val == -1:
+                    data['ifra_limit'] = None
+                    data['no_restriction'] = True
+                elif cat_val == 0:
+                    data['ifra_limit'] = 0
+                    data['exceeded'] = True
+                else:
+                    data['ifra_limit'] = cat_val
+                    if data['total_pct'] > cat_val:
+                        data['exceeded'] = True
+
+        if data['exceeded']:
+            if data['ifra_limit'] == 0:
+                warnings.append(f"⛔ {data['constituent_name']} (from contributions): PROHIBITED in {cat_key}")
+            else:
+                warnings.append(f"⚠️ {data['constituent_name']} (from contributions): {data['total_pct']:.4f}% exceeds IFRA limit {data['ifra_limit']}%")
+
+        contribution_results.append(data)
+
     conn.close()
     return jsonify({
         'success': True,
         'category': cat_key,
         'results': results,
+        'contributions': contribution_results,
         'warnings': warnings,
         'total_weight': total_weight
     })
@@ -1959,6 +2208,91 @@ def api_formula_ingredients(fid):
                 'cost': i['weight'] * (i['price_per_gram'] or 0)
             })
         
+        # === IFRA Contributions from other sources ===
+        contribution_map = {}
+        for t in temp_results:
+            cas = t['data']['cas_number'] or ''
+            if not cas:
+                continue
+            weight_pct_100 = t['weight_pct'] * 100  # H as percentage
+
+            contribs = conn.execute(
+                'SELECT * FROM ifra_contributions WHERE ncs_cas = ?', (cas,)
+            ).fetchall()
+
+            for c in contribs:
+                c_cas = c['constituent_cas']
+                contributed_pct = weight_pct_100 * c['concentration_pct'] / 100
+
+                if c_cas not in contribution_map:
+                    contribution_map[c_cas] = {
+                        'constituent_name': c['constituent_name'],
+                        'constituent_cas': c_cas,
+                        'sources': [],
+                        'total_pct': 0,
+                        'ifra_limit': None,
+                        'exceeded': False,
+                        'no_restriction': False,
+                    }
+
+                contribution_map[c_cas]['sources'].append({
+                    'material_name': t['data']['name'],
+                    'ncs_name': c['ncs_name'],
+                    'source_type': c['source_type'],
+                    'concentration_in_ncs': c['concentration_pct'],
+                    'material_pct_in_formula': round(weight_pct_100, 4),
+                    'contributed_pct': round(contributed_pct, 6),
+                })
+                contribution_map[c_cas]['total_pct'] += contributed_pct
+
+        # Check IFRA limits for each contributed constituent
+        contribution_warnings = []
+        contribution_results = []
+        for c_cas, cdata in contribution_map.items():
+            # Add direct usage if this constituent is also used directly
+            for r in result:
+                if r.get('cas_number') == c_cas:
+                    cdata['total_pct'] += r.get('weight_percentage', 0)
+                    cdata['sources'].insert(0, {
+                        'material_name': r['name'],
+                        'ncs_name': r['name'],
+                        'source_type': 'direct',
+                        'concentration_in_ncs': 100,
+                        'material_pct_in_formula': r.get('weight_percentage', 0),
+                        'contributed_pct': r.get('weight_percentage', 0),
+                    })
+                    break
+
+            cdata['total_pct'] = round(cdata['total_pct'], 6)
+
+            row = conn.execute('''
+                SELECT s.* FROM ifra_standards s
+                JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+                WHERE l.cas_number = ?
+            ''', (c_cas,)).fetchone()
+
+            if row:
+                cat_val = row[cat_key]
+                if cat_val is not None:
+                    if cat_val == -1:
+                        cdata['ifra_limit'] = None
+                        cdata['no_restriction'] = True
+                    elif cat_val == 0:
+                        cdata['ifra_limit'] = 0
+                        cdata['exceeded'] = True
+                    else:
+                        cdata['ifra_limit'] = cat_val
+                        if cdata['total_pct'] > cat_val:
+                            cdata['exceeded'] = True
+
+            if cdata['exceeded']:
+                if cdata['ifra_limit'] == 0:
+                    contribution_warnings.append(f"⛔ {cdata['constituent_name']}: PROHIBITED in {cat_key}")
+                else:
+                    contribution_warnings.append(f"⚠️ {cdata['constituent_name']}: {cdata['total_pct']:.4f}% exceeds IFRA limit {cdata['ifra_limit']}%")
+
+            contribution_results.append(cdata)
+
         # Calculate combined olfactive profile
         olf_cats = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal']
         formula_olfactive = {c: 0 for c in olf_cats}
@@ -1983,7 +2317,9 @@ def api_formula_ingredients(fid):
             'ifra_category': cat_key,
             'ifra_design_limit': ifra_design_limit,  # N3 محسوب
             'ifra_final_limit': ifra_final_limit,  # E3 محسوب
-            'olfactive_profile': formula_olfactive
+            'olfactive_profile': formula_olfactive,
+            'contributions': contribution_results,
+            'contribution_warnings': contribution_warnings
         })
 
     elif request.method == 'POST':
@@ -3021,4 +3357,5 @@ if __name__ == '__main__':
     log("Starting Perfume Vault v3...")
     init_db()
     import_ifra_standards()
+    import_ifra_contributions()
     app.run(host='0.0.0.0', port=8000, debug=True)
