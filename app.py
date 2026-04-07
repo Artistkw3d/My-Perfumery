@@ -1576,26 +1576,7 @@ def msds_lookup():
         return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 # ===== IFRA Standards API =====
-IFRA_CATEGORIES = [
-    ('cat1', 'Cat 1 - Lip Products'),
-    ('cat2', 'Cat 2 - Deodorants'),
-    ('cat3', 'Cat 3 - Fine Fragrance'),
-    ('cat4', 'Cat 4 - Body Creams'),
-    ('cat5a', 'Cat 5A - Face Cream'),
-    ('cat5b', 'Cat 5B - Face Masks'),
-    ('cat5c', 'Cat 5C - Hand Cream'),
-    ('cat5d', 'Cat 5D - Baby Products'),
-    ('cat6', 'Cat 6 - Mouthwash'),
-    ('cat7a', 'Cat 7A - Hair Rinse-off'),
-    ('cat7b', 'Cat 7B - Hair Leave-on'),
-    ('cat8', 'Cat 8 - Intimate Wipes'),
-    ('cat9', 'Cat 9 - Soap/Shower'),
-    ('cat10a', 'Cat 10A - Household Cleaning'),
-    ('cat10b', 'Cat 10B - Household Aerosol'),
-    ('cat11a', 'Cat 11A - Diapers'),
-    ('cat11b', 'Cat 11B - Candles/Air Fresh'),
-    ('cat12', 'Cat 12 - Other/Industrial'),
-]
+# IFRA_CATEGORIES already defined at top of file (line 34) as list of dicts
 
 @app.route('/api/ifra/lookup', methods=['GET'])
 @login_required
