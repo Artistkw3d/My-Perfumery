@@ -133,6 +133,16 @@
                 </div>
             </div>
         </div>
+
+        <!-- IFRA Contributions from Other Sources -->
+        <div class="card mb-3" id="contributionsCard" style="display:none;">
+            <div class="card-header" style="background: linear-gradient(135deg, #dc3545, #c82333); color: white;">
+                <i class="bi bi-exclamation-triangle"></i> IFRA Contributions
+                <span class="badge bg-light text-dark ms-2" id="contribCount">0</span>
+            </div>
+            <div class="card-body p-0" id="contributionsBody">
+            </div>
+        </div>
         
         <div class="card mb-3">
             <div class="card-header" style="background: linear-gradient(135deg, #1a1a2e, #16213e); color: white;">
@@ -408,8 +418,79 @@ function loadIngredients() {
                 if (data.olfactive_profile) {
                     updateFormulaWheel(data.olfactive_profile);
                 }
+                if (data.contributions && data.contributions.length > 0) {
+                    renderContributions(data.contributions, data.contribution_warnings);
+                } else {
+                    document.getElementById('contributionsCard').style.display = 'none';
+                }
             }
         });
+}
+
+function renderContributions(contributions, warnings) {
+    const card = document.getElementById('contributionsCard');
+    const body = document.getElementById('contributionsBody');
+    const countBadge = document.getElementById('contribCount');
+
+    const exceeded = contributions.filter(c => c.exceeded);
+    card.style.display = 'block';
+    countBadge.textContent = contributions.length;
+
+    // Change header color based on status
+    const header = card.querySelector('.card-header');
+    if (exceeded.length > 0) {
+        header.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
+    } else {
+        header.style.background = 'linear-gradient(135deg, #198754, #157347)';
+    }
+
+    let html = '<div class="table-responsive"><table class="table table-sm table-hover mb-0">';
+    html += `<thead><tr style="background:#f8f9fa;">
+        <th>Restricted Substance</th>
+        <th class="text-center">CAS</th>
+        <th class="text-center">Total %</th>
+        <th class="text-center">IFRA Limit</th>
+        <th class="text-center">Status</th>
+        <th>Sources</th>
+    </tr></thead><tbody>`;
+
+    for (const c of contributions) {
+        const statusIcon = c.exceeded
+            ? (c.ifra_limit === 0 ? '<span class="text-danger fw-bold">⛔</span>' : '<span class="text-danger fw-bold">⚠️</span>')
+            : (c.no_restriction ? '<span class="text-success">NR</span>' : '<span class="text-success">✓</span>');
+
+        const limitDisplay = c.ifra_limit === null
+            ? (c.no_restriction ? 'NR' : '-')
+            : (c.ifra_limit === 0 ? '⛔' : c.ifra_limit + '%');
+
+        const rowClass = c.exceeded ? 'table-danger' : '';
+
+        const sourcesHtml = c.sources.map(s => {
+            const typeLabel = s.source_type === 'direct' ? '📌' : (s.source_type === 'schiff_base' ? '🧪' : '🌿');
+            return `<small>${typeLabel} ${s.material_name} (${s.concentration_in_ncs}% → ${s.contributed_pct.toFixed(4)}%)</small>`;
+        }).join('<br>');
+
+        html += `<tr class="${rowClass}">
+            <td><strong>${c.constituent_name}</strong></td>
+            <td class="text-center"><small>${c.constituent_cas}</small></td>
+            <td class="text-center fw-bold">${c.total_pct.toFixed(4)}%</td>
+            <td class="text-center">${limitDisplay}</td>
+            <td class="text-center">${statusIcon}</td>
+            <td>${sourcesHtml}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table></div>';
+
+    if (warnings && warnings.length > 0) {
+        html += '<div class="p-2">';
+        for (const w of warnings) {
+            html += `<div class="alert alert-danger py-1 px-2 mb-1 small">${w}</div>`;
+        }
+        html += '</div>';
+    }
+
+    body.innerHTML = html;
 }
 
 function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraFinalLimit) {
