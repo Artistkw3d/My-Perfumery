@@ -2227,6 +2227,34 @@ def api_formula_ingredients(fid):
                             ifra_limit = 0  # Prohibited
                         else:
                             ifra_limit = cat_val
+            # If no direct IFRA standard, derive from contributions (constituents inside naturals/Schiff bases)
+            ifra_contrib_name = None
+            if ifra_limit == 0 and ifra_std_name is None and cas:
+                contribs = conn.execute(
+                    'SELECT * FROM ifra_contributions WHERE ncs_cas = ?', (cas,)
+                ).fetchall()
+                min_derived = None
+                for c in contribs:
+                    c_row = conn.execute('''
+                        SELECT s.* FROM ifra_standards s
+                        JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+                        WHERE l.cas_number = ?
+                    ''', (c['constituent_cas'],)).fetchone()
+                    if c_row:
+                        c_val = c_row[cat_key]
+                        if c_val is not None and c_val >= 0 and c['concentration_pct'] > 0:
+                            if c_val == 0:
+                                derived = 0
+                            else:
+                                derived = c_val / (c['concentration_pct'] / 100)
+                            if min_derived is None or derived < min_derived:
+                                min_derived = derived
+                                ifra_contrib_name = c['constituent_name']
+                if min_derived is not None:
+                    ifra_limit = round(min_derived, 6)
+                    ifra_std_name = f"Contrib: {ifra_contrib_name}"
+                    ifra_std_type = 'contribution'
+
             # Fallback to manual ifra_limit if no IFRA standard found
             if ifra_limit == 0 and ifra_std_name is None and (i['ifra_limit'] or 0) > 0:
                 ifra_limit = i['ifra_limit']
