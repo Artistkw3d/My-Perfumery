@@ -1606,6 +1606,107 @@ def api_ifra_categories():
     """Get list of IFRA categories"""
     return jsonify({'success': True, 'categories': IFRA_CATEGORIES})
 
+@app.route('/contributions-test')
+@login_required
+def contributions_test():
+    return render_template('contributions_test.html')
+
+@app.route('/api/ifra/contributions-calc/<int:fid>', methods=['GET'])
+@login_required
+def api_ifra_contributions_calc(fid):
+    """Calculate effective IFRA limits for materials based on their constituent contributions"""
+    conn = get_db()
+
+    formula = conn.execute("SELECT * FROM formulas WHERE id=?", (fid,)).fetchone()
+    if not formula:
+        conn.close()
+        return jsonify({'success': False, 'message': 'Formula not found'})
+
+    cat_key = formula['ifra_category'] or 'cat4'
+
+    ingredients = conn.execute('''
+        SELECT fi.*, m.name, m.cas_number, m.ifra_limit
+        FROM formula_ingredients fi
+        JOIN materials m ON fi.material_id = m.id
+        WHERE fi.formula_id = ?
+    ''', (fid,)).fetchall()
+
+    material_limits = {}
+
+    for i in ingredients:
+        cas = i['cas_number'] or ''
+        if not cas:
+            continue
+
+        contribs = conn.execute(
+            'SELECT * FROM ifra_contributions WHERE ncs_cas = ?', (cas,)
+        ).fetchall()
+
+        if not contribs:
+            continue
+
+        details = []
+        min_derived_limit = None
+        limiting_constituent = None
+        limiting_name = None
+
+        for c in contribs:
+            c_cas = c['constituent_cas']
+            conc_pct = c['concentration_pct']
+
+            # Look up IFRA limit for the constituent
+            row = conn.execute('''
+                SELECT s.* FROM ifra_standards s
+                JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+                WHERE l.cas_number = ?
+            ''', (c_cas,)).fetchone()
+
+            constituent_ifra_limit = None
+            derived_limit = None
+
+            if row:
+                cat_val = row[cat_key]
+                if cat_val is not None:
+                    if cat_val == 0:
+                        # Constituent is prohibited → material effectively prohibited
+                        derived_limit = 0
+                        constituent_ifra_limit = 0
+                    elif cat_val > 0:
+                        constituent_ifra_limit = cat_val
+                        # Effective limit = constituent limit / (concentration / 100)
+                        if conc_pct > 0:
+                            derived_limit = cat_val / (conc_pct / 100)
+                    # cat_val == -1 means no restriction, skip
+
+            details.append({
+                'constituent_cas': c_cas,
+                'constituent_name': c['constituent_name'],
+                'concentration_pct': conc_pct,
+                'constituent_ifra_limit': constituent_ifra_limit,
+                'derived_limit': derived_limit,
+            })
+
+            if derived_limit is not None:
+                if min_derived_limit is None or derived_limit < min_derived_limit:
+                    min_derived_limit = derived_limit
+                    limiting_constituent = c_cas
+                    limiting_name = c['constituent_name']
+
+        material_limits[cas] = {
+            'ncs_name': i['name'],
+            'effective_limit': round(min_derived_limit, 6) if min_derived_limit is not None else None,
+            'limiting_constituent': limiting_constituent,
+            'limiting_constituent_name': limiting_name,
+            'details': details,
+        }
+
+    conn.close()
+    return jsonify({
+        'success': True,
+        'category': cat_key,
+        'material_limits': material_limits,
+    })
+
 @app.route('/api/ifra/formula-check/<int:fid>', methods=['GET'])
 @login_required
 def api_ifra_formula_check(fid):
