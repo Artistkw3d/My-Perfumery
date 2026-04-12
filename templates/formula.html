@@ -241,6 +241,31 @@
     .note-row p { color: var(--text-mid); font-size: 0.82rem; margin: 0; white-space: pre-wrap; }
     .note-dt { font-size: 0.7rem; color: var(--text-light); }
 
+    /* Review */
+    .review-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .rv-item {
+        background: var(--cream);
+        border-radius: 10px;
+        padding: 10px 14px;
+    }
+    .rv-item .rv-label {
+        font-size: 0.68rem;
+        color: var(--text-light);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+    }
+    .rv-item .rv-val {
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: var(--text-dark);
+    }
+    .rv-item.full-width { grid-column: 1 / -1; }
+
     /* Dilution guide */
     .dil-row { display: flex; gap: 16px; font-size: 0.82rem; color: var(--text-mid); }
     .dil-row code { color: var(--gold); font-weight: 700; }
@@ -341,6 +366,80 @@
             </div>
         </div>
 
+        <!-- Review -->
+        <div class="e-card">
+            <div class="e-card-head">
+                <span><i class="bi bi-star"></i> مراجعة العطر</span>
+                <button class="btn-add-e" onclick="toggleReview()"><i class="bi bi-pencil"></i> تعديل</button>
+            </div>
+            <div class="e-card-body">
+                <div id="reviewDisplay">
+                    <div class="review-grid" id="reviewGrid"></div>
+                    <div id="reviewEmpty" style="text-align:center;color:var(--text-light);padding:10px;">
+                        <i class="bi bi-clipboard-plus" style="font-size:1.5rem;"></i><br>
+                        لم تتم المراجعة بعد
+                    </div>
+                </div>
+                <div id="reviewForm" style="display:none;">
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="side-label">الفئة المستهدفة</label>
+                            <input type="text" id="rv_audience" class="side-input" style="margin-bottom:8px;" placeholder="مثال: عشاق العود، الشباب...">
+                        </div>
+                        <div class="col-6">
+                            <label class="side-label">الجنس</label>
+                            <select id="rv_gender" class="side-input" style="margin-bottom:8px;">
+                                <option value="">-- اختر --</option>
+                                <option value="male">رجالي</option>
+                                <option value="female">نسائي</option>
+                                <option value="unisex">للجنسين (Unisex)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="side-label">الفئة العمرية</label>
+                            <select id="rv_age" class="side-input" style="margin-bottom:8px;">
+                                <option value="">-- اختر --</option>
+                                <option value="18-25">18 - 25</option>
+                                <option value="25-35">25 - 35</option>
+                                <option value="35-50">35 - 50</option>
+                                <option value="50+">50+</option>
+                                <option value="all">جميع الأعمار</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="side-label">الموسم</label>
+                            <select id="rv_season" class="side-input" style="margin-bottom:8px;">
+                                <option value="">-- اختر --</option>
+                                <option value="spring">ربيع</option>
+                                <option value="summer">صيف</option>
+                                <option value="autumn">خريف</option>
+                                <option value="winter">شتاء</option>
+                                <option value="all">جميع المواسم</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="side-label">المناسبة</label>
+                            <input type="text" id="rv_occasion" class="side-input" style="margin-bottom:8px;" placeholder="مثال: رسمي، يومي، سهرات...">
+                        </div>
+                        <div class="col-6">
+                            <label class="side-label">نوع الرائحة</label>
+                            <input type="text" id="rv_scent" class="side-input" style="margin-bottom:8px;" placeholder="مثال: شرقي، خشبي، زهري...">
+                        </div>
+                    </div>
+                    <label class="side-label">ملاحظات المراجعة</label>
+                    <textarea id="rv_notes" class="side-input" rows="2" placeholder="ملاحظات إضافية عن التركيبة..."></textarea>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn-save-e" style="flex:1;" onclick="saveFormula()"><i class="bi bi-check"></i> حفظ</button>
+                        <button class="btn btn-sm btn-secondary" style="border-radius:50px;padding:8px 20px;" onclick="toggleReview()">إلغاء</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Notes -->
         <div class="e-card">
             <div class="e-card-head">
@@ -427,14 +526,40 @@
             </div>
         </div>
 
+        <!-- IFRA Legend -->
+        <div class="e-card">
+            <div class="e-card-head"><i class="bi bi-shield-check"></i> دليل رموز IFRA</div>
+            <div class="e-card-body" style="font-size:0.82rem;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span style="color:var(--green);font-size:1.1rem;">✓</span>
+                    <span>ضمن الحد المسموح — آمن</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span style="color:var(--red);font-size:1.1rem;">⚠️</span>
+                    <span>تجاوز الحد — يحتاج تعديل</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span style="color:var(--red);font-size:1.1rem;">⛔</span>
+                    <span>محظور في هذه الفئة</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="color:var(--green);">NR</span>
+                    <span>بدون قيود (No Restriction)</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Dilution -->
         <div class="e-card">
             <div class="e-card-head"><i class="bi bi-info-circle"></i> شرح التخفيف</div>
             <div class="e-card-body">
                 <div class="dil-row">
-                    <div><code>1</code> = صافي 100%</div>
-                    <div><code>0.5</code> = 50%</div>
-                    <div><code>0.1</code> = 10%</div>
+                    <div><code>100%</code> = صافي</div>
+                    <div><code>50%</code> = نصف</div>
+                    <div><code>10%</code> = عُشر</div>
+                </div>
+                <div style="margin-top:8px;font-size:0.75rem;color:var(--text-light);">
+                    أدخل النسبة المئوية (مثلاً 10 لتركيز 10%)
                 </div>
             </div>
         </div>
@@ -470,8 +595,9 @@
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label class="form-label">نسبة التخفيف (E)</label>
-                                <input type="number" name="dilution" class="form-control" step="0.01" min="0" max="1" value="1">
+                                <label class="form-label">نسبة التخفيف (E) <span class="text-muted">%</span></label>
+                                <input type="number" name="dilution_pct" class="form-control" step="1" min="0" max="100" value="100">
+                                <small class="text-muted">100% = صافي، 10% = تركيز 10%</small>
                             </div>
                         </div>
                     </div>
@@ -707,18 +833,19 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
                 ${i.cas_number ? `<br><span class="cas-t">${i.cas_number}</span>` : ''}
             </td>
             <td>
-                <select class="e-sel"
+                <select class="e-sel" style="width:72px;"
                     onchange="handleDiluentChange(${i.id}, ${i.weight}, ${i.dilution || 1}, this)">
                     ${diluentOptions(i.diluent)}
                 </select>
             </td>
             <td>
-                <input type="number" class="e-inp" value="${i.dilution || 1}" step="0.001" min="0" max="1"
-                    onchange="updateIngredientFull(${i.id}, ${i.weight}, this.value, '${i.diluent || ''}', '${escapedDiluentOther}')">
+                <input type="number" class="e-inp" value="${((i.dilution || 1) * 100).toFixed(0)}" step="1" min="0" max="100"
+                    onchange="updateIngredientFull(${i.id}, ${i.weight}, this.value / 100, '${i.diluent || ''}', '${escapedDiluentOther}')" style="width:50px;">
+                <span style="font-size:0.68rem;color:var(--text-light);">%</span>
             </td>
             <td>${i.ifra_cat_limit === -1 ? '<span style="color:var(--green);">NR</span>' : i.ifra_cat_limit > 0 ? i.ifra_cat_limit + '%' : (i.ifra_cat_limit === 0 && i.ifra_std_name ? '<span style="color:var(--red);">⛔</span>' : (i.ifra_limit || '-'))}</td>
             <td>
-                <input type="number" class="e-inp" value="${i.weight}" step="0.0001" min="0"
+                <input type="number" class="e-inp" style="width:65px;" value="${i.weight}" step="0.0001" min="0"
                     onchange="updateIngredientFull(${i.id}, this.value, ${i.dilution || 1}, '${i.diluent || ''}', '${escapedDiluentOther}')">
             </td>
             <td>${i.weight_percentage?.toFixed(2) || '-'}%</td>
@@ -759,6 +886,10 @@ function showAddModal() {
 
 function addIngredient() {
     const formData = new FormData(document.getElementById('addForm'));
+    // Convert % to decimal
+    const pct = parseFloat(formData.get('dilution_pct')) || 100;
+    formData.set('dilution', pct / 100);
+    formData.delete('dilution_pct');
     fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
     .then(r => r.json())
     .then(data => {
@@ -806,9 +937,78 @@ function deleteIngredient(ingId) {
 
 function saveFormula() {
     const formData = new FormData(document.getElementById('formulaForm'));
+    // Add review fields
+    formData.set('target_audience', document.getElementById('rv_audience').value);
+    formData.set('age_group', document.getElementById('rv_age').value);
+    formData.set('gender', document.getElementById('rv_gender').value);
+    formData.set('season', document.getElementById('rv_season').value);
+    formData.set('occasion', document.getElementById('rv_occasion').value);
+    formData.set('scent_type', document.getElementById('rv_scent').value);
+    formData.set('review_notes', document.getElementById('rv_notes').value);
     fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
     .then(r => r.json())
-    .then(data => { if (data.success) { showAlert('تم الحفظ'); loadIngredients(); } });
+    .then(data => {
+        if (data.success) {
+            showAlert('تم الحفظ');
+            loadIngredients();
+            loadReview();
+            document.getElementById('reviewForm').style.display = 'none';
+            document.getElementById('reviewDisplay').style.display = '';
+        }
+    });
+}
+
+function toggleReview() {
+    const form = document.getElementById('reviewForm');
+    const display = document.getElementById('reviewDisplay');
+    if (form.style.display === 'none') {
+        form.style.display = '';
+        display.style.display = 'none';
+    } else {
+        form.style.display = 'none';
+        display.style.display = '';
+    }
+}
+
+const genderLabels = { male: 'رجالي', female: 'نسائي', unisex: 'للجنسين' };
+const seasonLabels = { spring: 'ربيع', summer: 'صيف', autumn: 'خريف', winter: 'شتاء', all: 'جميع المواسم' };
+
+function loadReview() {
+    fetch(`/api/formula/${formulaId}/ingredients`)
+    .then(r => r.json())
+    .then(data => {
+        // The formula data comes from the Jinja template, but review fields need a separate fetch
+    });
+    // Use the formula data already available from Jinja
+    updateReviewDisplay();
+}
+
+function updateReviewDisplay() {
+    const fields = [
+        { id: 'rv_audience', label: 'الفئة المستهدفة', val: document.getElementById('rv_audience').value },
+        { id: 'rv_gender', label: 'الجنس', val: genderLabels[document.getElementById('rv_gender').value] || '' },
+        { id: 'rv_age', label: 'الفئة العمرية', val: document.getElementById('rv_age').value },
+        { id: 'rv_season', label: 'الموسم', val: seasonLabels[document.getElementById('rv_season').value] || '' },
+        { id: 'rv_occasion', label: 'المناسبة', val: document.getElementById('rv_occasion').value },
+        { id: 'rv_scent', label: 'نوع الرائحة', val: document.getElementById('rv_scent').value },
+    ];
+    const rvNotes = document.getElementById('rv_notes').value;
+    const hasData = fields.some(f => f.val) || rvNotes;
+
+    const grid = document.getElementById('reviewGrid');
+    const empty = document.getElementById('reviewEmpty');
+
+    if (!hasData) {
+        grid.style.display = 'none';
+        empty.style.display = '';
+        return;
+    }
+    grid.style.display = 'grid';
+    empty.style.display = 'none';
+
+    grid.innerHTML = fields.filter(f => f.val).map(f =>
+        `<div class="rv-item"><div class="rv-label">${f.label}</div><div class="rv-val">${f.val}</div></div>`
+    ).join('') + (rvNotes ? `<div class="rv-item full-width"><div class="rv-label">ملاحظات</div><div class="rv-val" style="font-weight:400;font-size:0.82rem;">${rvNotes}</div></div>` : '');
 }
 
 function showScaleModal() {
@@ -940,6 +1140,16 @@ $(document).ready(function() {
         }
     });
 });
+
+// Pre-populate review fields from server data
+document.getElementById('rv_audience').value = {{ (formula.target_audience or '')|tojson }};
+document.getElementById('rv_age').value = {{ (formula.age_group or '')|tojson }};
+document.getElementById('rv_gender').value = {{ (formula.gender or '')|tojson }};
+document.getElementById('rv_season').value = {{ (formula.season or '')|tojson }};
+document.getElementById('rv_occasion').value = {{ (formula.occasion or '')|tojson }};
+document.getElementById('rv_scent').value = {{ (formula.scent_type or '')|tojson }};
+document.getElementById('rv_notes').value = {{ (formula.review_notes or '')|tojson }};
+updateReviewDisplay();
 
 loadIngredients();
 loadNotes();
