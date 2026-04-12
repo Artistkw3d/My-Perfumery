@@ -9,7 +9,7 @@ COPY templates/ templates/
 COPY static/ static/
 COPY data/ data/
 
-RUN mkdir -p /app/database
+RUN mkdir -p /app/database/backups
 
 EXPOSE 8000
 
