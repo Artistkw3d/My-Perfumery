@@ -2,128 +2,351 @@
 {% block title %}Perfume Vault - التركيبات{% endblock %}
 
 {% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <style>
-    .formula-card {
-        background: white;
-        border-radius: 16px;
-        box-shadow: 0 2px 16px rgba(0,0,0,0.06);
-        margin-bottom: 20px;
-        overflow: hidden;
-        transition: all 0.3s;
-        border: 2px solid transparent;
+    :root {
+        --cream: #f5f0eb;
+        --sand: #e8ddd0;
+        --brown: #8b7355;
+        --brown-dark: #5c4a32;
+        --brown-light: #c4a882;
+        --gold: #b8956a;
+        --rose: #c9847b;
+        --green-e: #7d9c7b;
+        --text-dark: #2d2418;
+        --text-mid: #7a6b57;
+        --text-light: #b5a898;
+        --border-e: rgba(139,115,85,0.12);
     }
-    .formula-card:hover {
-        box-shadow: 0 6px 28px rgba(111,66,193,0.15);
-        border-color: var(--primary);
+
+    .main-content { font-family: 'Tajawal', 'Segoe UI', sans-serif; }
+
+    /* Header */
+    .page-top {
+        text-align: center;
+        margin-bottom: 40px;
+        position: relative;
+    }
+    .page-top::after {
+        content: '';
+        display: block;
+        width: 60px;
+        height: 2px;
+        background: var(--gold);
+        margin: 18px auto 0;
+    }
+    .page-top .logo-line {
+        font-size: 0.8rem;
+        letter-spacing: 4px;
+        text-transform: uppercase;
+        color: var(--gold);
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+    .page-top h1 {
+        font-size: 2.2rem;
+        font-weight: 300;
+        color: var(--text-dark);
+        letter-spacing: 1px;
+    }
+    .page-top h1 strong { font-weight: 800; }
+    .page-top .count-text {
+        color: var(--text-light);
+        font-size: 0.9rem;
+        margin-top: 10px;
+    }
+
+    /* Toolbar */
+    .toolbar-e {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-btn-e {
+        background: none;
+        border: 1.5px solid var(--border-e);
+        padding: 8px 20px;
+        border-radius: 50px;
+        font-size: 0.82rem;
+        color: var(--text-mid);
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+        font-family: inherit;
+    }
+    .filter-btn-e:hover { border-color: var(--brown); color: var(--brown); }
+    .filter-btn-e.active {
+        background: var(--brown-dark);
+        color: white;
+        border-color: var(--brown-dark);
+    }
+    .search-add { display: flex; gap: 12px; align-items: center; }
+    .search-elegant {
+        background: white;
+        border: 1.5px solid var(--border-e);
+        padding: 10px 20px;
+        border-radius: 50px;
+        font-size: 0.85rem;
+        width: 260px;
+        font-family: inherit;
+        color: var(--text-dark);
+        transition: all 0.3s;
+    }
+    .search-elegant:focus { outline: none; border-color: var(--gold); }
+    .search-elegant::placeholder { color: var(--text-light); }
+    .btn-add-e {
+        background: var(--brown-dark);
+        color: white;
+        border: none;
+        padding: 10px 26px;
+        border-radius: 50px;
+        font-weight: 700;
+        font-size: 0.88rem;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-family: inherit;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .btn-add-e:hover { background: var(--brown); transform: translateY(-1px); color: white; }
+
+    /* Formula List */
+    .formula-list { display: flex; flex-direction: column; gap: 20px; }
+
+    .formula-row {
+        background: white;
+        border-radius: 20px;
+        display: flex;
+        overflow: hidden;
+        transition: all 0.4s;
+        border: 1.5px solid transparent;
+        position: relative;
+    }
+    .formula-row:hover {
+        box-shadow: 0 12px 40px rgba(139,115,85,0.12);
+        border-color: var(--sand);
         transform: translateY(-2px);
     }
-    .formula-card-body {
+
+    .accent-strip { width: 5px; flex-shrink: 0; }
+    .accent-final { background: var(--green-e); }
+    .accent-testing { background: var(--gold); }
+    .accent-draft { background: var(--text-light); }
+
+    .formula-num {
+        width: 70px;
         display: flex;
-        gap: 20px;
-        padding: 20px;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.6rem;
+        font-weight: 300;
+        color: var(--text-light);
+        border-left: 1px solid var(--border-e);
+        flex-shrink: 0;
     }
-    .formula-info {
+
+    .formula-main {
         flex: 1;
+        padding: 24px 28px;
         min-width: 0;
     }
-    .formula-wheel-section {
+    .formula-title-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 6px;
+    }
+    .formula-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: var(--text-dark);
+        cursor: pointer;
+        transition: color 0.3s;
+        text-decoration: none;
+    }
+    .formula-title:hover { color: var(--gold); }
+    .status-dot {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 4px 12px;
+        border-radius: 20px;
+    }
+    .dot-final { background: rgba(125,156,123,0.12); color: var(--green-e); }
+    .dot-testing { background: rgba(184,149,106,0.12); color: var(--gold); }
+    .dot-draft { background: rgba(181,168,152,0.12); color: var(--text-light); }
+    .status-dot::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+    .formula-desc-text {
+        font-size: 0.85rem;
+        color: var(--text-mid);
+        margin-bottom: 14px;
+        line-height: 1.6;
+    }
+    .formula-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+    }
+    .mat-tag {
+        background: var(--cream);
+        color: var(--brown);
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: 1px solid var(--sand);
+    }
+    .mat-tag.extra-tag {
+        background: transparent;
+        border: 1px dashed var(--sand);
+        color: var(--text-light);
+    }
+    .formula-meta {
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+    .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.82rem;
+        color: var(--text-mid);
+    }
+    .meta-item i { color: var(--brown-light); font-size: 0.9rem; }
+    .meta-item strong { color: var(--text-dark); font-weight: 700; }
+
+    .formula-chart-side {
+        width: 200px;
         flex-shrink: 0;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-width: 200px;
-        padding: 10px;
-        background: linear-gradient(135deg, #f8f6ff, #fdf2f8);
-        border-radius: 12px;
+        background: var(--cream);
+        padding: 20px;
+        border-right: 1px solid var(--border-e);
     }
-    .formula-name {
-        font-size: 1.2rem;
-        font-weight: 700;
-        color: #333;
-        margin-bottom: 4px;
-    }
-    .formula-name a {
-        text-decoration: none;
-        color: inherit;
-    }
-    .formula-name a:hover { color: var(--primary); }
-    .formula-desc {
-        font-size: 0.85rem;
-        color: #888;
-        margin-bottom: 12px;
-    }
-    .formula-ingredients-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-bottom: 12px;
-    }
-    .ing-tag {
-        font-size: 0.72rem;
-        padding: 3px 10px;
-        border-radius: 20px;
-        background: rgba(111,66,193,0.08);
-        color: #6f42c1;
+    .chart-label {
+        font-size: 0.7rem;
+        color: var(--text-light);
+        text-transform: uppercase;
+        letter-spacing: 2px;
         font-weight: 600;
+        margin-bottom: 8px;
     }
-    .ing-tag.more {
-        background: rgba(0,0,0,0.05);
-        color: #999;
-    }
-    .formula-stats {
-        display: flex;
-        gap: 16px;
-        flex-wrap: wrap;
-        margin-bottom: 12px;
-    }
-    .formula-stat {
+    .no-olf-placeholder {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        border: 2px dashed var(--sand);
         display: flex;
         align-items: center;
-        gap: 6px;
-        font-size: 0.82rem;
-        color: #666;
-    }
-    .formula-stat i { color: var(--primary); }
-    .formula-stat .val { font-weight: 700; color: #333; }
-    .formula-actions {
-        display: flex;
-        gap: 8px;
-        padding-top: 12px;
-        border-top: 1px solid #f0f0f0;
-    }
-    .formula-footer {
-        background: #fafbfc;
-        padding: 14px 20px;
-        border-top: 1px solid #f0f0f0;
-    }
-    .dilution-info {
-        font-size: 0.78rem;
-        color: #888;
-    }
-    .dilution-info code { font-size: 0.75rem; }
-    .no-olf-msg {
-        font-size: 0.78rem;
-        color: #bbb;
+        justify-content: center;
+        color: var(--text-light);
+        font-size: 0.75rem;
         text-align: center;
-        padding: 20px 0;
+        line-height: 1.4;
     }
-    @media (max-width: 768px) {
-        .formula-card-body { flex-direction: column; }
-        .formula-wheel-section { min-width: unset; }
+
+    .formula-actions-side {
+        width: 56px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--border-e);
+    }
+    .action-icon {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        border-bottom: 1px solid var(--border-e);
+        color: var(--text-light);
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: none;
+    }
+    .action-icon:last-child { border-bottom: none; }
+    .action-icon:hover { color: var(--gold); background: var(--cream); }
+    .action-icon.delete-icon:hover { color: #c0392b; background: #fdf2f2; }
+
+    /* Empty state */
+    .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+        color: var(--text-light);
+    }
+    .empty-state i { font-size: 3.5rem; color: var(--sand); }
+    .empty-state p { margin-top: 12px; font-size: 1rem; }
+
+    @media (max-width: 900px) {
+        .formula-row { flex-direction: column; }
+        .formula-chart-side {
+            width: 100%;
+            flex-direction: row;
+            gap: 20px;
+            padding: 16px;
+            border-right: none;
+            border-top: 1px solid var(--border-e);
+        }
+        .formula-num {
+            width: 100%;
+            border-left: none;
+            border-bottom: 1px solid var(--border-e);
+            padding: 10px;
+            font-size: 1rem;
+        }
+        .formula-actions-side {
+            width: 100%;
+            flex-direction: row;
+            border-right: none;
+            border-top: 1px solid var(--border-e);
+        }
+        .action-icon { border-bottom: none; border-left: 1px solid var(--border-e); }
+        .accent-strip { width: 100%; height: 4px; }
+        .search-elegant { width: 180px; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-file-earmark-text"></i> التركيبات <span id="formulaCount" class="badge bg-secondary fs-6"></span></h2>
-    <button class="btn btn-primary" onclick="showCreateModal()">
-        <i class="bi bi-plus-circle"></i> تركيبة جديدة
-    </button>
+<div class="page-top">
+    <div class="logo-line">PERFUME VAULT</div>
+    <h1><strong>التركيبات</strong> العطرية</h1>
+    <div class="count-text"><span id="formulaCount">0</span> تركيبة في مجموعتك</div>
 </div>
 
-<div id="formulasContainer"></div>
+<div class="toolbar-e">
+    <div class="filter-row">
+        <button class="filter-btn-e active" data-filter="all">جميع التركيبات</button>
+        <button class="filter-btn-e" data-filter="final">نهائي</button>
+        <button class="filter-btn-e" data-filter="testing">تجريب</button>
+        <button class="filter-btn-e" data-filter="draft">مسودة</button>
+    </div>
+    <div class="search-add">
+        <input class="search-elegant" id="searchInput" placeholder="ابحث بالاسم او المكون...">
+        <button class="btn-add-e" onclick="showCreateModal()"><i class="bi bi-plus-lg"></i> تركيبة جديدة</button>
+    </div>
+</div>
+
+<div class="formula-list" id="formulasContainer"></div>
 
 <!-- Create Modal -->
 <div class="modal fade" id="createModal" tabindex="-1">
@@ -148,7 +371,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                <button type="button" class="btn btn-primary" onclick="createFormula()">
+                <button type="button" class="btn" style="background:var(--brown-dark);color:white;" onclick="createFormula()">
                     <i class="bi bi-plus-circle"></i> إنشاء
                 </button>
             </div>
@@ -162,44 +385,19 @@
 const createModal = new bootstrap.Modal(document.getElementById('createModal'));
 const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
 const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
-const OLF_COLORS = ['#FFD700','#B0C4DE','#2E8B57','#32CD32','#4169E1','#FF69B4','#FF6347','#FF4500','#8B6914','#654321','#DAA520','#9370DB','#6B4226','#800020'];
+const OLF_COLORS = ['#d4a853','#b5a898','#7d9c7b','#8fb87d','#6b94b0','#c9847b','#c47058','#b85c3a','#8b7355','#5c4a32','#b8956a','#9e8dc4','#6B4226','#703030'];
 
-// Plugin to draw labels around polar area charts
-const polarLabelsPlugin = {
-    id: 'polarLabels',
-    afterDraw(chart) {
-        if (chart.config.type !== 'polarArea') return;
-        if (chart.options.plugins.polarLabels && chart.options.plugins.polarLabels.display === false) return;
-        const { ctx, chartArea } = chart;
-        const cx = (chartArea.left + chartArea.right) / 2;
-        const cy = (chartArea.top + chartArea.bottom) / 2;
-        const r = Math.min(chartArea.right - chartArea.left, chartArea.bottom - chartArea.top) / 2;
-        const labels = chart.data.labels;
-        const n = labels.length;
-        const fontSize = chart.options.plugins.polarLabels?.fontSize || 9;
-        ctx.save();
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        labels.forEach((label, i) => {
-            const angle = (i / n) * 2 * Math.PI - Math.PI / 2 + Math.PI / n;
-            const x = cx + (r + 16) * Math.cos(angle);
-            const y = cy + (r + 16) * Math.sin(angle);
-            ctx.fillStyle = chart.data.datasets[0].borderColor[i] || '#666';
-            ctx.fillText(label, x, y);
-        });
-        ctx.restore();
-    }
-};
-Chart.register(polarLabelsPlugin);
+let allFormulas = [];
+let currentFilter = 'all';
 
 function loadFormulas() {
     fetch('/api/formulas')
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                renderFormulas(data.data);
-                document.getElementById('formulaCount').textContent = data.data.length;
+                allFormulas = data.data;
+                document.getElementById('formulaCount').textContent = allFormulas.length;
+                renderFormulas(allFormulas);
             }
         });
 }
@@ -207,64 +405,53 @@ function loadFormulas() {
 function renderFormulas(formulas) {
     const container = document.getElementById('formulasContainer');
     if (!formulas.length) {
-        container.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-inbox" style="font-size:3rem;"></i><p class="mt-2">لا توجد تركيبات بعد</p></div>';
+        container.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><p>لا توجد تركيبات بعد</p></div>';
         return;
     }
+
+    const statusClasses = { final: 'accent-final', testing: 'accent-testing', draft: 'accent-draft' };
+    const dotClasses = { final: 'dot-final', testing: 'dot-testing', draft: 'dot-draft' };
+    const statusLabels = { final: 'نهائي', testing: 'تجريب', draft: 'مسودة' };
+
     container.innerHTML = formulas.map((f, idx) => {
-        const maxShow = 8;
+        const maxShow = 6;
         const names = f.ingredient_names || [];
         const shown = names.slice(0, maxShow);
         const extra = names.length - maxShow;
-
-        const statusColors = { final: 'success', testing: 'warning', draft: 'secondary' };
-        const statusLabels = { final: 'نهائي', testing: 'تجريب', draft: 'مسودة' };
-
+        const num = String(idx + 1).padStart(2, '0');
         const hasOlf = f.olfactive_profile && OLF_CATS.some(c => (f.olfactive_profile[c] || 0) > 0);
 
         return `
-        <div class="formula-card">
-            <div class="formula-card-body">
-                <div class="formula-info">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <div class="formula-name"><a href="/formula/${f.id}">${f.name}</a></div>
-                        <span class="badge bg-${statusColors[f.status] || 'secondary'}">${statusLabels[f.status] || f.status}</span>
-                    </div>
-                    ${f.description ? `<div class="formula-desc">${f.description}</div>` : ''}
-
-                    <div class="formula-ingredients-list">
-                        ${shown.map(n => `<span class="ing-tag">${n}</span>`).join('')}
-                        ${extra > 0 ? `<span class="ing-tag more">+${extra} أخرى</span>` : ''}
-                        ${!names.length ? '<span class="text-muted" style="font-size:0.8rem;">لا توجد مكونات</span>' : ''}
-                    </div>
-
-                    <div class="formula-stats">
-                        <div class="formula-stat"><i class="bi bi-layers"></i> مكونات: <span class="val">${f.ingredients_count}</span></div>
-                        <div class="formula-stat"><i class="bi bi-speedometer2"></i> الوزن: <span class="val">${f.total_weight ? f.total_weight.toFixed(2) + ' g' : '-'}</span></div>
-                        <div class="formula-stat"><i class="bi bi-cash-coin"></i> التكلفة: <span class="val">${f.total_cost ? f.total_cost.toFixed(2) : '-'}</span></div>
-                        <div class="formula-stat"><i class="bi bi-calendar3"></i> <span class="val">${f.created_at ? f.created_at.substring(0, 10) : '-'}</span></div>
-                    </div>
-
-                    <div class="formula-actions">
-                        <a href="/formula/${f.id}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> عرض</a>
-                        <a href="/formula/${f.id}/card" class="btn btn-sm btn-outline-warning"><i class="bi bi-card-heading"></i> بطاقة</a>
-                        <button class="btn btn-sm btn-outline-success" onclick="duplicateFormula(${f.id})"><i class="bi bi-copy"></i> نسخ</button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteFormula(${f.id}, '${f.name.replace(/'/g, "\\'")}')"><i class="bi bi-trash"></i> حذف</button>
-                    </div>
+        <div class="formula-row" data-status="${f.status}">
+            <div class="accent-strip ${statusClasses[f.status] || 'accent-draft'}"></div>
+            <div class="formula-num">${num}</div>
+            <div class="formula-main">
+                <div class="formula-title-row">
+                    <a class="formula-title" href="/formula/${f.id}">${f.name}</a>
+                    <span class="status-dot ${dotClasses[f.status] || 'dot-draft'}">${statusLabels[f.status] || f.status}</span>
                 </div>
-
-                <div class="formula-wheel-section">
-                    ${hasOlf ? `<canvas id="fwheel_${f.id}" width="230" height="230"></canvas>` : '<div class="no-olf-msg"><i class="bi bi-bullseye"></i><br>لا يوجد بروفايل عطري</div>'}
+                ${f.description ? `<div class="formula-desc-text">${f.description}</div>` : ''}
+                <div class="formula-tags">
+                    ${shown.map(n => `<span class="mat-tag">${n}</span>`).join('')}
+                    ${extra > 0 ? `<span class="mat-tag extra-tag">+${extra} أخرى</span>` : ''}
+                    ${!names.length ? '<span style="font-size:0.8rem;color:var(--text-light);">لا توجد مكونات</span>' : ''}
+                </div>
+                <div class="formula-meta">
+                    <div class="meta-item"><i class="bi bi-layers"></i> مكونات: <strong>${f.ingredients_count}</strong></div>
+                    <div class="meta-item"><i class="bi bi-speedometer2"></i> الوزن: <strong>${f.total_weight ? f.total_weight.toFixed(2) + ' g' : '-'}</strong></div>
+                    <div class="meta-item"><i class="bi bi-cash-coin"></i> التكلفة: <strong>${f.total_cost ? f.total_cost.toFixed(2) : '-'}</strong></div>
+                    <div class="meta-item"><i class="bi bi-calendar3"></i> <strong>${f.created_at ? f.created_at.substring(0, 10) : '-'}</strong></div>
                 </div>
             </div>
-            <div class="formula-footer">
-                <div class="dilution-info">
-                    <i class="bi bi-info-circle"></i>
-                    <strong>التخفيف:</strong>
-                    <code>1</code> = صافي 100% &nbsp;|&nbsp;
-                    <code>0.5</code> = 50% &nbsp;|&nbsp;
-                    <code>0.1</code> = 10% &nbsp;|&nbsp;
-                    النسب الصافية (J%) تحسب تلقائياً بناءً على التخفيف
-                </div>
+            <div class="formula-chart-side">
+                <div class="chart-label">البروفايل العطري</div>
+                ${hasOlf ? `<canvas id="fwheel_${f.id}" width="140" height="140"></canvas>` : '<div class="no-olf-placeholder"><i class="bi bi-bullseye"></i><br>لا يوجد<br>بروفايل</div>'}
+            </div>
+            <div class="formula-actions-side">
+                <a class="action-icon" href="/formula/${f.id}" title="عرض"><i class="bi bi-eye"></i></a>
+                <a class="action-icon" href="/formula/${f.id}/card" title="بطاقة"><i class="bi bi-card-heading"></i></a>
+                <button class="action-icon" onclick="duplicateFormula(${f.id})" title="نسخ"><i class="bi bi-copy"></i></button>
+                <button class="action-icon delete-icon" onclick="deleteFormula(${f.id}, '${f.name.replace(/'/g, "\\'")}')" title="حذف"><i class="bi bi-trash"></i></button>
             </div>
         </div>`;
     }).join('');
@@ -286,27 +473,60 @@ function renderFormulas(formulas) {
                     labels: OLF_LABELS,
                     datasets: [{
                         data: data,
-                        backgroundColor: OLF_COLORS.map(c => c + '88'),
+                        backgroundColor: OLF_COLORS.map(c => c + '66'),
                         borderColor: OLF_COLORS,
-                        borderWidth: 2
+                        borderWidth: 1.5
                     }]
                 },
                 options: {
                     responsive: false,
                     animation: { duration: 400 },
-                    layout: { padding: 28 },
-                    plugins: { legend: { display: false }, polarLabels: { display: true, fontSize: 8 } },
+                    layout: { padding: 4 },
+                    plugins: { legend: { display: false }, tooltip: { enabled: true } },
                     scales: {
                         r: {
                             min: 0, max: fDynMax,
-                            ticks: { stepSize: fStep, backdropColor: 'transparent', color: '#999', font: { size: 7 } },
-                            grid: { color: 'rgba(0,0,0,0.06)' }
+                            ticks: { display: false },
+                            grid: { color: 'rgba(139,115,85,0.08)' }
                         }
                     }
                 }
             });
         });
     }, 100);
+}
+
+// Filter
+document.querySelectorAll('.filter-btn-e').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.filter-btn-e').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentFilter = this.dataset.filter;
+        applyFilters();
+    });
+});
+
+// Search
+document.getElementById('searchInput').addEventListener('input', function() {
+    applyFilters();
+});
+
+function applyFilters() {
+    const query = document.getElementById('searchInput').value.trim().toLowerCase();
+    let filtered = allFormulas;
+
+    if (currentFilter !== 'all') {
+        filtered = filtered.filter(f => f.status === currentFilter);
+    }
+    if (query) {
+        filtered = filtered.filter(f => {
+            const nameMatch = f.name.toLowerCase().includes(query);
+            const descMatch = f.description && f.description.toLowerCase().includes(query);
+            const ingMatch = (f.ingredient_names || []).some(n => n.toLowerCase().includes(query));
+            return nameMatch || descMatch || ingMatch;
+        });
+    }
+    renderFormulas(filtered);
 }
 
 function showCreateModal() {
@@ -316,10 +536,7 @@ function showCreateModal() {
 
 function createFormula() {
     const formData = new FormData(document.getElementById('createForm'));
-    fetch('/api/formulas', {
-        method: 'POST',
-        body: formData
-    })
+    fetch('/api/formulas', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(data => {
         if (data.success) {
@@ -335,10 +552,7 @@ function duplicateFormula(id) {
     const formData = new FormData();
     formData.append('action', 'duplicate');
     formData.append('id', id);
-    fetch('/api/formulas', {
-        method: 'POST',
-        body: formData
-    })
+    fetch('/api/formulas', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(data => {
         if (data.success) {
@@ -353,10 +567,7 @@ function deleteFormula(id, name) {
         const formData = new FormData();
         formData.append('action', 'delete');
         formData.append('id', id);
-        fetch('/api/formulas', {
-            method: 'POST',
-            body: formData
-        })
+        fetch('/api/formulas', { method: 'POST', body: formData })
         .then(r => r.json())
         .then(data => {
             if (data.success) {
