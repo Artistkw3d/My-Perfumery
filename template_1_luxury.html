@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>قالب 1 - Luxury Dark</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f0a1a;
+            --bg-card: rgba(255,255,255,0.04);
+            --bg-card-hover: rgba(255,255,255,0.08);
+            --glass: rgba(255,255,255,0.06);
+            --glass-border: rgba(255,255,255,0.1);
+            --accent-gold: #d4a853;
+            --accent-purple: #9b6dff;
+            --accent-rose: #e8618c;
+            --text-primary: #f0eaf8;
+            --text-secondary: rgba(255,255,255,0.5);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg-primary);
+            font-family: 'Tajawal', 'Segoe UI', sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            right: -30%;
+            width: 80vw;
+            height: 80vw;
+            background: radial-gradient(circle, rgba(155,109,255,0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        body::after {
+            content: '';
+            position: fixed;
+            bottom: -30%;
+            left: -20%;
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, rgba(212,168,83,0.06) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        /* Header */
+        .page-header {
+            padding: 40px 50px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+        .page-header h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-gold), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+        .page-header .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 4px;
+        }
+        .btn-create {
+            background: linear-gradient(135deg, var(--accent-gold), #c4943a);
+            color: #1a1020;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            transition: all 0.3s;
+            box-shadow: 0 4px 20px rgba(212,168,83,0.3);
+        }
+        .btn-create:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(212,168,83,0.4);
+            color: #1a1020;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            padding: 0 50px 30px;
+            flex-wrap: wrap;
+        }
+        .stat-pill {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 50px;
+            padding: 10px 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            backdrop-filter: blur(10px);
+        }
+        .stat-pill .stat-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+        }
+        .stat-pill .stat-val { font-weight: 800; font-size: 1.1rem; }
+        .stat-pill .stat-label { color: var(--text-secondary); font-size: 0.78rem; }
+
+        /* Search & Filter */
+        .search-section {
+            padding: 0 50px 30px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .search-box {
+            flex: 1;
+            max-width: 400px;
+            position: relative;
+        }
+        .search-box input {
+            width: 100%;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            color: var(--text-primary);
+            padding: 12px 20px 12px 44px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+        }
+        .search-box input::placeholder { color: var(--text-secondary); }
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+            box-shadow: 0 0 20px rgba(155,109,255,0.15);
+        }
+        .search-box i {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+        .filter-chip {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            backdrop-filter: blur(10px);
+        }
+        .filter-chip:hover, .filter-chip.active {
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+            background: rgba(155,109,255,0.1);
+        }
+
+        /* Cards Grid */
+        .formulas-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 24px;
+            padding: 0 50px 50px;
+        }
+        .formula-card {
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+            position: relative;
+            backdrop-filter: blur(10px);
+        }
+        .formula-card:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--accent-purple);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(155,109,255,0.1);
+        }
+        .formula-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            left: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-gold), var(--accent-purple), var(--accent-rose));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .formula-card:hover::before { opacity: 1; }
+
+        .card-top {
+            padding: 24px 24px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .card-top .formula-name {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        .card-top .formula-name:hover { color: var(--accent-gold); }
+        .card-top .status-badge {
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .status-final { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+        .status-testing { background: rgba(234,179,8,0.15); color: #eab308; border: 1px solid rgba(234,179,8,0.3); }
+        .status-draft { background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
+
+        .card-desc {
+            padding: 8px 24px 0;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .card-chart-row {
+            display: flex;
+            align-items: center;
+            padding: 20px 24px;
+            gap: 20px;
+        }
+        .mini-chart {
+            width: 120px;
+            height: 120px;
+            flex-shrink: 0;
+            position: relative;
+        }
+        .card-ingredients {
+            flex: 1;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .ing-chip {
+            background: rgba(155,109,255,0.1);
+            border: 1px solid rgba(155,109,255,0.2);
+            color: var(--accent-purple);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+        .ing-chip.more-chip {
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+        }
+
+        .card-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1px;
+            background: var(--glass-border);
+            margin: 0;
+        }
+        .card-stat {
+            background: rgba(255,255,255,0.02);
+            padding: 14px;
+            text-align: center;
+        }
+        .card-stat .stat-num {
+            font-weight: 800;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+        .card-stat .stat-lbl {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .card-actions {
+            padding: 16px 24px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .card-actions .btn-act {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .card-actions .btn-act:hover {
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+            background: rgba(155,109,255,0.1);
+        }
+        .card-actions .btn-act.btn-view {
+            background: linear-gradient(135deg, var(--accent-purple), #7c4dff);
+            border: none;
+            color: white;
+        }
+
+        /* Note label */
+        .note-label {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            font-size: 1.5rem;
+            opacity: 0.15;
+        }
+
+        @media (max-width: 768px) {
+            .page-header, .stats-bar, .search-section, .formulas-grid { padding-right: 20px; padding-left: 20px; }
+            .formulas-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-header">
+        <div>
+            <h1><i class="bi bi-stars"></i> التركيبات العطرية</h1>
+            <div class="subtitle">مجموعتك الخاصة من الابداعات العطرية</div>
+        </div>
+        <button class="btn-create"><i class="bi bi-plus-lg"></i> تركيبة جديدة</button>
+    </div>
+
+    <div class="stats-bar">
+        <div class="stat-pill">
+            <div class="stat-icon" style="background:rgba(155,109,255,0.15);color:var(--accent-purple);"><i class="bi bi-file-earmark-text"></i></div>
+            <div>
+                <div class="stat-val">12</div>
+                <div class="stat-label">تركيبة</div>
+            </div>
+        </div>
+        <div class="stat-pill">
+            <div class="stat-icon" style="background:rgba(34,197,94,0.15);color:#22c55e;"><i class="bi bi-check-circle"></i></div>
+            <div>
+                <div class="stat-val">5</div>
+                <div class="stat-label">نهائية</div>
+            </div>
+        </div>
+        <div class="stat-pill">
+            <div class="stat-icon" style="background:rgba(234,179,8,0.15);color:#eab308;"><i class="bi bi-flask"></i></div>
+            <div>
+                <div class="stat-val">4</div>
+                <div class="stat-label">تجريبية</div>
+            </div>
+        </div>
+        <div class="stat-pill">
+            <div class="stat-icon" style="background:rgba(212,168,83,0.15);color:var(--accent-gold);"><i class="bi bi-box-seam"></i></div>
+            <div>
+                <div class="stat-val">87</div>
+                <div class="stat-label">مادة مستخدمة</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="search-section">
+        <div class="search-box">
+            <input type="text" placeholder="ابحث في التركيبات...">
+            <i class="bi bi-search"></i>
+        </div>
+        <div class="filter-chip active">الكل</div>
+        <div class="filter-chip">نهائي</div>
+        <div class="filter-chip">تجريب</div>
+        <div class="filter-chip">مسودة</div>
+    </div>
+
+    <div class="formulas-grid">
+        <!-- Card 1 -->
+        <div class="formula-card" style="position:relative;">
+            <span class="note-label">&#127801;</span>
+            <div class="card-top">
+                <span class="formula-name">Royal Oud Intense</span>
+                <span class="status-badge status-final">نهائي</span>
+            </div>
+            <div class="card-desc">تركيبة عود ملكية غنية بالعود الكمبودي مع لمسات من الورد الطائفي والعنبر</div>
+            <div class="card-chart-row">
+                <canvas class="mini-chart" id="chart1" width="120" height="120"></canvas>
+                <div class="card-ingredients">
+                    <span class="ing-chip">Oud Cambodia</span>
+                    <span class="ing-chip">Rose Taifi</span>
+                    <span class="ing-chip">Ambergris</span>
+                    <span class="ing-chip">Sandalwood</span>
+                    <span class="ing-chip">Musk</span>
+                    <span class="ing-chip more-chip">+3 اخرى</span>
+                </div>
+            </div>
+            <div class="card-stats">
+                <div class="card-stat"><div class="stat-num">8</div><div class="stat-lbl">مكونات</div></div>
+                <div class="card-stat"><div class="stat-num">25.4g</div><div class="stat-lbl">الوزن</div></div>
+                <div class="card-stat"><div class="stat-num">$142</div><div class="stat-lbl">التكلفة</div></div>
+            </div>
+            <div class="card-actions">
+                <button class="btn-act"><i class="bi bi-copy"></i> نسخ</button>
+                <button class="btn-act"><i class="bi bi-card-heading"></i> بطاقة</button>
+                <button class="btn-act btn-view"><i class="bi bi-eye"></i> عرض</button>
+            </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="formula-card" style="position:relative;">
+            <span class="note-label">&#127802;</span>
+            <div class="card-top">
+                <span class="formula-name">Velvet Rose</span>
+                <span class="status-badge status-testing">تجريب</span>
+            </div>
+            <div class="card-desc">ورد دمشقي فاخر مع لمسة من التوت والفانيلا</div>
+            <div class="card-chart-row">
+                <canvas class="mini-chart" id="chart2" width="120" height="120"></canvas>
+                <div class="card-ingredients">
+                    <span class="ing-chip">Damascone Rose</span>
+                    <span class="ing-chip">Raspberry</span>
+                    <span class="ing-chip">Vanilla Abs</span>
+                    <span class="ing-chip">Benzoin</span>
+                    <span class="ing-chip more-chip">+5 اخرى</span>
+                </div>
+            </div>
+            <div class="card-stats">
+                <div class="card-stat"><div class="stat-num">9</div><div class="stat-lbl">مكونات</div></div>
+                <div class="card-stat"><div class="stat-num">18.7g</div><div class="stat-lbl">الوزن</div></div>
+                <div class="card-stat"><div class="stat-num">$89</div><div class="stat-lbl">التكلفة</div></div>
+            </div>
+            <div class="card-actions">
+                <button class="btn-act"><i class="bi bi-copy"></i> نسخ</button>
+                <button class="btn-act"><i class="bi bi-card-heading"></i> بطاقة</button>
+                <button class="btn-act btn-view"><i class="bi bi-eye"></i> عرض</button>
+            </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="formula-card" style="position:relative;">
+            <span class="note-label">&#127807;</span>
+            <div class="card-top">
+                <span class="formula-name">Citrus Breeze</span>
+                <span class="status-badge status-draft">مسودة</span>
+            </div>
+            <div class="card-desc">تركيبة حمضية منعشة مع البرغموت والليمون وخشب الارز</div>
+            <div class="card-chart-row">
+                <canvas class="mini-chart" id="chart3" width="120" height="120"></canvas>
+                <div class="card-ingredients">
+                    <span class="ing-chip">Bergamot</span>
+                    <span class="ing-chip">Lemon Oil</span>
+                    <span class="ing-chip">Cedarwood</span>
+                    <span class="ing-chip">Vetiver</span>
+                    <span class="ing-chip more-chip">+2 اخرى</span>
+                </div>
+            </div>
+            <div class="card-stats">
+                <div class="card-stat"><div class="stat-num">6</div><div class="stat-lbl">مكونات</div></div>
+                <div class="card-stat"><div class="stat-num">12.0g</div><div class="stat-lbl">الوزن</div></div>
+                <div class="card-stat"><div class="stat-num">$45</div><div class="stat-lbl">التكلفة</div></div>
+            </div>
+            <div class="card-actions">
+                <button class="btn-act"><i class="bi bi-copy"></i> نسخ</button>
+                <button class="btn-act"><i class="bi bi-card-heading"></i> بطاقة</button>
+                <button class="btn-act btn-view"><i class="bi bi-eye"></i> عرض</button>
+            </div>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="formula-card" style="position:relative;">
+            <span class="note-label">&#128293;</span>
+            <div class="card-top">
+                <span class="formula-name">Amber Nights</span>
+                <span class="status-badge status-final">نهائي</span>
+            </div>
+            <div class="card-desc">عنبر دافئ مع البخور واللبان والباتشولي</div>
+            <div class="card-chart-row">
+                <canvas class="mini-chart" id="chart4" width="120" height="120"></canvas>
+                <div class="card-ingredients">
+                    <span class="ing-chip">Amber</span>
+                    <span class="ing-chip">Frankincense</span>
+                    <span class="ing-chip">Patchouli</span>
+                    <span class="ing-chip">Labdanum</span>
+                    <span class="ing-chip more-chip">+4 اخرى</span>
+                </div>
+            </div>
+            <div class="card-stats">
+                <div class="card-stat"><div class="stat-num">8</div><div class="stat-lbl">مكونات</div></div>
+                <div class="card-stat"><div class="stat-num">30.2g</div><div class="stat-lbl">الوزن</div></div>
+                <div class="card-stat"><div class="stat-num">$110</div><div class="stat-lbl">التكلفة</div></div>
+            </div>
+            <div class="card-actions">
+                <button class="btn-act"><i class="bi bi-copy"></i> نسخ</button>
+                <button class="btn-act"><i class="bi bi-card-heading"></i> بطاقة</button>
+                <button class="btn-act btn-view"><i class="bi bi-eye"></i> عرض</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
+        const OLF_COLORS = ['#FFD700','#B0C4DE','#2E8B57','#32CD32','#4169E1','#FF69B4','#FF6347','#FF4500','#8B6914','#654321','#DAA520','#9370DB','#6B4226','#800020'];
+
+        const chartData = {
+            chart1: [1,0,2,0,0,3,0,2,3,5,4,3,1,0],
+            chart2: [0,0,0,1,0,8,4,1,3,0,1,2,0,0],
+            chart3: [7,1,2,3,2,0,2,0,0,2,0,0,0,0],
+            chart4: [0,0,1,0,0,0,0,3,5,3,7,2,1,1],
+        };
+
+        Object.entries(chartData).forEach(([id, data]) => {
+            const canvas = document.getElementById(id);
+            if (!canvas) return;
+            const mx = Math.max(...data, 1);
+            new Chart(canvas.getContext('2d'), {
+                type: 'polarArea',
+                data: {
+                    labels: OLF_LABELS,
+                    datasets: [{ data, backgroundColor: OLF_COLORS.map(c => c + '66'), borderColor: OLF_COLORS, borderWidth: 1.5 }]
+                },
+                options: {
+                    responsive: false,
+                    animation: { duration: 600 },
+                    layout: { padding: 4 },
+                    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+                    scales: { r: { min: 0, max: Math.ceil(mx * 1.3), ticks: { display: false }, grid: { color: 'rgba(255,255,255,0.06)' } } }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

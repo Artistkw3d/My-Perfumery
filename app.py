@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Perfume Vault v3 - نظام إدارة التركيبات العطرية مع MSDS و IFRA"""
+"""My Perfumery v3 - نظام إدارة التركيبات العطرية مع MSDS و IFRA"""
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, make_response
 import sqlite3
@@ -3522,7 +3522,7 @@ def api_import_execute():
         return jsonify({'success': False, 'message': str(e)})
 
 if __name__ == '__main__':
-    log("Starting Perfume Vault v3...")
+    log("Starting My Perfumery v3...")
     init_db()
     import_ifra_standards()
     import_ifra_contributions()

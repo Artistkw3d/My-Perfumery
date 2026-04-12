@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Perfume Vault - بطاقة {{ formula.name }}{% endblock %}
+{% block title %}My Perfumery - بطاقة {{ formula.name }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -503,7 +503,7 @@ function loadCard() {
             const company = data.company;
 
             // شريط العلامة التجارية
-            document.getElementById('cardBrandName').textContent = company.name || 'Perfume Vault';
+            document.getElementById('cardBrandName').textContent = company.name || 'My Perfumery';
             document.getElementById('customBrandName').value = company.name || '';
 
             // التاريخ
@@ -547,7 +547,7 @@ function loadCard() {
             // الإحصائيات
             document.getElementById('ingCount').textContent = data.ingredients_count;
             document.getElementById('totalWeight').textContent = data.total_weight.toFixed(2) + ' g';
-            document.getElementById('footerBranding').textContent = (company.name || 'Perfume Vault') + ' — ' + today;
+            document.getElementById('footerBranding').textContent = (company.name || 'My Perfumery') + ' — ' + today;
 
             // إظهار المحتوى
             document.getElementById('cardLoading').style.display = 'none';
