@@ -435,11 +435,15 @@ def get_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
     )''')
-    # Migrate: add review columns if missing (check once per connection)
+    # Migrate: add review columns if missing
     existing = [row[1] for row in conn.execute("PRAGMA table_info(formulas)").fetchall()]
     for col in ['target_audience', 'age_group', 'gender', 'season', 'occasion', 'scent_type', 'review_notes']:
         if col not in existing:
             conn.execute(f"ALTER TABLE formulas ADD COLUMN {col} TEXT DEFAULT ''")
+    # Migrate: add ifra_override to formula_ingredients
+    fi_cols = [row[1] for row in conn.execute("PRAGMA table_info(formula_ingredients)").fetchall()]
+    if 'ifra_override' not in fi_cols:
+        conn.execute("ALTER TABLE formula_ingredients ADD COLUMN ifra_override REAL DEFAULT NULL")
     return conn
 
 def init_db():
@@ -2273,6 +2277,13 @@ def api_formula_ingredients(fid):
             if ifra_limit == 0 and ifra_std_name is None and (i['ifra_limit'] or 0) > 0:
                 ifra_limit = i['ifra_limit']
 
+            # Per-ingredient IFRA override (highest priority)
+            ifra_override = i['ifra_override'] if 'ifra_override' in i.keys() and i['ifra_override'] is not None else None
+            if ifra_override is not None:
+                ifra_limit = ifra_override
+                ifra_std_name = ifra_std_name or 'Manual'
+                ifra_std_type = 'override'
+
             # For calculations, treat -1 (no restriction) as no limit
             calc_limit = ifra_limit if ifra_limit > 0 else 0
 
@@ -2286,6 +2297,19 @@ def api_formula_ingredients(fid):
             if ifra_final_calc is not None:
                 l_values.append(ifra_final_calc)
 
+            # Get constituents for this material
+            constituents = []
+            if cas:
+                const_rows = conn.execute(
+                    'SELECT constituent_name, constituent_cas, concentration_pct FROM ifra_contributions WHERE ncs_cas = ?', (cas,)
+                ).fetchall()
+                for cr in const_rows:
+                    constituents.append({
+                        'name': cr['constituent_name'],
+                        'cas': cr['constituent_cas'],
+                        'pct': cr['concentration_pct']
+                    })
+
             temp_results.append({
                 'data': i,
                 'conc': conc,
@@ -2293,6 +2317,7 @@ def api_formula_ingredients(fid):
                 'weight_pct': weight_pct,
                 'pure_pct': pure_pct,
                 'ifra_limit': ifra_limit,
+                'constituents': constituents,
                 'ifra_std_name': ifra_std_name,
                 'ifra_std_type': ifra_std_type,
                 'ifra_design_calc': ifra_design_calc,
@@ -2333,6 +2358,7 @@ def api_formula_ingredients(fid):
                 'ifra_design_exceeded': ifra_design_exceeded,  # M
                 'ifra_final_calc': t['ifra_final_calc'],  # L
                 'ifra_final_exceeded': ifra_final_exceeded,  # K
+                'constituents': t.get('constituents', []),
                 'cost': i['weight'] * (i['price_per_gram'] or 0)
             })
         
@@ -2474,10 +2500,12 @@ def api_formula_ingredients(fid):
             dilution = float(request.form.get('dilution', 0))
             diluent = request.form.get('diluent', '')
             diluent_other = request.form.get('diluent_other', '')
-            conn.execute("""UPDATE formula_ingredients 
-                SET weight=?, dilution=?, diluent=?, diluent_other=? 
+            ifra_ov = request.form.get('ifra_override', '')
+            ifra_override = float(ifra_ov) if ifra_ov and ifra_ov.strip() else None
+            conn.execute("""UPDATE formula_ingredients
+                SET weight=?, dilution=?, diluent=?, diluent_other=?, ifra_override=?
                 WHERE id=?""",
-                (request.form.get('weight'), dilution, diluent, diluent_other, request.form.get('ing_id')))
+                (request.form.get('weight'), dilution, diluent, diluent_other, ifra_override, request.form.get('ing_id')))
             conn.commit()
             conn.close()
             return jsonify({'success': True})

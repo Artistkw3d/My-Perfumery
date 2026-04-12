@@ -241,6 +241,39 @@
     .note-row p { color: var(--text-mid); font-size: 0.82rem; margin: 0; white-space: pre-wrap; }
     .note-dt { font-size: 0.7rem; color: var(--text-light); }
 
+    /* Constituents */
+    .constituents-row {
+        background: rgba(245,240,235,0.6);
+    }
+    .constituents-row td {
+        padding: 6px 8px !important;
+        border-bottom: 1px dashed var(--border) !important;
+    }
+    .const-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    .const-chip {
+        background: var(--cream);
+        border: 1px solid var(--sand);
+        color: var(--text-mid);
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 0.68rem;
+        font-weight: 500;
+    }
+    .const-chip .cpct { color: var(--gold); font-weight: 700; margin-right: 4px; }
+    .toggle-const {
+        background: none;
+        border: none;
+        color: var(--brown-light);
+        font-size: 0.72rem;
+        cursor: pointer;
+        padding: 0 4px;
+    }
+    .toggle-const:hover { color: var(--gold); }
+
     /* Review */
     .review-grid {
         display: grid;
@@ -365,6 +398,8 @@
                 </table>
             </div>
         </div>
+
+        <div id="contribWarnings"></div>
 
         <!-- Review -->
         <div class="e-card">
@@ -776,6 +811,15 @@ function loadIngredients() {
                 if (data.olfactive_profile) {
                     updateFormulaWheel(data.olfactive_profile);
                 }
+                // Show contribution warnings
+                if (data.contribution_warnings && data.contribution_warnings.length) {
+                    let warnHtml = '<div class="e-card" style="border-color:var(--red);margin-top:-16px;margin-bottom:20px;"><div class="e-card-head" style="background:var(--red);color:white;"><i class="bi bi-exclamation-triangle"></i> تحذيرات IFRA (جزيئات مشتركة)</div><div class="e-card-body" style="font-size:0.82rem;">';
+                    data.contribution_warnings.forEach(w => { warnHtml += '<div style="margin-bottom:4px;">' + w + '</div>'; });
+                    warnHtml += '</div></div>';
+                    document.getElementById('contribWarnings').innerHTML = warnHtml;
+                } else {
+                    document.getElementById('contribWarnings').innerHTML = '';
+                }
             }
         });
 }
@@ -831,6 +875,7 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
             <td class="mat-cell">
                 <strong>${i.name}</strong>
                 ${i.cas_number ? `<br><span class="cas-t">${i.cas_number}</span>` : ''}
+                ${i.constituents && i.constituents.length ? `<br><button class="toggle-const" onclick="toggleConst(${i.id})"><i class="bi bi-diagram-3"></i> ${i.constituents.length} جزيئات</button>` : ''}
             </td>
             <td>
                 <select class="e-sel" style="width:72px;"
@@ -843,7 +888,14 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
                     onchange="updateIngredientFull(${i.id}, ${i.weight}, this.value / 100, '${i.diluent || ''}', '${escapedDiluentOther}')" style="width:50px;">
                 <span style="font-size:0.68rem;color:var(--text-light);">%</span>
             </td>
-            <td>${i.ifra_cat_limit === -1 ? '<span style="color:var(--green);">NR</span>' : i.ifra_cat_limit > 0 ? i.ifra_cat_limit + '%' : (i.ifra_cat_limit === 0 && i.ifra_std_name ? '<span style="color:var(--red);">⛔</span>' : (i.ifra_limit || '-'))}</td>
+            <td>
+                <input type="number" class="e-inp" style="width:50px;"
+                    value="${i.ifra_cat_limit > 0 ? i.ifra_cat_limit : (i.ifra_cat_limit === -1 ? '' : '')}"
+                    placeholder="${i.ifra_cat_limit === -1 ? 'NR' : i.ifra_cat_limit === 0 && i.ifra_std_name ? '⛔' : '-'}"
+                    step="0.01" min="0"
+                    onchange="updateIfraOverride(${i.id}, this.value, ${i.weight}, ${i.dilution || 1}, '${i.diluent || ''}', '${escapedDiluentOther}')"
+                    title="اضغط لتعديل حد IFRA">
+            </td>
             <td>
                 <input type="number" class="e-inp" style="width:65px;" value="${i.weight}" step="0.0001" min="0"
                     onchange="updateIngredientFull(${i.id}, this.value, ${i.dilution || 1}, '${i.diluent || ''}', '${escapedDiluentOther}')">
@@ -857,7 +909,16 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
             <td>${kDisplay}</td>
             <td>${(i.cost || 0).toFixed(2)}</td>
             <td><button class="e-del" onclick="deleteIngredient(${i.id})"><i class="bi bi-trash"></i></button></td>
-        </tr>`;
+        </tr>
+        ${i.constituents && i.constituents.length ? `
+        <tr class="constituents-row" id="const_${i.id}" style="display:none;">
+            <td></td>
+            <td colspan="14" style="text-align:right;">
+                <div class="const-list">
+                    ${i.constituents.map(c => `<span class="const-chip"><span class="cpct">${c.pct}%</span>${c.name} <span class="cas-t">${c.cas}</span></span>`).join('')}
+                </div>
+            </td>
+        </tr>` : ''}`;
     }).join('');
 
     // Update cost in summary
@@ -877,6 +938,11 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
             <td>${totalCost.toFixed(2)}</td>
             <td></td>
         </tr>`;
+}
+
+function toggleConst(ingId) {
+    const row = document.getElementById('const_' + ingId);
+    if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
 }
 
 function showAddModal() {
@@ -907,7 +973,7 @@ function handleDiluentChange(ingId, weight, dilution, select) {
     updateIngredientFull(ingId, weight, dilution, select.value, '');
 }
 
-function updateIngredientFull(ingId, weight, dilution, diluent, diluentOther) {
+function updateIngredientFull(ingId, weight, dilution, diluent, diluentOther, ifraOverride) {
     const formData = new FormData();
     formData.append('action', 'update');
     formData.append('ing_id', ingId);
@@ -915,9 +981,14 @@ function updateIngredientFull(ingId, weight, dilution, diluent, diluentOther) {
     formData.append('dilution', dilution);
     formData.append('diluent', diluent || '');
     formData.append('diluent_other', diluentOther || '');
+    if (ifraOverride !== undefined && ifraOverride !== '') formData.append('ifra_override', ifraOverride);
     fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
     .then(r => r.json())
     .then(data => { if (data.success) loadIngredients(); });
+}
+
+function updateIfraOverride(ingId, value, weight, dilution, diluent, diluentOther) {
+    updateIngredientFull(ingId, weight, dilution, diluent, diluentOther, value);
 }
 
 function updateIngredient(ingId, weight, dilution) {
