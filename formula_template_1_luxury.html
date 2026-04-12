@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formula Template 1 - Luxury Dark</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0c0a12;
+            --bg2: #13111c;
+            --card: rgba(255,255,255,0.035);
+            --card-border: rgba(255,255,255,0.08);
+            --gold: #d4a853;
+            --purple: #9b6dff;
+            --rose: #e8618c;
+            --green: #34d399;
+            --red: #f87171;
+            --yellow: #fbbf24;
+            --text: #f0eaf8;
+            --text2: rgba(255,255,255,0.5);
+            --text3: rgba(255,255,255,0.25);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--bg); font-family: 'Tajawal', sans-serif; color: var(--text); }
+        body::before {
+            content: '';
+            position: fixed;
+            top: -40%;
+            right: -20%;
+            width: 70vw;
+            height: 70vw;
+            background: radial-gradient(circle, rgba(155,109,255,0.06) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .page-wrap { max-width: 1500px; margin: 0 auto; padding: 30px 40px; }
+
+        /* Top Bar */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--card-border);
+        }
+        .top-bar .back-link {
+            color: var(--text2);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: color 0.3s;
+        }
+        .top-bar .back-link:hover { color: var(--gold); }
+        .formula-title-area {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .formula-title-area h1 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--gold), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .status-badge {
+            padding: 5px 16px;
+            border-radius: 20px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+        .status-final { background: rgba(52,211,153,0.15); color: var(--green); border: 1px solid rgba(52,211,153,0.3); }
+        .status-testing { background: rgba(251,191,36,0.15); color: var(--yellow); border: 1px solid rgba(251,191,36,0.3); }
+        .action-btns { display: flex; gap: 8px; }
+        .action-btns .abtn {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            color: var(--text2);
+            padding: 9px 18px;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+            backdrop-filter: blur(10px);
+        }
+        .action-btns .abtn:hover { border-color: var(--purple); color: var(--purple); }
+
+        /* Layout */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 24px;
+        }
+
+        /* Glass Card */
+        .g-card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 18px;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+            margin-bottom: 24px;
+        }
+        .g-card-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--card-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+        .g-card-header i { color: var(--gold); margin-left: 8px; }
+        .g-card-body { padding: 20px 24px; }
+        .g-card-header .btn-add-sm {
+            background: rgba(155,109,255,0.15);
+            border: 1px solid rgba(155,109,255,0.3);
+            color: var(--purple);
+            padding: 5px 14px;
+            border-radius: 8px;
+            font-size: 0.78rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .g-card-header .btn-add-sm:hover { background: rgba(155,109,255,0.25); }
+
+        /* Table */
+        .dark-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.78rem;
+        }
+        .dark-table thead th {
+            background: rgba(0,0,0,0.4);
+            color: var(--gold);
+            padding: 10px 8px;
+            font-weight: 700;
+            text-align: center;
+            border-bottom: 2px solid var(--gold);
+            font-size: 0.7rem;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+        .dark-table thead th small { display: block; color: var(--text3); font-weight: 400; font-size: 0.65rem; }
+        .dark-table tbody tr {
+            transition: background 0.2s;
+        }
+        .dark-table tbody tr:hover { background: rgba(155,109,255,0.05); }
+        .dark-table tbody td {
+            padding: 10px 8px;
+            text-align: center;
+            border-bottom: 1px solid var(--card-border);
+            color: var(--text);
+        }
+        .dark-table tbody td.mat-name { text-align: right; font-weight: 600; }
+        .dark-table tbody td .cas { color: var(--text3); font-size: 0.7rem; }
+        .dark-table tfoot td {
+            background: rgba(0,0,0,0.4);
+            padding: 10px 8px;
+            font-weight: 800;
+            text-align: center;
+            color: var(--gold);
+            border-top: 2px solid var(--gold);
+        }
+        .dark-table .exceeded { background: rgba(248,113,113,0.08); }
+        .dark-table .inp-sm {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 5px 6px;
+            border-radius: 6px;
+            text-align: center;
+            width: 60px;
+            font-size: 0.78rem;
+        }
+        .dark-table .inp-sm:focus { border-color: var(--purple); outline: none; }
+        .dark-table .sel-sm {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 4px 6px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+        }
+        .del-btn {
+            background: none;
+            border: none;
+            color: var(--text3);
+            cursor: pointer;
+            transition: color 0.2s;
+            font-size: 0.85rem;
+        }
+        .del-btn:hover { color: var(--red); }
+
+        /* Side Cards */
+        .side-section .g-card-header { font-size: 0.88rem; }
+        .settings-form label {
+            font-size: 0.78rem;
+            color: var(--text2);
+            margin-bottom: 4px;
+            display: block;
+        }
+        .settings-form input, .settings-form select, .settings-form textarea {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 9px 12px;
+            border-radius: 8px;
+            width: 100%;
+            font-size: 0.85rem;
+            margin-bottom: 14px;
+        }
+        .settings-form input:focus, .settings-form select:focus, .settings-form textarea:focus {
+            border-color: var(--purple);
+            outline: none;
+        }
+        .btn-save {
+            background: linear-gradient(135deg, var(--gold), #c4943a);
+            color: #1a1020;
+            border: none;
+            padding: 10px 0;
+            border-radius: 10px;
+            width: 100%;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-save:hover { box-shadow: 0 4px 20px rgba(212,168,83,0.3); }
+
+        /* IFRA Results */
+        .ifra-results {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+        .ifra-result-item {
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+            padding: 12px 16px;
+            text-align: center;
+        }
+        .ifra-result-item .ifra-val {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: var(--purple);
+        }
+        .ifra-result-item .ifra-lbl {
+            font-size: 0.7rem;
+            color: var(--text3);
+            margin-top: 2px;
+        }
+        .ifra-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        /* Chart */
+        .chart-area { text-align: center; padding: 16px 0; }
+
+        /* Notes */
+        .note-item {
+            background: rgba(155,109,255,0.05);
+            border-right: 3px solid var(--purple);
+            border-radius: 0 10px 10px 0;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+        }
+        .note-item h6 { font-weight: 700; font-size: 0.88rem; margin-bottom: 4px; }
+        .note-item p { color: var(--text2); font-size: 0.82rem; margin: 0; }
+        .note-item .note-date { color: var(--text3); font-size: 0.72rem; }
+
+        @media (max-width: 1024px) {
+            .main-grid { grid-template-columns: 1fr; }
+            .page-wrap { padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-wrap">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="formula-title-area">
+                <a href="#" class="back-link"><i class="bi bi-arrow-right"></i> العودة للتركيبات</a>
+                <h1>Royal Oud Intense</h1>
+                <span class="status-badge status-final">FINAL</span>
+            </div>
+            <div class="action-btns">
+                <button class="abtn"><i class="bi bi-arrows-angle-expand"></i> Scale</button>
+                <a class="abtn" href="#"><i class="bi bi-award"></i> IFRA</a>
+                <a class="abtn" href="#"><i class="bi bi-file-medical"></i> MSDS</a>
+                <a class="abtn" href="#"><i class="bi bi-card-heading"></i> Card</a>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <!-- Left: Table -->
+            <div class="main-section">
+                <div class="g-card">
+                    <div class="g-card-header">
+                        <span><i class="bi bi-list-ul"></i> Ingredients</span>
+                        <button class="btn-add-sm"><i class="bi bi-plus"></i> Add</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="dark-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Material</th>
+                                    <th>Diluent<small>(C)</small></th>
+                                    <th>Dilution<small>(E)</small></th>
+                                    <th>IFRA Limit<small>(F)</small></th>
+                                    <th>Oil Wt<small>(G)</small></th>
+                                    <th>Oil %<small>(H)</small></th>
+                                    <th>IFRA Design<small>(N=F/H)</small></th>
+                                    <th>Exc?<small>(M)</small></th>
+                                    <th>Pure Wt<small>(I=G*E)</small></th>
+                                    <th>Pure %<small>(J)</small></th>
+                                    <th>IFRA Final<small>(L=F/J)</small></th>
+                                    <th>Exc?<small>(K)</small></th>
+                                    <th>Cost</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>1</td>
+                                    <td class="mat-name">Oud Cambodia<br><span class="cas">CAS: 8023-80-1</span></td>
+                                    <td><select class="sel-sm"><option>--</option><option selected>Ethanol</option></select></td>
+                                    <td><input class="inp-sm" value="0.10"></td>
+                                    <td>2.5%</td>
+                                    <td><input class="inp-sm" value="5.0000"></td>
+                                    <td>19.69%</td>
+                                    <td>12.700</td>
+                                    <td><span style="color:var(--green);">&#10003;</span></td>
+                                    <td>0.5000</td>
+                                    <td>4.20%</td>
+                                    <td>59.524</td>
+                                    <td><span style="color:var(--green);">&#10003;</span></td>
+                                    <td>45.00</td>
+                                    <td><button class="del-btn"><i class="bi bi-trash"></i></button></td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td class="mat-name">Rose Taifi Abs<br><span class="cas">CAS: 8007-01-0</span></td>
+                                    <td><select class="sel-sm"><option selected>--</option></select></td>
+                                    <td><input class="inp-sm" value="1.00"></td>
+                                    <td>NR</td>
+                                    <td><input class="inp-sm" value="3.5000"></td>
+                                    <td>13.78%</td>
+                                    <td>-</td>
+                                    <td>-</td>
+                                    <td>3.5000</td>
+                                    <td>29.41%</td>
+                                    <td>-</td>
+                                    <td>-</td>
+                                    <td>28.00</td>
+                                    <td><button class="del-btn"><i class="bi bi-trash"></i></button></td>
+                                </tr>
+                                <tr class="exceeded">
+                                    <td>3</td>
+                                    <td class="mat-name">Coumarin<br><span class="cas">CAS: 91-64-5</span></td>
+                                    <td><select class="sel-sm"><option selected>--</option></select></td>
+                                    <td><input class="inp-sm" value="1.00"></td>
+                                    <td>0.8%</td>
+                                    <td><input class="inp-sm" value="2.0000"></td>
+                                    <td>7.87%</td>
+                                    <td>10.165</td>
+                                    <td><span style="color:var(--red);">&#9888;</span></td>
+                                    <td>2.0000</td>
+                                    <td>16.81%</td>
+                                    <td>4.759</td>
+                                    <td><span style="color:var(--red);">&#9888;</span></td>
+                                    <td>5.00</td>
+                                    <td><button class="del-btn"><i class="bi bi-trash"></i></button></td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td class="mat-name">Sandalwood Oil<br><span class="cas">CAS: 8006-87-9</span></td>
+                                    <td><select class="sel-sm"><option selected>--</option></select></td>
+                                    <td><input class="inp-sm" value="1.00"></td>
+                                    <td>NR</td>
+                                    <td><input class="inp-sm" value="4.0000"></td>
+                                    <td>15.75%</td>
+                                    <td>-</td>
+                                    <td>-</td>
+                                    <td>4.0000</td>
+                                    <td>33.61%</td>
+                                    <td>-</td>
+                                    <td>-</td>
+                                    <td>32.00</td>
+                                    <td><button class="del-btn"><i class="bi bi-trash"></i></button></td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td class="mat-name">Ambroxan<br><span class="cas">CAS: 6790-58-5</span></td>
+                                    <td><select class="sel-sm"><option>--</option><option selected>DPG</option></select></td>
+                                    <td><input class="inp-sm" value="0.50"></td>
+                                    <td>NR</td>
+                                    <td><input class="inp-sm" value="6.0000"></td>
+                                    <td>23.62%</td>
+                                    <td>-</td>
+                                    <td>-</td>
+                                    <td>3.0000</td>
+                                    <td>25.21%</td>
+                                    <td>-</td>
+                                    <td>-</td>
+                                    <td>18.00</td>
+                                    <td><button class="del-btn"><i class="bi bi-trash"></i></button></td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td></td>
+                                    <td style="text-align:right;">Total</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td>25.4000</td>
+                                    <td>100%</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td>11.9000</td>
+                                    <td>100%</td>
+                                    <td></td>
+                                    <td></td>
+                                    <td>128.00</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div class="g-card">
+                    <div class="g-card-header">
+                        <span><i class="bi bi-journal-text"></i> Notes</span>
+                        <button class="btn-add-sm"><i class="bi bi-plus"></i> Add Note</button>
+                    </div>
+                    <div class="g-card-body">
+                        <div class="note-item">
+                            <div style="display:flex;justify-content:space-between;">
+                                <h6>First test batch</h6>
+                                <span class="note-date">2025-03-15</span>
+                            </div>
+                            <p>Good projection, sillage needs work. Try adding more Ambroxan in next iteration.</p>
+                        </div>
+                        <div class="note-item">
+                            <div style="display:flex;justify-content:space-between;">
+                                <h6>Longevity test</h6>
+                                <span class="note-date">2025-03-20</span>
+                            </div>
+                            <p>8 hours on skin. Top note fades after 30min. Consider citrus boost.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Sidebar -->
+            <div class="side-section">
+                <!-- Settings -->
+                <div class="g-card">
+                    <div class="g-card-header"><i class="bi bi-gear"></i> Formula Settings</div>
+                    <div class="g-card-body settings-form">
+                        <label>Name</label>
+                        <input type="text" value="Royal Oud Intense">
+                        <label>Description</label>
+                        <textarea rows="2">Rich royal oud with Taifi rose and amber</textarea>
+                        <label>IFRA Category</label>
+                        <select>
+                            <option>Cat 4 - Fine Fragrance</option>
+                        </select>
+                        <label>Status</label>
+                        <select>
+                            <option value="final" selected>Final</option>
+                            <option value="testing">Testing</option>
+                            <option value="draft">Draft</option>
+                        </select>
+                        <button class="btn-save"><i class="bi bi-check-circle"></i> Save Changes</button>
+                    </div>
+                </div>
+
+                <!-- IFRA Results -->
+                <div class="g-card">
+                    <div class="g-card-header" style="background:rgba(0,0,0,0.3);"><i class="bi bi-calculator"></i> IFRA Results</div>
+                    <div class="g-card-body">
+                        <div class="ifra-results">
+                            <div class="ifra-result-item">
+                                <div class="ifra-val">46.85%</div>
+                                <div class="ifra-lbl">J2: Active Material Ratio (= &Sigma;I / &Sigma;G &times; 100)</div>
+                            </div>
+                            <div class="ifra-row">
+                                <div class="ifra-result-item">
+                                    <div class="ifra-val" style="color:var(--green);">10.064</div>
+                                    <div class="ifra-lbl">N3: IFRA Design Limit</div>
+                                </div>
+                                <div class="ifra-result-item">
+                                    <div class="ifra-val" style="color:var(--green);">4.711</div>
+                                    <div class="ifra-lbl">E3: IFRA Final Limit</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Olfactive Chart -->
+                <div class="g-card">
+                    <div class="g-card-header"><i class="bi bi-bullseye"></i> Olfactive Profile</div>
+                    <div class="chart-area">
+                        <canvas id="chart1" width="280" height="280"></canvas>
+                    </div>
+                </div>
+
+                <!-- Dilution Info -->
+                <div class="g-card">
+                    <div class="g-card-header"><i class="bi bi-info-circle"></i> Dilution Guide</div>
+                    <div class="g-card-body" style="font-size:0.82rem;color:var(--text2);">
+                        <div><code style="color:var(--gold);">1</code> = Pure (100%)</div>
+                        <div><code style="color:var(--gold);">0.5</code> = 50%</div>
+                        <div><code style="color:var(--gold);">0.1</code> = 10%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        const OLF = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
+        const CLR = ['#d4a853','#b5a898','#7d9c7b','#8fb87d','#6b94b0','#c9847b','#c47058','#b85c3a','#8b7355','#5c4a32','#b8956a','#9e8dc4','#6B4226','#703030'];
+        const data = [1,0,2,0,0,3,0,2,3,5,4,3,1,0];
+        const mx = Math.max(...data,1);
+        new Chart(document.getElementById('chart1').getContext('2d'), {
+            type: 'polarArea',
+            data: { labels: OLF, datasets: [{ data, backgroundColor: CLR.map(c=>c+'66'), borderColor: CLR, borderWidth: 1.5 }] },
+            options: {
+                responsive: false, layout: { padding: 30 },
+                plugins: { legend: { display: false } },
+                scales: { r: { min:0, max: Math.ceil(mx*1.3), ticks: { display: false }, grid: { color: 'rgba(255,255,255,0.06)' } } }
+            }
+        });
+    </script>
+</body>
+</html>
