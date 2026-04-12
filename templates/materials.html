@@ -4,13 +4,13 @@
 {% block extra_css %}
 <style>
     .olf-wheel-card {
-        background: linear-gradient(135deg, #1a1a2e, #16213e);
+        background: linear-gradient(135deg, #2d2418, #3e3225);
         border-radius: 16px;
         padding: 25px;
         color: white;
         margin-bottom: 20px;
     }
-    .olf-wheel-card h5 { color: #e2e8f0; font-weight: 600; }
+    .olf-wheel-card h5 { color: #e8ddd0; font-weight: 600; }
     .mini-wheel-container {
         width: 60px;
         height: 60px;
@@ -41,7 +41,7 @@
         flex: 1;
         height: 6px;
         -webkit-appearance: none;
-        background: #e2e8f0;
+        background: #e8ddd0;
         border-radius: 3px;
         outline: none;
     }
@@ -58,23 +58,23 @@
         gap: 16px;
     }
     .mat-card {
-        background: white;
+        background: #f5f0eb;
         border-radius: 14px;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        box-shadow: 0 2px 12px rgba(92,74,50,0.08);
         padding: 16px;
         transition: all 0.25s;
         cursor: pointer;
         border: 2px solid transparent;
     }
-    .mat-card:hover { box-shadow: 0 6px 24px rgba(111,66,193,0.15); border-color: var(--primary); }
+    .mat-card:hover { box-shadow: 0 6px 24px rgba(139,115,85,0.18); border-color: #b8956a; }
     .mat-card-header {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
         margin-bottom: 10px;
     }
-    .mat-card-name { font-weight: 700; font-size: 0.95rem; }
-    .mat-card-cas { font-size: 0.78rem; color: #999; font-family: monospace; }
+    .mat-card-name { font-weight: 700; font-size: 0.95rem; color: #2d2418; }
+    .mat-card-cas { font-size: 0.78rem; color: #7a6b57; font-family: monospace; }
     .mat-card-body {
         display: flex;
         align-items: center;
@@ -95,13 +95,13 @@
         align-items: center;
         margin-top: 10px;
         padding-top: 8px;
-        border-top: 1px solid #f0f0f0;
+        border-top: 1px solid rgba(139,115,85,0.12);
     }
     .view-toggle .btn { padding: 4px 10px; }
-    .view-toggle .btn.active { background: var(--primary); color: white; }
+    .view-toggle .btn.active { background: #5c4a32; color: #f5f0eb; }
     /* Overview wheel detail panel */
     .olf-overview-detail {
-        background: rgba(255,255,255,0.08);
+        background: rgba(245,240,235,0.08);
         border-radius: 12px;
         padding: 16px;
     }
@@ -121,13 +121,13 @@
         font-size: 0.78rem;
         text-transform: uppercase;
         font-weight: 600;
-        color: #a0aec0;
+        color: #c4a882;
     }
     .olf-overview-detail .cat-count {
         min-width: 30px;
         text-align: left;
         font-size: 0.78rem;
-        color: #e2e8f0;
+        color: #e8ddd0;
     }
 </style>
 {% endblock %}
