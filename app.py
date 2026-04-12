@@ -2083,61 +2083,67 @@ def api_auto_classify():
 @login_required
 def api_formulas():
     conn = get_db()
-    
+
     if request.method == 'GET':
-        data = conn.execute('''
-            SELECT f.*, COUNT(fi.id) as ingredients_count,
-                   COALESCE(SUM(fi.weight), 0) as total_weight
-            FROM formulas f
-            LEFT JOIN formula_ingredients fi ON f.id = fi.formula_id
-            GROUP BY f.id ORDER BY f.created_at DESC
-        ''').fetchall()
+        try:
+            data = conn.execute('''
+                SELECT f.*, COUNT(fi.id) as ingredients_count,
+                       COALESCE(SUM(fi.weight), 0) as total_weight
+                FROM formulas f
+                LEFT JOIN formula_ingredients fi ON f.id = fi.formula_id
+                GROUP BY f.id ORDER BY f.created_at DESC
+            ''').fetchall()
 
-        result = []
-        for f in data:
-            total_cost = conn.execute('''
-                SELECT COALESCE(SUM(fi.weight * m.price_per_gram), 0)
-                FROM formula_ingredients fi
-                JOIN materials m ON fi.material_id = m.id
-                WHERE fi.formula_id = ?
-            ''', (f['id'],)).fetchone()[0]
+            result = []
+            for f in data:
+                total_cost = conn.execute('''
+                    SELECT COALESCE(SUM(fi.weight * m.price_per_gram), 0)
+                    FROM formula_ingredients fi
+                    JOIN materials m ON fi.material_id = m.id
+                    WHERE fi.formula_id = ?
+                ''', (f['id'],)).fetchone()[0]
 
-            # Get ingredient names
-            ingredients = conn.execute('''
-                SELECT m.name FROM formula_ingredients fi
-                JOIN materials m ON fi.material_id = m.id
-                WHERE fi.formula_id = ?
-            ''', (f['id'],)).fetchall()
-            ingredient_names = [i['name'] for i in ingredients]
+                # Get ingredient names
+                ingredients = conn.execute('''
+                    SELECT m.name FROM formula_ingredients fi
+                    JOIN materials m ON fi.material_id = m.id
+                    WHERE fi.formula_id = ?
+                ''', (f['id'],)).fetchall()
+                ingredient_names = [i['name'] for i in ingredients]
 
-            # Calculate olfactive profile
-            olf_cats = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal']
-            olf_profile = {}
-            fi_rows = conn.execute('''
-                SELECT fi.weight, fi.dilution, fi.material_id
-                FROM formula_ingredients fi
-                WHERE fi.formula_id = ?
-            ''', (f['id'],)).fetchall()
-            total_pure = sum((row['weight'] * (row['dilution'] or 1)) for row in fi_rows)
-            if total_pure > 0:
-                for cat in olf_cats:
-                    val = 0
-                    for row in fi_rows:
-                        olf = conn.execute('SELECT value FROM material_olfactive WHERE material_id=? AND category=?',
-                            (row['material_id'], cat)).fetchone()
-                        if olf:
-                            pure_w = row['weight'] * (row['dilution'] or 1)
-                            val += olf['value'] * (pure_w / total_pure)
-                    olf_profile[cat] = round(val, 1)
+                # Calculate olfactive profile
+                olf_cats = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal']
+                olf_profile = {}
+                fi_rows = conn.execute('''
+                    SELECT fi.weight, fi.dilution, fi.material_id
+                    FROM formula_ingredients fi
+                    WHERE fi.formula_id = ?
+                ''', (f['id'],)).fetchall()
+                total_pure = sum((row['weight'] * (row['dilution'] or 1)) for row in fi_rows)
+                if total_pure > 0:
+                    for cat in olf_cats:
+                        val = 0
+                        for row in fi_rows:
+                            olf = conn.execute('SELECT value FROM material_olfactive WHERE material_id=? AND category=?',
+                                (row['material_id'], cat)).fetchone()
+                            if olf:
+                                pure_w = row['weight'] * (row['dilution'] or 1)
+                                val += olf['value'] * (pure_w / total_pure)
+                        olf_profile[cat] = round(val, 1)
 
-            r = dict(f)
-            r['total_cost'] = total_cost
-            r['ingredient_names'] = ingredient_names
-            r['olfactive_profile'] = olf_profile
-            result.append(r)
+                r = dict(f)
+                r['total_cost'] = total_cost
+                r['ingredient_names'] = ingredient_names
+                r['olfactive_profile'] = olf_profile
+                result.append(r)
 
-        conn.close()
-        return jsonify({'success': True, 'data': result})
+            conn.close()
+            return jsonify({'success': True, 'data': result})
+        except Exception as e:
+            conn.close()
+            import traceback
+            traceback.print_exc()
+            return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
     
     elif request.method == 'POST':
         action = request.form.get('action')
