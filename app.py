@@ -435,12 +435,11 @@ def get_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
     )''')
-    # Migrate: add review columns if missing
+    # Migrate: add review columns if missing (check once per connection)
+    existing = [row[1] for row in conn.execute("PRAGMA table_info(formulas)").fetchall()]
     for col in ['target_audience', 'age_group', 'gender', 'season', 'occasion', 'scent_type', 'review_notes']:
-        try:
+        if col not in existing:
             conn.execute(f"ALTER TABLE formulas ADD COLUMN {col} TEXT DEFAULT ''")
-        except:
-            pass
     return conn
 
 def init_db():

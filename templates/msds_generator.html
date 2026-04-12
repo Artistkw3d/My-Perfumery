@@ -72,6 +72,11 @@
 
 {% block content %}
 <div class="mb-4 no-print">
+    <div id="backToFormula" style="display:none;margin-bottom:12px;">
+        <a id="backToFormulaLink" href="/formulas" style="color:var(--text-light);text-decoration:none;font-size:0.85rem;">
+            <i class="bi bi-arrow-right"></i> العودة للتركيبة
+        </a>
+    </div>
     <div class="row align-items-center">
         <div class="col-md-4">
             <h2><i class="bi bi-file-medical"></i> تقرير MSDS</h2>
@@ -329,6 +334,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const preselectedFormula = urlParams.get('formula');
 if (preselectedFormula) {
     document.getElementById('formulaSelect').value = preselectedFormula;
+    document.getElementById('backToFormula').style.display = '';
+    document.getElementById('backToFormulaLink').href = '/formula/' + preselectedFormula;
     generateMSDS();
 }
 

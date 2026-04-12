@@ -713,12 +713,17 @@ function createPolarChart(canvas, data, size='large') {
 // ===== Overview Wheel =====
 function updateOverviewWheel() {
     const avgScores = {};
-    OLF_CATS.forEach(c => avgScores[c] = 0);
+    const familyCounts = {};
+    OLF_CATS.forEach(c => { avgScores[c] = 0; familyCounts[c] = 0; });
     let counted = 0;
     materials.forEach(m => {
         if (m.olfactive) {
             counted++;
-            OLF_CATS.forEach(c => { avgScores[c] += (m.olfactive[c] || 0); });
+            OLF_CATS.forEach(c => {
+                const v = m.olfactive[c] || 0;
+                avgScores[c] += v;
+                if (v > 0) familyCounts[c]++;
+            });
         }
     });
     if (counted > 0) OLF_CATS.forEach(c => avgScores[c] = Math.round(avgScores[c] / counted * 10) / 10);
@@ -756,15 +761,15 @@ function updateOverviewWheel() {
     });
 
     // Bars
-    const maxCount = Math.max(...OLF_CATS.map(c => avgScores[c]), 1);
+    const maxFamilyCount = Math.max(...OLF_CATS.map(c => familyCounts[c]), 1);
     document.getElementById('overviewBars').innerHTML = OLF_CATS.map((c, i) => {
-        const pct = (avgScores[c] / 10) * 100;
+        const pct = (familyCounts[c] / maxFamilyCount) * 100;
         return `<div class="cat-row">
             <span class="cat-name" style="color:${OLF_COLORS[i]}">${OLF_LABELS[i]}</span>
             <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;">
                 <div class="cat-bar" style="width:${pct}%;background:${OLF_COLORS[i]};"></div>
             </div>
-            <span class="cat-count">${avgScores[c].toFixed(1)}</span>
+            <span class="cat-count">${familyCounts[c]}</span>
         </div>`;
     }).join('');
 
