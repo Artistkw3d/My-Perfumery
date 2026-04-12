@@ -517,9 +517,18 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS formulas (
         id INTEGER PRIMARY KEY, name TEXT, description TEXT, ifra_category TEXT DEFAULT 'cat4',
         status TEXT DEFAULT 'draft', notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        active_ratio REAL DEFAULT 0.5, ifra_design_limit REAL DEFAULT 0, 
-        ifra_final_limit REAL DEFAULT 0, sample_weight REAL DEFAULT 1000
+        active_ratio REAL DEFAULT 0.5, ifra_design_limit REAL DEFAULT 0,
+        ifra_final_limit REAL DEFAULT 0, sample_weight REAL DEFAULT 1000,
+        target_audience TEXT DEFAULT '', age_group TEXT DEFAULT '', gender TEXT DEFAULT '',
+        season TEXT DEFAULT '', occasion TEXT DEFAULT '', scent_type TEXT DEFAULT '',
+        review_notes TEXT DEFAULT ''
     )''')
+    # Add review columns if they don't exist (for existing databases)
+    for col in ['target_audience', 'age_group', 'gender', 'season', 'occasion', 'scent_type', 'review_notes']:
+        try:
+            c.execute(f"ALTER TABLE formulas ADD COLUMN {col} TEXT DEFAULT ''")
+        except:
+            pass
     
     c.execute('''CREATE TABLE IF NOT EXISTS formula_ingredients (
         id INTEGER PRIMARY KEY, formula_id INTEGER, material_id INTEGER,
@@ -2471,9 +2480,15 @@ def api_formula_ingredients(fid):
             return jsonify({'success': True, 'message': 'تم الحذف'})
         
         elif action == 'update_formula':
-            conn.execute("UPDATE formulas SET name=?, description=?, status=?, ifra_category=? WHERE id=?",
-                (request.form.get('name'), request.form.get('description'), 
-                 request.form.get('status'), request.form.get('ifra_category'), fid))
+            conn.execute("""UPDATE formulas SET name=?, description=?, status=?, ifra_category=?,
+                target_audience=?, age_group=?, gender=?, season=?, occasion=?, scent_type=?, review_notes=?
+                WHERE id=?""",
+                (request.form.get('name'), request.form.get('description'),
+                 request.form.get('status'), request.form.get('ifra_category'),
+                 request.form.get('target_audience', ''), request.form.get('age_group', ''),
+                 request.form.get('gender', ''), request.form.get('season', ''),
+                 request.form.get('occasion', ''), request.form.get('scent_type', ''),
+                 request.form.get('review_notes', ''), fid))
             conn.commit()
             conn.close()
             return jsonify({'success': True, 'message': 'تم الحفظ'})
