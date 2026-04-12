@@ -435,6 +435,12 @@ def get_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
     )''')
+    # Migrate: add review columns if missing
+    for col in ['target_audience', 'age_group', 'gender', 'season', 'occasion', 'scent_type', 'review_notes']:
+        try:
+            conn.execute(f"ALTER TABLE formulas ADD COLUMN {col} TEXT DEFAULT ''")
+        except:
+            pass
     return conn
 
 def init_db():
@@ -2305,11 +2311,15 @@ def api_formula_ingredients(fid):
         for t in temp_results:
             i = t['data']
             
-            # M = تجاوز إذا N < N3
-            ifra_design_exceeded = (t['ifra_design_calc'] < ifra_design_limit) if (t['ifra_design_calc'] is not None and ifra_design_limit > 0) else False
-            
-            # K = تجاوز إذا L < E3
-            ifra_final_exceeded = (t['ifra_final_calc'] < ifra_final_limit) if (t['ifra_final_calc'] is not None and ifra_final_limit > 0) else False
+            # M = تجاوز إذا نسبة الزيت (H%) أكبر من حد IFRA (F%)
+            ifra_design_exceeded = False
+            if t['ifra_limit'] is not None and t['ifra_limit'] > 0:
+                ifra_design_exceeded = (t['weight_pct'] * 100) > t['ifra_limit']
+
+            # K = تجاوز إذا نسبة الصافي (J%) أكبر من حد IFRA (F%)
+            ifra_final_exceeded = False
+            if t['ifra_limit'] is not None and t['ifra_limit'] > 0:
+                ifra_final_exceeded = (t['pure_pct'] * 100) > t['ifra_limit']
             
             result.append({
                 **dict(i),
