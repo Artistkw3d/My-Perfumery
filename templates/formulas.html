@@ -392,23 +392,21 @@ let currentFilter = 'all';
 
 function loadFormulas() {
     fetch('/api/formulas')
-        .then(r => {
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            return r.json();
-        })
-        .then(data => {
-            if (data.success) {
+        .then(r => r.json().then(data => ({ok: r.ok, data})))
+        .then(({ok, data}) => {
+            if (ok && data.success) {
                 allFormulas = data.data;
                 document.getElementById('formulaCount').textContent = allFormulas.length;
                 renderFormulas(allFormulas);
             } else {
-                console.error('API error:', data);
-                document.getElementById('formulasContainer').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i><p>خطأ في تحميل التركيبات</p></div>';
+                const msg = data.message || 'Unknown error';
+                console.error('API error:', msg, data);
+                document.getElementById('formulasContainer').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle" style="font-size:2rem;color:var(--red);"></i><p style="color:var(--red);">' + msg + '</p></div>';
             }
         })
         .catch(err => {
             console.error('Load formulas error:', err);
-            document.getElementById('formulasContainer').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i><p>خطأ في الاتصال: ' + err.message + '</p></div>';
+            document.getElementById('formulasContainer').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle" style="font-size:2rem;color:var(--red);"></i><p style="color:var(--red);">Connection error: ' + err.message + '</p></div>';
         });
 }
 
