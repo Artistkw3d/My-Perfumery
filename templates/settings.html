@@ -1,6 +1,66 @@
 {% extends "base.html" %}
 {% block title %}My Perfumery - الإعدادات{% endblock %}
 
+{% block extra_css %}
+<style>
+    .backup-item {
+        background: var(--cream);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 18px;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: all 0.2s;
+    }
+    .backup-item:hover { border-color: var(--gold); }
+    .backup-info { flex: 1; }
+    .backup-date { font-weight: 700; font-size: 0.9rem; color: var(--text-dark); }
+    .backup-meta { font-size: 0.75rem; color: var(--text-light); margin-top: 2px; }
+    .backup-reason {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 10px;
+        font-size: 0.68rem;
+        font-weight: 600;
+    }
+    .reason-login { background: rgba(125,156,123,0.15); color: var(--green); }
+    .reason-manual { background: rgba(184,149,106,0.15); color: var(--gold); }
+    .reason-pre_restore { background: rgba(184,92,92,0.15); color: var(--red); }
+    .backup-actions { display: flex; gap: 6px; }
+    .backup-actions button {
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        border: 1px solid var(--border);
+        background: white;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .backup-actions .btn-restore { color: var(--green); }
+    .backup-actions .btn-restore:hover { background: rgba(125,156,123,0.15); border-color: var(--green); }
+    .backup-actions .btn-delete { color: var(--red); }
+    .backup-actions .btn-delete:hover { background: rgba(184,92,92,0.1); border-color: var(--red); }
+    .backup-empty {
+        text-align: center;
+        padding: 30px;
+        color: var(--text-light);
+    }
+    .btn-backup {
+        background: var(--primary);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 50px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-backup:hover { background: var(--secondary); }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="mb-4">
     <h2><i class="bi bi-gear-wide-connected"></i> الإعدادات</h2>
@@ -41,7 +101,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-6">
         <div class="card mb-4">
             <div class="card-header">
@@ -49,15 +109,15 @@
             </div>
             <div class="card-body">
                 <table class="table table-sm">
-                    <tr><th>الإصدار</th><td>3.38</td></tr>
+                    <tr><th>الإصدار</th><td>3.40</td></tr>
                     <tr><th>المطور</th><td>Artistkw3d</td></tr>
                     <tr><th>آخر تحديث</th><td>2026</td></tr>
                     <tr><th>الشركة</th><td>My Perfumery</td></tr>
                 </table>
             </div>
         </div>
-        
-        <div class="card">
+
+        <div class="card mb-4">
             <div class="card-header">
                 <i class="bi bi-shield-check"></i> الأمان
             </div>
@@ -83,6 +143,26 @@
         </div>
     </div>
 </div>
+
+<!-- Backup Section -->
+<div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-cloud-arrow-down"></i> النسخ الاحتياطية</span>
+        <button class="btn-backup" onclick="createBackup()">
+            <i class="bi bi-plus-circle"></i> نسخة احتياطية الآن
+        </button>
+    </div>
+    <div class="card-body">
+        <div style="font-size:0.82rem;color:var(--text-mid);margin-bottom:16px;">
+            <i class="bi bi-info-circle"></i>
+            يتم إنشاء نسخة احتياطية تلقائياً عند كل تسجيل دخول. النسخة تشمل جميع البيانات ماعدا بيانات الدخول.
+            يتم الاحتفاظ بآخر 20 نسخة.
+        </div>
+        <div id="backupList">
+            <div class="backup-empty"><i class="bi bi-hourglass"></i> جاري التحميل...</div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -91,20 +171,100 @@ document.getElementById('companyForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const formData = new FormData(this);
     formData.append('action', 'save_company');
-    
-    fetch('/api/settings', {
-        method: 'POST',
-        body: formData
-    })
+    fetch('/api/settings', { method: 'POST', body: formData })
     .then(r => r.json())
-    .then(data => {
-        showAlert(data.message, data.success ? 'success' : 'danger');
-    });
+    .then(data => { showAlert(data.message, data.success ? 'success' : 'danger'); });
 });
 
 document.getElementById('passwordForm').addEventListener('submit', function(e) {
     e.preventDefault();
     showAlert('ميزة تغيير كلمة المرور قيد التطوير', 'info');
 });
+
+const reasonLabels = {
+    login: 'تسجيل دخول',
+    manual: 'يدوي',
+    pre_restore: 'قبل الاستعادة',
+    auto: 'تلقائي'
+};
+const reasonClasses = {
+    login: 'reason-login',
+    manual: 'reason-manual',
+    pre_restore: 'reason-pre_restore'
+};
+
+function loadBackups() {
+    const fd = new FormData();
+    fd.append('action', 'list_backups');
+    fetch('/api/settings', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success || !data.data.length) {
+            document.getElementById('backupList').innerHTML = '<div class="backup-empty"><i class="bi bi-inbox" style="font-size:2rem;"></i><br>لا توجد نسخ احتياطية</div>';
+            return;
+        }
+        document.getElementById('backupList').innerHTML = data.data.map(b => `
+            <div class="backup-item">
+                <div class="backup-info">
+                    <div class="backup-date"><i class="bi bi-clock-history"></i> ${b.date}</div>
+                    <div class="backup-meta">
+                        <span class="backup-reason ${reasonClasses[b.reason] || ''}">${reasonLabels[b.reason] || b.reason}</span>
+                        &nbsp; ${b.size_kb} KB
+                        &nbsp; <span style="color:var(--text-light);">${b.filename}</span>
+                    </div>
+                </div>
+                <div class="backup-actions">
+                    <button class="btn-restore" onclick="restoreBackup('${b.filename}', '${b.date}')">
+                        <i class="bi bi-arrow-counterclockwise"></i> استعادة
+                    </button>
+                    <button class="btn-delete" onclick="deleteBackup('${b.filename}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    });
+}
+
+function createBackup() {
+    const fd = new FormData();
+    fd.append('action', 'create_backup');
+    fetch('/api/settings', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadBackups();
+    });
+}
+
+function restoreBackup(filename, date) {
+    if (!confirm('هل تريد استعادة النسخة الاحتياطية من ' + date + '؟\n\nسيتم إنشاء نسخة احتياطية من الحالة الحالية قبل الاستعادة.\nبيانات الدخول (اسم المستخدم وكلمة المرور) لن تتغير.')) return;
+    const fd = new FormData();
+    fd.append('action', 'restore_backup');
+    fd.append('filename', filename);
+    fetch('/api/settings', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+        if (data.success) {
+            setTimeout(() => location.reload(), 1500);
+        }
+    });
+}
+
+function deleteBackup(filename) {
+    if (!confirm('حذف هذه النسخة الاحتياطية؟')) return;
+    const fd = new FormData();
+    fd.append('action', 'delete_backup');
+    fd.append('filename', filename);
+    fetch('/api/settings', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadBackups();
+    });
+}
+
+loadBackups();
 </script>
 {% endblock %}

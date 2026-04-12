@@ -8,6 +8,8 @@ import os
 import sys
 import re
 import json
+import glob
+import shutil
 import zipfile
 import xml.etree.ElementTree as ET
 import tempfile
@@ -22,10 +24,83 @@ app.secret_key = 'perfume_vault_2024_v3'
 if os.path.exists('/app'):
     # داخل Docker
     DB_PATH = '/app/database/perfume.db'
+    BACKUP_DIR = '/app/database/backups'
 else:
     # تشغيل مباشر
     DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'perfume.db')
+    BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'backups')
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+MAX_BACKUPS = 20  # Keep last 20 backups
+
+def create_backup(reason='auto'):
+    """Create a backup of the database"""
+    if not os.path.exists(DB_PATH):
+        return None
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_name = f"backup_{timestamp}_{reason}.db"
+    backup_path = os.path.join(BACKUP_DIR, backup_name)
+    shutil.copy2(DB_PATH, backup_path)
+    # Cleanup old backups
+    backups = sorted(glob.glob(os.path.join(BACKUP_DIR, 'backup_*.db')))
+    while len(backups) > MAX_BACKUPS:
+        os.remove(backups.pop(0))
+    log(f"[BACKUP] Created: {backup_name}")
+    return backup_name
+
+def list_backups():
+    """List all available backups"""
+    backups = []
+    for f in sorted(glob.glob(os.path.join(BACKUP_DIR, 'backup_*.db')), reverse=True):
+        name = os.path.basename(f)
+        size = os.path.getsize(f)
+        # Parse timestamp from filename: backup_20260412_215443_auto.db
+        parts = name.replace('backup_', '').replace('.db', '').split('_')
+        if len(parts) >= 3:
+            date_str = parts[0]
+            time_str = parts[1]
+            reason = '_'.join(parts[2:])
+            try:
+                dt = datetime.strptime(f"{date_str}_{time_str}", '%Y%m%d_%H%M%S')
+                formatted = dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                formatted = name
+        else:
+            formatted = name
+            reason = 'unknown'
+        backups.append({
+            'filename': name,
+            'date': formatted,
+            'reason': reason,
+            'size_kb': round(size / 1024, 1)
+        })
+    return backups
+
+def restore_backup(filename):
+    """Restore database from backup, keeping admin credentials"""
+    backup_path = os.path.join(BACKUP_DIR, filename)
+    if not os.path.exists(backup_path):
+        return False, 'Backup not found'
+    # Save current admin credentials
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    admin = conn.execute("SELECT username, password, name, role FROM users WHERE id=1").fetchone()
+    admin_data = dict(admin) if admin else None
+    conn.close()
+    # Create a safety backup before restore
+    create_backup('pre_restore')
+    # Restore
+    shutil.copy2(backup_path, DB_PATH)
+    # Re-apply admin credentials
+    if admin_data:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("UPDATE users SET username=?, password=?, name=?, role=? WHERE id=1",
+            (admin_data['username'], admin_data['password'], admin_data['name'], admin_data['role']))
+        conn.commit()
+        conn.close()
+    log(f"[BACKUP] Restored from: {filename}")
+    return True, 'Restored successfully'
 
 def log(msg):
     print(msg, file=sys.stdout, flush=True)
@@ -987,6 +1062,11 @@ def login():
         if user:
             session['user_id'] = user['id']
             session['user_name'] = user['name']
+            # Auto-backup on login
+            try:
+                create_backup('login')
+            except Exception as e:
+                log(f"[BACKUP] Auto-backup failed: {e}")
             return redirect('/')
         error = 'خطأ في اسم المستخدم أو كلمة المرور'
     return render_template('login.html', error=error)
@@ -2864,7 +2944,38 @@ def api_settings():
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'message': 'تم الحفظ'})
-    
+
+    elif action == 'create_backup':
+        conn.close()
+        try:
+            name = create_backup('manual')
+            return jsonify({'success': True, 'message': f'تم إنشاء النسخة: {name}'})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+
+    elif action == 'list_backups':
+        conn.close()
+        return jsonify({'success': True, 'data': list_backups()})
+
+    elif action == 'restore_backup':
+        conn.close()
+        filename = request.form.get('filename', '')
+        if not filename or '..' in filename or '/' in filename:
+            return jsonify({'success': False, 'message': 'Invalid filename'})
+        ok, msg = restore_backup(filename)
+        return jsonify({'success': ok, 'message': msg})
+
+    elif action == 'delete_backup':
+        conn.close()
+        filename = request.form.get('filename', '')
+        if not filename or '..' in filename or '/' in filename:
+            return jsonify({'success': False, 'message': 'Invalid filename'})
+        path = os.path.join(BACKUP_DIR, filename)
+        if os.path.exists(path):
+            os.remove(path)
+            return jsonify({'success': True, 'message': 'تم الحذف'})
+        return jsonify({'success': False, 'message': 'Not found'})
+
     conn.close()
     return jsonify({'success': False})
 
