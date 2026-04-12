@@ -392,13 +392,23 @@ let currentFilter = 'all';
 
 function loadFormulas() {
     fetch('/api/formulas')
-        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
         .then(data => {
             if (data.success) {
                 allFormulas = data.data;
                 document.getElementById('formulaCount').textContent = allFormulas.length;
                 renderFormulas(allFormulas);
+            } else {
+                console.error('API error:', data);
+                document.getElementById('formulasContainer').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i><p>خطأ في تحميل التركيبات</p></div>';
             }
+        })
+        .catch(err => {
+            console.error('Load formulas error:', err);
+            document.getElementById('formulasContainer').innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i><p>خطأ في الاتصال: ' + err.message + '</p></div>';
         });
 }
 
