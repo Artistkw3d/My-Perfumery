@@ -332,7 +332,10 @@
         </div>
         <div class="col-md-3">
             <label class="form-label fw-bold">نص أسفل البطاقة</label>
-            <textarea id="customFooterText" class="form-control" rows="4" placeholder="مثال: عطر فاخر مصنوع يدوياً بعناية..." onchange="updateCard()"></textarea>
+            <textarea id="customFooterText" class="form-control" rows="3" placeholder="مثال: عطر فاخر مصنوع يدوياً بعناية..." onchange="updateCard()"></textarea>
+            <button class="btn btn-primary w-100 mt-2" onclick="saveCardSettings()">
+                <i class="bi bi-check-circle"></i> حفظ الإعدادات
+            </button>
         </div>
     </div>
 </div>
@@ -359,7 +362,7 @@
                 </div>
             </div>
             <div class="brand-date">
-                <div id="cardCode" style="font-weight:600; color:#6f42c1;"></div>
+                <div id="cardCode" style="font-weight:600; color:var(--gold);"></div>
                 <div id="cardDate"></div>
             </div>
         </div>
@@ -549,10 +552,62 @@ function loadCard() {
             document.getElementById('totalWeight').textContent = data.total_weight.toFixed(2) + ' g';
             document.getElementById('footerBranding').textContent = (company.name || 'My Perfumery') + ' — ' + today;
 
+            // Load saved card settings
+            if (data.card_settings) {
+                const cs = data.card_settings;
+                if (cs.brandName) {
+                    document.getElementById('customBrandName').value = cs.brandName;
+                    document.getElementById('cardBrandName').textContent = cs.brandName;
+                }
+                if (cs.headerText) {
+                    document.getElementById('customHeaderText').value = cs.headerText;
+                    document.getElementById('cardHeaderText').textContent = cs.headerText;
+                }
+                if (cs.footerText) {
+                    document.getElementById('customFooterText').value = cs.footerText;
+                    document.getElementById('cardFooterText').textContent = cs.footerText;
+                    document.getElementById('cardFooterText').style.display = 'block';
+                }
+                if (cs.code) {
+                    document.getElementById('customCode').value = cs.code;
+                    document.getElementById('cardCode').textContent = cs.code;
+                }
+                if (cs.date) {
+                    document.getElementById('customDate').value = cs.date;
+                    document.getElementById('cardDate').textContent = cs.date;
+                }
+                if (cs.logoData) {
+                    document.getElementById('cardLogo').innerHTML = `<img src="${cs.logoData}" style="max-height:60px; max-width:160px; object-fit:contain; border-radius:8px;">`;
+                    document.getElementById('logoPreview').src = cs.logoData;
+                    document.getElementById('logoPreview').style.display = 'block';
+                    document.getElementById('logoPlaceholder').style.display = 'none';
+                    document.getElementById('removeLogo').style.display = 'inline';
+                }
+            }
+
             // إظهار المحتوى
             document.getElementById('cardLoading').style.display = 'none';
             document.getElementById('cardContent').style.display = 'block';
         });
+}
+
+function saveCardSettings() {
+    const logoImg = document.getElementById('logoPreview');
+    const settings = {
+        brandName: document.getElementById('customBrandName').value,
+        headerText: document.getElementById('customHeaderText').value,
+        footerText: document.getElementById('customFooterText').value,
+        code: document.getElementById('customCode').value,
+        date: document.getElementById('customDate').value,
+        logoData: logoImg.style.display !== 'none' ? logoImg.src : ''
+    };
+    const fd = new FormData();
+    fd.append('card_settings', JSON.stringify(settings));
+    fetch(`/api/formula/${formulaId}/card-settings`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+    });
 }
 
 function renderPyramidLevel(containerId, countId, notes) {

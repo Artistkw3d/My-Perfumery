@@ -510,9 +510,9 @@ def get_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
     )''')
-    # Migrate: add review columns if missing
+    # Migrate: add columns if missing
     existing = [row[1] for row in conn.execute("PRAGMA table_info(formulas)").fetchall()]
-    for col in ['target_audience', 'age_group', 'gender', 'season', 'occasion', 'scent_type', 'review_notes']:
+    for col in ['target_audience', 'age_group', 'gender', 'season', 'occasion', 'scent_type', 'review_notes', 'card_settings']:
         if col not in existing:
             conn.execute(f"ALTER TABLE formulas ADD COLUMN {col} TEXT DEFAULT ''")
     # Migrate: add ifra_override to formula_ingredients
@@ -3005,6 +3005,16 @@ def formula_card(id):
     conn.close()
     return render_template('formula_card.html', formula=formula, company=company)
 
+@app.route('/api/formula/<int:fid>/card-settings', methods=['POST'])
+@login_required
+def api_formula_card_settings(fid):
+    conn = get_db()
+    settings_json = request.form.get('card_settings', '{}')
+    conn.execute("UPDATE formulas SET card_settings=? WHERE id=?", (settings_json, fid))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'message': 'تم حفظ إعدادات البطاقة'})
+
 @app.route('/api/formula/<int:fid>/card')
 @login_required
 def api_formula_card(fid):
@@ -3065,6 +3075,15 @@ def api_formula_card(fid):
     company = conn.execute("SELECT * FROM company_info WHERE id=1").fetchone()
     conn.close()
 
+    # Parse card_settings JSON
+    card_settings = {}
+    try:
+        cs = formula['card_settings'] if 'card_settings' in formula.keys() else ''
+        if cs:
+            card_settings = json.loads(cs)
+    except:
+        pass
+
     return jsonify({
         'success': True,
         'formula': dict(formula),
@@ -3072,7 +3091,8 @@ def api_formula_card(fid):
         'pyramid': pyramid,
         'total_weight': total_weight,
         'ingredients_count': len(ingredients),
-        'company': dict(company) if company else {}
+        'company': dict(company) if company else {},
+        'card_settings': card_settings
     })
 
 # ===== Smart Import - قراءة Excel =====
