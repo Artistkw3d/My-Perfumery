@@ -8,55 +8,70 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #6f42c1;
-            --secondary: #8B5CF6;
+            --primary: #5c4a32;
+            --secondary: #8b7355;
+            --gold: #b8956a;
+            --brown-light: #c4a882;
+            --cream: #f5f0eb;
+            --sand: #e8ddd0;
+            --green: #7d9c7b;
+            --rose: #c9847b;
+            --red: #b85c5c;
+            --text-dark: #2d2418;
+            --text-mid: #7a6b57;
+            --text-light: #b5a898;
+            --border: rgba(139,115,85,0.12);
         }
-        body { background: #f8f9fa; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        body { background: #faf9f7; font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif; color: var(--text-dark); }
         .sidebar {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            background: linear-gradient(180deg, #3d2e1e, var(--primary));
             min-height: 100vh;
             padding: 20px;
             position: fixed;
             width: 250px;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            box-shadow: 2px 0 20px rgba(92,74,50,0.15);
         }
         .sidebar .brand {
-            color: white;
+            color: var(--gold);
             font-size: 1.5rem;
-            font-weight: bold;
+            font-weight: 800;
             text-align: center;
             padding: 20px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.2);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
             margin-bottom: 20px;
+            letter-spacing: 1px;
         }
         .sidebar .nav-link {
-            color: rgba(255,255,255,0.8);
+            color: rgba(255,255,255,0.6);
             padding: 12px 15px;
-            border-radius: 8px;
-            margin: 5px 0;
+            border-radius: 10px;
+            margin: 4px 0;
             transition: all 0.3s;
+            font-weight: 500;
         }
         .sidebar .nav-link:hover, .sidebar .nav-link.active {
-            background: rgba(255,255,255,0.2);
-            color: white;
+            background: rgba(184,149,106,0.2);
+            color: var(--gold);
         }
         .sidebar .nav-link i { margin-left: 10px; }
         .main-content {
             margin-right: 250px;
-            padding: 20px;
+            padding: 24px 32px;
         }
         .card {
-            border: none;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 2px 12px rgba(139,115,85,0.06);
+            background: white;
         }
         .card-header {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-            border-radius: 12px 12px 0 0 !important;
-            font-weight: bold;
+            background: var(--primary);
+            color: var(--cream);
+            border-radius: 16px 16px 0 0 !important;
+            font-weight: 700;
         }
         .btn-primary {
             background: var(--primary);
@@ -66,29 +81,52 @@
             background: var(--secondary);
             border-color: var(--secondary);
         }
+        .btn-outline-primary {
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        .btn-outline-primary:hover {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
         .table th {
-            background: #f1f1f1;
+            background: var(--cream);
             font-weight: 600;
+            color: var(--text-dark);
         }
         .badge-profile {
             padding: 5px 12px;
             border-radius: 20px;
         }
-        .badge-top { background: #ffd700; color: #333; }
-        .badge-heart { background: #ff69b4; color: white; }
-        .badge-base { background: #8B4513; color: white; }
+        .badge-top { background: var(--gold); color: #fff; }
+        .badge-heart { background: var(--rose); color: white; }
+        .badge-base { background: var(--primary); color: white; }
         .stat-card {
-            border-radius: 15px;
+            border-radius: 16px;
             padding: 20px;
             color: white;
             transition: transform 0.3s;
         }
-        .stat-card:hover { transform: translateY(-5px); }
+        .stat-card:hover { transform: translateY(-4px); }
         .stat-card h3 { font-size: 2rem; margin: 0; }
         .stat-card p { margin: 0; opacity: 0.8; }
         .select2-container { width: 100% !important; }
-        .modal-header { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; }
+        .modal-header { background: var(--primary); color: var(--cream); }
         .modal-header .btn-close { filter: brightness(0) invert(1); }
+        .modal-content { border-radius: 16px; overflow: hidden; }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--gold);
+            box-shadow: 0 0 0 3px rgba(184,149,106,0.15);
+        }
+        .bg-primary { background-color: var(--primary) !important; }
+        .bg-success { background-color: var(--green) !important; }
+        .bg-warning { background-color: var(--gold) !important; }
+        .bg-danger { background-color: var(--red) !important; }
+        .bg-secondary { background-color: var(--text-light) !important; }
+        .text-primary { color: var(--primary) !important; }
+        a { color: var(--primary); }
+        a:hover { color: var(--gold); }
         @media print {
             .sidebar, .no-print { display: none !important; }
             .main-content { margin: 0 !important; padding: 0 !important; }
@@ -118,7 +156,7 @@
             <a class="nav-link {% if request.endpoint == 'suppliers' %}active{% endif %}" href="/suppliers">
                 <i class="bi bi-truck"></i> الموردين
             </a>
-            <hr style="border-color: rgba(255,255,255,0.3);">
+            <hr style="border-color: rgba(255,255,255,0.1);">
             <a class="nav-link {% if request.endpoint == 'ifra_certificate' %}active{% endif %}" href="/ifra-certificate">
                 <i class="bi bi-award"></i> شهادة IFRA
             </a>
@@ -131,7 +169,7 @@
             <a class="nav-link {% if request.endpoint == 'import_page' %}active{% endif %}" href="/import">
                 <i class="bi bi-cloud-upload"></i> استيراد مواد
             </a>
-            <hr style="border-color: rgba(255,255,255,0.3);">
+            <hr style="border-color: rgba(255,255,255,0.1);">
             <a class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}" href="/settings">
                 <i class="bi bi-gear-wide-connected"></i> الإعدادات
             </a>
@@ -140,7 +178,7 @@
             </a>
         </nav>
     </div>
-    
+
     <div class="main-content">
         {% block content %}{% endblock %}
     </div>
@@ -158,14 +196,14 @@
             document.body.appendChild(alert);
             setTimeout(() => alert.remove(), 3000);
         }
-        
+
         $(document).ready(function() {
             $('.select2').select2({
                 theme: 'bootstrap-5',
                 dir: 'rtl',
                 language: { noResults: function() { return "لا توجد نتائج"; } }
             });
-            
+
             $('.select2-multiple').select2({
                 theme: 'bootstrap-5',
                 dir: 'rtl',

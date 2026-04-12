@@ -1,185 +1,443 @@
 {% extends "base.html" %}
 {% block title %}Perfume Vault - {{ formula.name }}{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Header */
+    .formula-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-bottom: 20px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+    }
+    .fh-right { display: flex; align-items: center; gap: 14px; }
+    .back-btn {
+        color: var(--text-light);
+        text-decoration: none;
+        font-size: 0.85rem;
+        transition: color 0.3s;
+    }
+    .back-btn:hover { color: var(--gold); }
+    .fh-right h2 {
+        font-size: 1.7rem;
+        font-weight: 300;
+        color: var(--text-dark);
+        margin: 0;
+    }
+    .fh-right h2 strong { font-weight: 800; }
+    .status-pill {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .status-pill::before {
+        content: '';
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+    .sp-final { background: rgba(125,156,123,0.12); color: var(--green); }
+    .sp-testing { background: rgba(184,149,106,0.12); color: var(--gold); }
+    .sp-draft { background: rgba(181,168,152,0.12); color: var(--text-light); }
+    .fh-left { display: flex; gap: 8px; flex-wrap: wrap; }
+    .fh-btn {
+        background: white;
+        border: 1.5px solid var(--border);
+        padding: 8px 16px;
+        border-radius: 50px;
+        font-size: 0.82rem;
+        color: var(--text-mid);
+        cursor: pointer;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        text-decoration: none;
+    }
+    .fh-btn:hover { border-color: var(--secondary); color: var(--secondary); }
+
+    /* Summary strip */
+    .summary-strip {
+        display: flex;
+        gap: 0;
+        background: white;
+        border-radius: 16px;
+        overflow: hidden;
+        margin-bottom: 24px;
+        border: 1px solid var(--border);
+    }
+    .ss-item {
+        flex: 1;
+        padding: 16px 20px;
+        text-align: center;
+        border-left: 1px solid var(--border);
+    }
+    .ss-item:last-child { border-left: none; }
+    .ss-item .ss-val { font-size: 1.3rem; font-weight: 800; color: var(--text-dark); }
+    .ss-item .ss-lbl { font-size: 0.7rem; color: var(--text-light); margin-top: 2px; }
+    .ss-item .ss-icon { color: var(--gold); font-size: 0.95rem; margin-bottom: 4px; }
+
+    /* Layout */
+    .main-grid { display: grid; grid-template-columns: 1fr 320px; gap: 24px; }
+
+    /* Cards */
+    .e-card {
+        background: white;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+        margin-bottom: 20px;
+    }
+    .e-card-head {
+        padding: 14px 22px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--border);
+        font-weight: 700;
+        font-size: 0.9rem;
+    }
+    .e-card-head i { color: var(--brown-light); margin-left: 8px; }
+    .e-card-body { padding: 18px 22px; }
+    .btn-add-e {
+        background: var(--cream);
+        border: 1px solid var(--sand);
+        color: var(--secondary);
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-add-e:hover { background: var(--sand); }
+
+    /* Table */
+    .e-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.78rem;
+    }
+    .e-table thead th {
+        background: var(--primary);
+        color: var(--cream);
+        padding: 10px 7px;
+        font-weight: 600;
+        text-align: center;
+        font-size: 0.7rem;
+        white-space: nowrap;
+    }
+    .e-table thead th:first-child { border-radius: 0 10px 0 0; }
+    .e-table thead th:last-child { border-radius: 10px 0 0 0; }
+    .e-table thead th small { display: block; color: var(--brown-light); font-weight: 400; font-size: 0.62rem; }
+    .e-table tbody tr { transition: background 0.15s; }
+    .e-table tbody tr:nth-child(even) { background: rgba(245,240,235,0.4); }
+    .e-table tbody tr:hover { background: var(--cream); }
+    .e-table tbody td {
+        padding: 9px 7px;
+        text-align: center;
+        border-bottom: 1px solid var(--border);
+    }
+    .e-table tbody td.mat-cell { text-align: right; }
+    .e-table tbody td.mat-cell strong { color: var(--text-dark); }
+    .e-table tbody td .cas-t { font-size: 0.68rem; color: var(--text-light); }
+    .e-table tbody tr.row-warn { background: rgba(184,92,92,0.06); }
+    .e-table tfoot td {
+        padding: 10px 7px;
+        text-align: center;
+        font-weight: 800;
+        background: var(--primary);
+        color: var(--cream);
+    }
+    .e-table .e-inp {
+        background: var(--cream);
+        border: 1px solid var(--sand);
+        padding: 5px 4px;
+        border-radius: 6px;
+        text-align: center;
+        width: 58px;
+        font-size: 0.78rem;
+        color: var(--text-dark);
+    }
+    .e-table .e-inp:focus { border-color: var(--gold); outline: none; }
+    .e-table .e-sel {
+        background: var(--cream);
+        border: 1px solid var(--sand);
+        padding: 4px 4px;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        color: var(--text-mid);
+    }
+    .e-del {
+        background: none;
+        border: none;
+        color: var(--text-light);
+        cursor: pointer;
+        font-size: 0.85rem;
+    }
+    .e-del:hover { color: var(--red); }
+
+    /* Sidebar forms */
+    .side-label { font-size: 0.78rem; color: var(--text-mid); margin-bottom: 4px; display: block; }
+    .side-input {
+        background: var(--cream);
+        border: 1px solid var(--sand);
+        padding: 9px 12px;
+        border-radius: 10px;
+        width: 100%;
+        font-size: 0.85rem;
+        color: var(--text-dark);
+        margin-bottom: 12px;
+        transition: border 0.2s;
+    }
+    .side-input:focus { border-color: var(--gold); outline: none; }
+    .btn-save-e {
+        background: var(--primary);
+        color: white;
+        border: none;
+        padding: 10px 0;
+        border-radius: 50px;
+        width: 100%;
+        font-weight: 700;
+        font-size: 0.88rem;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    .btn-save-e:hover { background: var(--secondary); }
+
+    /* IFRA */
+    .ifra-box {
+        background: var(--cream);
+        border-radius: 12px;
+        padding: 14px;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .ifra-box .ifra-v { font-size: 1.3rem; font-weight: 800; color: var(--primary); }
+    .ifra-box .ifra-l { font-size: 0.68rem; color: var(--text-light); margin-top: 2px; }
+    .ifra-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .ifra-small { padding: 12px; }
+    .ifra-small .ifra-v { font-size: 1.05rem; }
+
+    /* Chart */
+    .chart-center { text-align: center; padding: 10px 0; }
+
+    /* Notes */
+    .note-row {
+        background: var(--cream);
+        border-right: 3px solid var(--gold);
+        border-radius: 0 10px 10px 0;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+    }
+    .note-row h6 { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; }
+    .note-row p { color: var(--text-mid); font-size: 0.82rem; margin: 0; white-space: pre-wrap; }
+    .note-dt { font-size: 0.7rem; color: var(--text-light); }
+
+    /* Dilution guide */
+    .dil-row { display: flex; gap: 16px; font-size: 0.82rem; color: var(--text-mid); }
+    .dil-row code { color: var(--gold); font-weight: 700; }
+
+    /* Scale modal */
+    .scale-info { background: var(--cream); border: 1px solid var(--sand); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 0.85rem; }
+
+    @media (max-width: 1024px) {
+        .main-grid { grid-template-columns: 1fr; }
+        .formula-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+        .summary-strip { flex-wrap: wrap; }
+        .ss-item { min-width: 100px; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <a href="/formulas" class="btn btn-link text-decoration-none">
-            <i class="bi bi-arrow-right"></i> العودة
-        </a>
-        <h2 class="d-inline">{{ formula.name }}</h2>
-        <span class="badge bg-{{ 'success' if formula.status == 'final' else 'warning' if formula.status == 'testing' else 'secondary' }} ms-2">
-            {{ formula.status }}
+<!-- Header -->
+<div class="formula-header">
+    <div class="fh-right">
+        <a href="/formulas" class="back-btn"><i class="bi bi-arrow-right"></i> التركيبات</a>
+        <span style="color:var(--sand);">&bull;</span>
+        <h2><strong>{{ formula.name }}</strong></h2>
+        <span class="status-pill sp-{{ formula.status }}">
+            {{ 'نهائي' if formula.status == 'final' else 'تجريب' if formula.status == 'testing' else 'مسودة' }}
         </span>
     </div>
-    <div>
-        <button class="btn btn-outline-primary" onclick="showScaleModal()">
-            <i class="bi bi-arrows-angle-expand"></i> Scale
-        </button>
-        <a href="/ifra-certificate?formula={{ formula.id }}" class="btn btn-outline-success">
-            <i class="bi bi-award"></i> IFRA
-        </a>
-        <a href="/msds-generator?formula={{ formula.id }}" class="btn btn-outline-info">
-            <i class="bi bi-file-medical"></i> MSDS
-        </a>
-        <a href="/formula/{{ formula.id }}/card" class="btn btn-outline-warning">
-            <i class="bi bi-card-heading"></i> بطاقة تعريفية
-        </a>
+    <div class="fh-left">
+        <button class="fh-btn" onclick="showScaleModal()"><i class="bi bi-arrows-angle-expand"></i> Scale</button>
+        <a href="/ifra-certificate?formula={{ formula.id }}" class="fh-btn"><i class="bi bi-award"></i> IFRA</a>
+        <a href="/msds-generator?formula={{ formula.id }}" class="fh-btn"><i class="bi bi-file-medical"></i> MSDS</a>
+        <a href="/formula/{{ formula.id }}/card" class="fh-btn"><i class="bi bi-card-heading"></i> بطاقة</a>
     </div>
 </div>
 
-<div class="row">
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+<!-- Summary Strip -->
+<div class="summary-strip">
+    <div class="ss-item">
+        <div class="ss-icon"><i class="bi bi-layers"></i></div>
+        <div class="ss-val" id="ss_count">-</div>
+        <div class="ss-lbl">Ingredients</div>
+    </div>
+    <div class="ss-item">
+        <div class="ss-icon"><i class="bi bi-speedometer2"></i></div>
+        <div class="ss-val" id="ss_weight">-</div>
+        <div class="ss-lbl">Total Weight (G)</div>
+    </div>
+    <div class="ss-item">
+        <div class="ss-icon"><i class="bi bi-droplet-half"></i></div>
+        <div class="ss-val" id="ss_pure">-</div>
+        <div class="ss-lbl">Pure Weight (I)</div>
+    </div>
+    <div class="ss-item">
+        <div class="ss-icon"><i class="bi bi-percent"></i></div>
+        <div class="ss-val" id="ss_ratio">-</div>
+        <div class="ss-lbl">Active Ratio (J2)</div>
+    </div>
+    <div class="ss-item">
+        <div class="ss-icon"><i class="bi bi-cash-coin"></i></div>
+        <div class="ss-val" id="ss_cost">-</div>
+        <div class="ss-lbl">Total Cost</div>
+    </div>
+</div>
+
+<div class="main-grid">
+    <!-- Left: Table + Notes -->
+    <div>
+        <!-- Ingredients -->
+        <div class="e-card">
+            <div class="e-card-head">
                 <span><i class="bi bi-list-ul"></i> المكونات</span>
-                <button class="btn btn-sm btn-light" onclick="showAddModal()">
-                    <i class="bi bi-plus"></i> إضافة
-                </button>
+                <button class="btn-add-e" onclick="showAddModal()"><i class="bi bi-plus"></i> إضافة</button>
             </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm table-striped table-bordered" style="font-size: 11px;">
-                        <thead class="text-center">
-                            <tr style="background-color: #000;">
-                                <th style="background:#000; color:#fff;">#</th>
-                                <th style="background:#000; color:#fff;">المادة</th>
-                                <th style="background:#000; color:#fff;">المذيب<br><small>(C)</small></th>
-                                <th style="background:#000; color:#fff;">التخفيف<br><small>(E)</small></th>
-                                <th style="background:#000; color:#fff;">حد IFRA<br><small>(F)</small></th>
-                                <th style="background:#000; color:#fff;">وزن الزيت<br><small>(G)</small></th>
-                                <th style="background:#000; color:#fff;">نسبة الزيت<br><small>(H=G/ΣG)</small></th>
-                                <th style="background:#000; color:#fff;">IFRA تصميم<br><small>(N=F/H)</small></th>
-                                <th style="background:#000; color:#fff;">تجاوز؟<br><small>(M)</small></th>
-                                <th style="background:#000; color:#fff;">وزن صافي<br><small>(I=G×E)</small></th>
-                                <th style="background:#000; color:#fff;">نسبة صافي<br><small>(J=I/ΣI)</small></th>
-                                <th style="background:#000; color:#fff;">IFRA نهائي<br><small>(L=F/J)</small></th>
-                                <th style="background:#000; color:#fff;">تجاوز؟<br><small>(K)</small></th>
-                                <th style="background:#000; color:#fff;">تكلفة</th>
-                                <th style="background:#000; color:#fff;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="ingredientsBody"></tbody>
-                        <tfoot id="ingredientsFoot"></tfoot>
-                    </table>
+            <div style="overflow-x:auto;">
+                <table class="e-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>المادة</th>
+                            <th>المذيب<small>(C)</small></th>
+                            <th>التخفيف<small>(E)</small></th>
+                            <th>IFRA<small>(F)</small></th>
+                            <th>وزن الزيت<small>(G)</small></th>
+                            <th>نسبة الزيت<small>(H=G/ΣG)</small></th>
+                            <th>IFRA تصميم<small>(N=F/H)</small></th>
+                            <th>تجاوز؟<small>(M)</small></th>
+                            <th>وزن صافي<small>(I=G×E)</small></th>
+                            <th>نسبة صافي<small>(J=I/ΣI)</small></th>
+                            <th>IFRA نهائي<small>(L=F/J)</small></th>
+                            <th>تجاوز؟<small>(K)</small></th>
+                            <th>تكلفة</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="ingredientsBody"></tbody>
+                    <tfoot id="ingredientsFoot"></tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="e-card">
+            <div class="e-card-head">
+                <span><i class="bi bi-journal-text"></i> ملاحظات التركيبة</span>
+                <button class="btn-add-e" onclick="showNoteForm()"><i class="bi bi-plus"></i> إضافة ملاحظة</button>
+            </div>
+            <div class="e-card-body">
+                <div id="noteForm" style="display:none;" class="mb-3 p-3 rounded" style="background:var(--cream);">
+                    <div class="mb-2">
+                        <input type="text" id="note_title" class="form-control" placeholder="عنوان الملاحظة">
+                    </div>
+                    <div class="mb-2">
+                        <textarea id="note_content" class="form-control" rows="3" placeholder="محتوى الملاحظة..."></textarea>
+                    </div>
+                    <button class="btn btn-sm" style="background:var(--primary);color:white;" onclick="saveNote()"><i class="bi bi-check"></i> حفظ</button>
+                    <button class="btn btn-sm btn-secondary" onclick="hideNoteForm()">إلغاء</button>
                 </div>
+                <div id="notesList"></div>
             </div>
         </div>
     </div>
-    
-    <div class="col-md-4">
-        <div class="card mb-3">
-            <div class="card-header">
-                <i class="bi bi-gear"></i> إعدادات التركيبة
-            </div>
-            <div class="card-body">
+
+    <!-- Right Sidebar -->
+    <div>
+        <!-- Settings -->
+        <div class="e-card">
+            <div class="e-card-head"><i class="bi bi-gear"></i> إعدادات التركيبة</div>
+            <div class="e-card-body">
                 <form id="formulaForm">
                     <input type="hidden" name="action" value="update_formula">
-                    <div class="mb-3">
-                        <label class="form-label">الاسم</label>
-                        <input type="text" name="name" id="f_name" class="form-control" value="{{ formula.name }}">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">الوصف</label>
-                        <textarea name="description" id="f_desc" class="form-control" rows="2">{{ formula.description or '' }}</textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">IFRA Category</label>
-                        <select name="ifra_category" id="f_ifra" class="form-select">
-                            {% for cat in ifra_categories %}
-                            <option value="{{ cat.id }}" {{ 'selected' if formula.ifra_category == cat.id else '' }}>
-                                {{ cat.name }} - {{ cat.desc[:40] }}...
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">الحالة</label>
-                        <select name="status" id="f_status" class="form-select">
-                            <option value="draft" {{ 'selected' if formula.status == 'draft' else '' }}>Draft</option>
-                            <option value="testing" {{ 'selected' if formula.status == 'testing' else '' }}>Testing</option>
-                            <option value="final" {{ 'selected' if formula.status == 'final' else '' }}>Final</option>
-                        </select>
-                    </div>
-                    <button type="button" class="btn btn-primary w-100" onclick="saveFormula()">
+                    <label class="side-label">الاسم</label>
+                    <input type="text" name="name" id="f_name" class="side-input" value="{{ formula.name }}">
+                    <label class="side-label">الوصف</label>
+                    <textarea name="description" id="f_desc" class="side-input" rows="2">{{ formula.description or '' }}</textarea>
+                    <label class="side-label">IFRA Category</label>
+                    <select name="ifra_category" id="f_ifra" class="side-input">
+                        {% for cat in ifra_categories %}
+                        <option value="{{ cat.id }}" {{ 'selected' if formula.ifra_category == cat.id else '' }}>
+                            {{ cat.name }} - {{ cat.desc[:40] }}...
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <label class="side-label">الحالة</label>
+                    <select name="status" id="f_status" class="side-input">
+                        <option value="draft" {{ 'selected' if formula.status == 'draft' else '' }}>Draft</option>
+                        <option value="testing" {{ 'selected' if formula.status == 'testing' else '' }}>Testing</option>
+                        <option value="final" {{ 'selected' if formula.status == 'final' else '' }}>Final</option>
+                    </select>
+                    <button type="button" class="btn-save-e" onclick="saveFormula()">
                         <i class="bi bi-check-circle"></i> حفظ التغييرات
                     </button>
                 </form>
             </div>
         </div>
-        
-        <!-- نتائج IFRA المحسوبة -->
-        <div class="card mb-3">
-            <div class="card-header bg-dark text-white">
-                <i class="bi bi-calculator"></i> نتائج IFRA (محسوبة تلقائياً)
+
+        <!-- IFRA Results -->
+        <div class="e-card">
+            <div class="e-card-head" style="background:var(--primary);color:var(--cream);">
+                <span><i class="bi bi-calculator" style="color:var(--cream);"></i> نتائج IFRA</span>
             </div>
-            <div class="card-body">
-                <div class="row g-2 text-center">
-                    <div class="col-12">
-                        <label class="form-label small text-muted">J2: نسبة المادة الفعالة</label>
-                        <div class="fw-bold fs-5 text-primary" id="calc_active_ratio">-</div>
-                        <small class="text-muted">= ΣI / ΣG × 100</small>
+            <div class="e-card-body">
+                <div class="ifra-box">
+                    <div class="ifra-v" id="calc_active_ratio">-</div>
+                    <div class="ifra-l">J2: نسبة المادة الفعالة (= ΣI / ΣG × 100)</div>
+                </div>
+                <div class="ifra-grid">
+                    <div class="ifra-box ifra-small">
+                        <div class="ifra-v" style="color:var(--green);" id="calc_ifra_design">-</div>
+                        <div class="ifra-l">N3: حد IFRA للتصميم</div>
                     </div>
-                    <div class="col-6">
-                        <label class="form-label small text-muted">N3: حد IFRA للتصميم</label>
-                        <div class="fw-bold text-success" id="calc_ifra_design">-</div>
-                        <small class="text-muted">= MIN(N) × 0.99</small>
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label small text-muted">E3: حد IFRA النهائي</label>
-                        <div class="fw-bold text-success" id="calc_ifra_final">-</div>
-                        <small class="text-muted">= MIN(L) × 0.99</small>
+                    <div class="ifra-box ifra-small">
+                        <div class="ifra-v" style="color:var(--green);" id="calc_ifra_final">-</div>
+                        <div class="ifra-l">E3: حد IFRA النهائي</div>
                     </div>
                 </div>
             </div>
         </div>
 
-        
-        <div class="card mb-3">
-            <div class="card-header" style="background: linear-gradient(135deg, #1a1a2e, #16213e); color: white;">
-                <i class="bi bi-bullseye"></i> Olfactive Profile
-            </div>
-            <div class="card-body text-center">
+        <!-- Chart -->
+        <div class="e-card">
+            <div class="e-card-head"><i class="bi bi-bullseye"></i> Olfactive Profile</div>
+            <div class="chart-center">
                 <canvas id="formulaWheel" width="280" height="280"></canvas>
             </div>
         </div>
 
-        <div class="card">
-            <div class="card-header">
-                <i class="bi bi-info-circle"></i> شرح التخفيف
-            </div>
-            <div class="card-body">
-                <p class="small mb-1"><strong>التخفيف (E):</strong></p>
-                <ul class="small text-muted mb-0">
-                    <li><code>1</code> = مادة صافية (100%)</li>
-                    <li><code>0.1</code> = تركيز 10%</li>
-                    <li><code>0.5</code> = تركيز 50%</li>
-                </ul>
+        <!-- Dilution -->
+        <div class="e-card">
+            <div class="e-card-head"><i class="bi bi-info-circle"></i> شرح التخفيف</div>
+            <div class="e-card-body">
+                <div class="dil-row">
+                    <div><code>1</code> = صافي 100%</div>
+                    <div><code>0.5</code> = 50%</div>
+                    <div><code>0.1</code> = 10%</div>
+                </div>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- Formula Notes -->
-<div class="card mt-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-journal-text"></i> ملاحظات التركيبة</span>
-        <button class="btn btn-sm btn-light" onclick="showNoteForm()">
-            <i class="bi bi-plus"></i> إضافة ملاحظة
-        </button>
-    </div>
-    <div class="card-body">
-        <div id="noteForm" style="display:none;" class="mb-3 p-3 border rounded bg-light">
-            <div class="mb-2">
-                <input type="text" id="note_title" class="form-control" placeholder="عنوان الملاحظة">
-            </div>
-            <div class="mb-2">
-                <textarea id="note_content" class="form-control" rows="3" placeholder="محتوى الملاحظة..."></textarea>
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="saveNote()"><i class="bi bi-check"></i> حفظ</button>
-            <button class="btn btn-secondary btn-sm" onclick="hideNoteForm()">إلغاء</button>
-        </div>
-        <div id="notesList"></div>
     </div>
 </div>
 
@@ -212,7 +470,7 @@
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label class="form-label">نسبة التخفيف (E) <span class="text-muted">(1 = صافي، 0.1 = 10%)</span></label>
+                                <label class="form-label">نسبة التخفيف (E)</label>
                                 <input type="number" name="dilution" class="form-control" step="0.01" min="0" max="1" value="1">
                             </div>
                         </div>
@@ -224,12 +482,12 @@
                                 <select name="diluent" id="add_diluent" class="form-select" onchange="toggleDiluentOther(this, 'add_diluent_other')">
                                     <option value="">-- بدون --</option>
                                     <option value="Ethanol">Ethanol Absolute</option>
-                                    <option value="DPG">DPG - DiPropylene Glycol</option>
-                                    <option value="IPM">IPM - IsoPropyl Myristate</option>
-                                    <option value="TEC">TEC - Triethyl Citrate</option>
-                                    <option value="MMB">MMB - MethoxyMethyl Butanol</option>
-                                    <option value="BB">BB - Benzyl Benzoate</option>
-                                    <option value="DEP">DEP - Diethyl Phthalate</option>
+                                    <option value="DPG">DPG</option>
+                                    <option value="IPM">IPM</option>
+                                    <option value="TEC">TEC</option>
+                                    <option value="MMB">MMB</option>
+                                    <option value="BB">BB</option>
+                                    <option value="DEP">DEP</option>
                                     <option value="other">أخرى (يدوي)</option>
                                 </select>
                             </div>
@@ -257,46 +515,31 @@
 <div class="modal fade" id="scaleModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
-            <div class="modal-header bg-dark text-white">
+            <div class="modal-header">
                 <h5 class="modal-title">حساب الكميات (Scale)</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <!-- اختيار نوع الحساب -->
                 <div class="row mb-3">
                     <div class="col-md-4">
                         <label class="form-label fw-bold">نوع الحساب:</label>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="scaleType" id="scaleTypePure" value="pure" checked>
-                            <label class="form-check-label" for="scaleTypePure">
-                                نسبة الصافي (J) - للإنتاج النهائي
-                            </label>
+                            <label class="form-check-label" for="scaleTypePure">نسبة الصافي (J) - للإنتاج</label>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="scaleType" id="scaleTypeDesign" value="design">
-                            <label class="form-check-label" for="scaleTypeDesign">
-                                نسبة الزيت (H) - للتصميم
-                            </label>
+                            <label class="form-check-label" for="scaleTypeDesign">نسبة الزيت (H) - للتصميم</label>
                         </div>
                     </div>
                     <div class="col-md-8">
                         <label class="form-label fw-bold">الكميات المطلوبة (جرام):</label>
                         <div class="row g-2">
-                            <div class="col">
-                                <input type="number" id="qty1" class="form-control" value="1000" step="1" min="0">
-                            </div>
-                            <div class="col">
-                                <input type="number" id="qty2" class="form-control" value="100" step="1" min="0">
-                            </div>
-                            <div class="col">
-                                <input type="number" id="qty3" class="form-control" value="50" step="1" min="0">
-                            </div>
-                            <div class="col">
-                                <input type="number" id="qty4" class="form-control" value="20" step="1" min="0">
-                            </div>
-                            <div class="col">
-                                <input type="number" id="qty5" class="form-control" value="5" step="1" min="0">
-                            </div>
+                            <div class="col"><input type="number" id="qty1" class="form-control" value="1000"></div>
+                            <div class="col"><input type="number" id="qty2" class="form-control" value="100"></div>
+                            <div class="col"><input type="number" id="qty3" class="form-control" value="50"></div>
+                            <div class="col"><input type="number" id="qty4" class="form-control" value="20"></div>
+                            <div class="col"><input type="number" id="qty5" class="form-control" value="5"></div>
                         </div>
                     </div>
                 </div>
@@ -318,10 +561,9 @@ const scaleModal = new bootstrap.Modal(document.getElementById('scaleModal'));
 
 const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
 const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
-const OLF_COLORS = ['#FFD700','#B0C4DE','#2E8B57','#32CD32','#4169E1','#FF69B4','#FF6347','#FF4500','#8B6914','#654321','#DAA520','#9370DB','#6B4226','#800020'];
+const OLF_COLORS = ['#d4a853','#b5a898','#7d9c7b','#8fb87d','#6b94b0','#c9847b','#c47058','#b85c3a','#8b7355','#5c4a32','#b8956a','#9e8dc4','#6B4226','#703030'];
 let formulaWheelChart = null;
 
-// Plugin to draw labels around polar area charts
 const polarLabelsPlugin = {
     id: 'polarLabels',
     afterDraw(chart) {
@@ -364,7 +606,7 @@ function updateFormulaWheel(profile) {
             labels: OLF_LABELS,
             datasets: [{
                 data: values,
-                backgroundColor: OLF_COLORS.map(c => c + '88'),
+                backgroundColor: OLF_COLORS.map(c => c + '66'),
                 borderColor: OLF_COLORS,
                 borderWidth: 2
             }]
@@ -376,8 +618,8 @@ function updateFormulaWheel(profile) {
             scales: {
                 r: {
                     min: 0, max: dynMax,
-                    ticks: { stepSize: dynStep, backdropColor: 'transparent', color: '#555', font: { size: 9 } },
-                    grid: { color: 'rgba(0,0,0,0.08)' }
+                    ticks: { stepSize: dynStep, backdropColor: 'transparent', color: '#8b7355', font: { size: 9 } },
+                    grid: { color: 'rgba(139,115,85,0.08)' }
                 }
             }
         }
@@ -389,16 +631,15 @@ function loadIngredients() {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                renderIngredients(
-                    data.data, 
-                    data.total_weight, 
-                    data.total_pure,
-                    data.ifra_design_limit,
-                    data.ifra_final_limit
-                );
-                // عرض القيم المحسوبة
+                renderIngredients(data.data, data.total_weight, data.total_pure, data.ifra_design_limit, data.ifra_final_limit);
+                // Update summary strip
+                document.getElementById('ss_count').textContent = data.data.length;
+                document.getElementById('ss_weight').textContent = data.total_weight ? data.total_weight.toFixed(2) + 'g' : '-';
+                document.getElementById('ss_pure').textContent = data.total_pure ? data.total_pure.toFixed(2) + 'g' : '-';
+                // Update IFRA results
                 if (data.active_ratio !== undefined) {
                     document.getElementById('calc_active_ratio').textContent = data.active_ratio.toFixed(2) + '%';
+                    document.getElementById('ss_ratio').textContent = data.active_ratio.toFixed(1) + '%';
                 }
                 if (data.ifra_design_limit !== undefined) {
                     document.getElementById('calc_ifra_design').textContent = data.ifra_design_limit.toFixed(4);
@@ -417,7 +658,7 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
     const tbody = document.getElementById('ingredientsBody');
     let totalCost = 0;
     let rowNum = 0;
-    
+
     const diluentOptions = (selected) => `
         <option value="" ${!selected ? 'selected' : ''}>--</option>
         <option value="Ethanol" ${selected === 'Ethanol' ? 'selected' : ''}>Ethanol</option>
@@ -429,110 +670,86 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
         <option value="DEP" ${selected === 'DEP' ? 'selected' : ''}>DEP</option>
         <option value="other" ${selected === 'other' ? 'selected' : ''}>أخرى</option>
     `;
-    
+
     tbody.innerHTML = items.map(i => {
         totalCost += i.cost || 0;
         rowNum++;
         const escapedDiluentOther = (i.diluent_other || '').replace(/'/g, "\\'");
-        
-        // تحديد إذا تجاوز IFRA
         let rowClass = '';
-        if (i.ifra_design_exceeded || i.ifra_final_exceeded) {
-            rowClass = 'table-danger';
-        }
-        
-        // عرض N (حساب التصميم)
+        if (i.ifra_design_exceeded || i.ifra_final_exceeded) rowClass = 'row-warn';
+
         let nDisplay = '-';
-        if (i.ifra_design_calc !== null && i.ifra_design_calc !== undefined) {
-            nDisplay = i.ifra_design_calc.toFixed(3);
-        }
-        
-        // عرض M (تجاوز التصميم)
+        if (i.ifra_design_calc !== null && i.ifra_design_calc !== undefined) nDisplay = i.ifra_design_calc.toFixed(3);
+
         let mDisplay = '-';
         const hasIfraLimit = (i.ifra_cat_limit && i.ifra_cat_limit > 0) || (i.ifra_limit && i.ifra_limit > 0);
         if (hasIfraLimit) {
-            mDisplay = i.ifra_design_exceeded ?
-                '<span class="text-danger fw-bold">⚠️</span>' :
-                '<span class="text-success">✓</span>';
+            mDisplay = i.ifra_design_exceeded ? '<span style="color:var(--red);">⚠️</span>' : '<span style="color:var(--green);">✓</span>';
         } else if (i.ifra_cat_limit === 0 && i.ifra_std_name) {
-            mDisplay = '<span class="text-danger fw-bold">⛔</span>';
+            mDisplay = '<span style="color:var(--red);">⛔</span>';
         }
 
-        // عرض L (حساب النهائي)
         let lDisplay = '-';
-        if (i.ifra_final_calc !== null && i.ifra_final_calc !== undefined) {
-            lDisplay = i.ifra_final_calc.toFixed(3);
-        }
+        if (i.ifra_final_calc !== null && i.ifra_final_calc !== undefined) lDisplay = i.ifra_final_calc.toFixed(3);
 
-        // عرض K (تجاوز النهائي)
         let kDisplay = '-';
         if (hasIfraLimit) {
-            kDisplay = i.ifra_final_exceeded ?
-                '<span class="text-danger fw-bold">⚠️</span>' :
-                '<span class="text-success">✓</span>';
+            kDisplay = i.ifra_final_exceeded ? '<span style="color:var(--red);">⚠️</span>' : '<span style="color:var(--green);">✓</span>';
         } else if (i.ifra_cat_limit === 0 && i.ifra_std_name) {
-            kDisplay = '<span class="text-danger fw-bold">⛔</span>';
+            kDisplay = '<span style="color:var(--red);">⛔</span>';
         }
-        
+
         return `
         <tr class="${rowClass}">
-            <td class="text-muted text-center">${rowNum}</td>
-            <td>
+            <td>${rowNum}</td>
+            <td class="mat-cell">
                 <strong>${i.name}</strong>
-                ${i.cas_number ? `<br><small class="text-muted">${i.cas_number}</small>` : ''}
+                ${i.cas_number ? `<br><span class="cas-t">${i.cas_number}</span>` : ''}
             </td>
             <td>
-                <select class="form-select form-select-sm w-100"
+                <select class="e-sel"
                     onchange="handleDiluentChange(${i.id}, ${i.weight}, ${i.dilution || 1}, this)">
                     ${diluentOptions(i.diluent)}
                 </select>
             </td>
             <td>
-                <input type="number" class="form-control form-control-sm text-center" style="width: 60px;" 
-                    value="${i.dilution || 1}" step="0.001" min="0" max="1"
+                <input type="number" class="e-inp" value="${i.dilution || 1}" step="0.001" min="0" max="1"
                     onchange="updateIngredientFull(${i.id}, ${i.weight}, this.value, '${i.diluent || ''}', '${escapedDiluentOther}')">
             </td>
-            <td class="text-center">${i.ifra_cat_limit === -1 ? '<span class="text-success" title="No Restriction">NR</span>' : i.ifra_cat_limit > 0 ? i.ifra_cat_limit + '%' : (i.ifra_cat_limit === 0 && i.ifra_std_name ? '<span class="text-danger">⛔</span>' : (i.ifra_limit || '-'))}</td>
+            <td>${i.ifra_cat_limit === -1 ? '<span style="color:var(--green);">NR</span>' : i.ifra_cat_limit > 0 ? i.ifra_cat_limit + '%' : (i.ifra_cat_limit === 0 && i.ifra_std_name ? '<span style="color:var(--red);">⛔</span>' : (i.ifra_limit || '-'))}</td>
             <td>
-                <input type="number" class="form-control form-control-sm text-center" style="width: 65px;" 
-                    value="${i.weight}" step="0.0001" min="0"
+                <input type="number" class="e-inp" value="${i.weight}" step="0.0001" min="0"
                     onchange="updateIngredientFull(${i.id}, this.value, ${i.dilution || 1}, '${i.diluent || ''}', '${escapedDiluentOther}')">
             </td>
-            <td class="text-center">${i.weight_percentage?.toFixed(2) || '-'}%</td>
-            <td class="text-center">${nDisplay}</td>
-            <td class="text-center">${mDisplay}</td>
-            <td class="text-center">${i.pure_weight?.toFixed(4) || '-'}</td>
-            <td class="text-center">${i.percentage?.toFixed(2) || '-'}%</td>
-            <td class="text-center">${lDisplay}</td>
-            <td class="text-center">${kDisplay}</td>
-            <td class="text-center">${(i.cost || 0).toFixed(2)}</td>
-            <td>
-                <button class="btn btn-sm btn-outline-danger p-0 px-1" onclick="deleteIngredient(${i.id})">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </td>
-        </tr>
-    `}).join('');
-    
+            <td>${i.weight_percentage?.toFixed(2) || '-'}%</td>
+            <td>${nDisplay}</td>
+            <td>${mDisplay}</td>
+            <td>${i.pure_weight?.toFixed(4) || '-'}</td>
+            <td>${i.percentage?.toFixed(2) || '-'}%</td>
+            <td>${lDisplay}</td>
+            <td>${kDisplay}</td>
+            <td>${(i.cost || 0).toFixed(2)}</td>
+            <td><button class="e-del" onclick="deleteIngredient(${i.id})"><i class="bi bi-trash"></i></button></td>
+        </tr>`;
+    }).join('');
+
+    // Update cost in summary
+    document.getElementById('ss_cost').textContent = totalCost.toFixed(2);
+
     document.getElementById('ingredientsFoot').innerHTML = `
-        <tr style="background-color: #000; color: #fff;" class="fw-bold text-center">
-            <td style="background:#000; color:#fff;"></td>
-            <td style="background:#000; color:#fff;">المجموع</td>
-            <td style="background:#000; color:#fff;"></td>
-            <td style="background:#000; color:#fff;"></td>
-            <td style="background:#000; color:#fff;"></td>
-            <td style="background:#000; color:#fff;">${totalWeight?.toFixed(4) || 0}</td>
-            <td style="background:#000; color:#fff;">100%</td>
-            <td style="background:#000; color:#fff;"></td>
-            <td style="background:#000; color:#fff;"></td>
-            <td style="background:#000; color:#fff;">${totalPure?.toFixed(4) || 0}</td>
-            <td style="background:#000; color:#fff;">100%</td>
-            <td style="background:#000; color:#fff;"></td>
-            <td style="background:#000; color:#fff;"></td>
-            <td style="background:#000; color:#fff;">${totalCost.toFixed(2)}</td>
-            <td style="background:#000; color:#fff;"></td>
-        </tr>
-    `;
+        <tr>
+            <td></td>
+            <td style="text-align:right;">المجموع</td>
+            <td></td><td></td><td></td>
+            <td>${totalWeight?.toFixed(4) || 0}</td>
+            <td>100%</td>
+            <td></td><td></td>
+            <td>${totalPure?.toFixed(4) || 0}</td>
+            <td>100%</td>
+            <td></td><td></td>
+            <td>${totalCost.toFixed(2)}</td>
+            <td></td>
+        </tr>`;
 }
 
 function showAddModal() {
@@ -542,40 +759,23 @@ function showAddModal() {
 
 function addIngredient() {
     const formData = new FormData(document.getElementById('addForm'));
-    fetch(`/api/formula/${formulaId}/ingredients`, {
-        method: 'POST',
-        body: formData
-    })
+    fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
     .then(r => r.json())
     .then(data => {
-        if (data.success) {
-            addModal.hide();
-            loadIngredients();
-            showAlert('تمت الإضافة');
-        } else {
-            showAlert(data.message || 'خطأ', 'danger');
-        }
+        if (data.success) { addModal.hide(); loadIngredients(); showAlert('تمت الإضافة'); }
+        else { showAlert(data.message || 'خطأ', 'danger'); }
     });
 }
 
-// دالة لإظهار/إخفاء حقل المذيب اليدوي
 function toggleDiluentOther(select, inputId) {
     const div = document.getElementById(inputId + '_div');
-    if (select.value === 'other') {
-        div.style.display = 'block';
-    } else {
-        div.style.display = 'none';
-    }
+    div.style.display = select.value === 'other' ? 'block' : 'none';
 }
 
-// دالة للتعامل مع تغيير المذيب في الجدول
 function handleDiluentChange(ingId, weight, dilution, select) {
-    const diluent = select.value;
-    const diluentOther = diluent === 'other' ? '' : '';
-    updateIngredientFull(ingId, weight, dilution, diluent, diluentOther);
+    updateIngredientFull(ingId, weight, dilution, select.value, '');
 }
 
-// دالة التحديث الكاملة
 function updateIngredientFull(ingId, weight, dilution, diluent, diluentOther) {
     const formData = new FormData();
     formData.append('action', 'update');
@@ -584,17 +784,9 @@ function updateIngredientFull(ingId, weight, dilution, diluent, diluentOther) {
     formData.append('dilution', dilution);
     formData.append('diluent', diluent || '');
     formData.append('diluent_other', diluentOther || '');
-    
-    fetch(`/api/formula/${formulaId}/ingredients`, {
-        method: 'POST',
-        body: formData
-    })
+    fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
     .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            loadIngredients();
-        }
-    });
+    .then(data => { if (data.success) loadIngredients(); });
 }
 
 function updateIngredient(ingId, weight, dilution) {
@@ -606,35 +798,17 @@ function deleteIngredient(ingId) {
         const formData = new FormData();
         formData.append('action', 'delete');
         formData.append('ing_id', ingId);
-        
-        fetch(`/api/formula/${formulaId}/ingredients`, {
-            method: 'POST',
-            body: formData
-        })
+        fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
         .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                loadIngredients();
-                showAlert('تم الحذف');
-            }
-        });
+        .then(data => { if (data.success) { loadIngredients(); showAlert('تم الحذف'); } });
     }
 }
 
 function saveFormula() {
     const formData = new FormData(document.getElementById('formulaForm'));
-    
-    fetch(`/api/formula/${formulaId}/ingredients`, {
-        method: 'POST',
-        body: formData
-    })
+    fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
     .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('تم الحفظ');
-            loadIngredients();
-        }
-    });
+    .then(data => { if (data.success) { showAlert('تم الحفظ'); loadIngredients(); } });
 }
 
 function showScaleModal() {
@@ -642,122 +816,79 @@ function showScaleModal() {
     scaleModal.show();
 }
 
-// متغير لتخزين بيانات المكونات
-let ingredientsData = [];
-
 function calculateScaleMulti() {
-    // الحصول على الكميات
     const qty1 = parseFloat(document.getElementById('qty1').value) || 0;
     const qty2 = parseFloat(document.getElementById('qty2').value) || 0;
     const qty3 = parseFloat(document.getElementById('qty3').value) || 0;
     const qty4 = parseFloat(document.getElementById('qty4').value) || 0;
     const qty5 = parseFloat(document.getElementById('qty5').value) || 0;
     const quantities = [qty1, qty2, qty3, qty4, qty5].filter(q => q > 0);
-    
-    // نوع الحساب
     const scaleType = document.querySelector('input[name="scaleType"]:checked').value;
-    const useH = scaleType === 'design'; // H للتصميم، J للإنتاج
-    
-    // جلب البيانات
+    const useH = scaleType === 'design';
+
     fetch(`/api/formula/${formulaId}/ingredients`)
         .then(r => r.json())
         .then(data => {
             if (!data.success || !data.data.length) {
-                document.getElementById('scaleResult').innerHTML = '<div class="alert alert-warning">لا توجد مكونات</div>';
+                document.getElementById('scaleResult').innerHTML = '<div class="scale-info">لا توجد مكونات</div>';
                 return;
             }
-            
             const items = data.data;
             const typeName = useH ? 'نسبة الزيت (H) - تصميم' : 'نسبة الصافي (J) - إنتاج';
-            
-            // بناء الجدول
             let html = `
-                <div class="alert alert-info mb-2">
+                <div class="scale-info">
                     <strong>نوع الحساب:</strong> ${typeName}<br>
                     <strong>المعادلة:</strong> ${useH ? 'H × الكمية' : 'J × الكمية'}
                 </div>
                 <div class="table-responsive">
-                <table class="table table-sm table-bordered" style="font-size: 12px;">
-                    <thead style="background:#000; color:#fff;">
-                        <tr>
-                            <th style="background:#000; color:#fff;">#</th>
-                            <th style="background:#000; color:#fff;">المادة</th>
-                            <th style="background:#000; color:#fff;">${useH ? 'H%' : 'J%'}</th>
-            `;
-            
-            // إضافة أعمدة الكميات
-            quantities.forEach(q => {
-                html += `<th style="background:#000; color:#fff;">${q}g</th>`;
-            });
+                <table class="e-table">
+                    <thead><tr>
+                        <th>#</th><th>المادة</th><th>${useH ? 'H%' : 'J%'}</th>`;
+            quantities.forEach(q => { html += `<th>${q}g</th>`; });
             html += `</tr></thead><tbody>`;
-            
-            // إضافة الصفوف
             let totals = quantities.map(() => 0);
-            
             items.forEach((item, idx) => {
                 const pct = useH ? (item.weight_percentage / 100) : (item.percentage / 100);
-                
-                html += `<tr>
-                    <td>${idx + 1}</td>
-                    <td><strong>${item.name}</strong></td>
-                    <td class="text-center">${(pct * 100).toFixed(2)}%</td>
-                `;
-                
+                html += `<tr><td>${idx + 1}</td><td class="mat-cell"><strong>${item.name}</strong></td><td>${(pct * 100).toFixed(2)}%</td>`;
                 quantities.forEach((q, qIdx) => {
                     const amount = pct * q;
                     totals[qIdx] += amount;
-                    html += `<td class="text-center">${amount.toFixed(4)}</td>`;
+                    html += `<td>${amount.toFixed(4)}</td>`;
                 });
-                
                 html += `</tr>`;
             });
-            
-            // صف المجموع
-            html += `<tr style="background:#000; color:#fff; font-weight:bold;">
-                <td style="background:#000; color:#fff;"></td>
-                <td style="background:#000; color:#fff;">المجموع</td>
-                <td style="background:#000; color:#fff;">100%</td>
-            `;
-            quantities.forEach((q, qIdx) => {
-                html += `<td style="background:#000; color:#fff;">${totals[qIdx].toFixed(2)}</td>`;
-            });
+            html += `<tr class="fw-bold">`;
+            html += `<td></td><td style="text-align:right;">المجموع</td><td>100%</td>`;
+            quantities.forEach((q, qIdx) => { html += `<td>${totals[qIdx].toFixed(2)}</td>`; });
             html += `</tr></tbody></table></div>`;
-            
             document.getElementById('scaleResult').innerHTML = html;
         });
 }
 
-// الدالة القديمة للتوافق
-function calculateScale() {
-    calculateScaleMulti();
-}
+function calculateScale() { calculateScaleMulti(); }
 
 function loadNotes() {
     fetch(`/api/formula/${formulaId}/notes`)
     .then(r => r.json())
-    .then(data => {
-        if (data.success) renderNotes(data.data);
-    });
+    .then(data => { if (data.success) renderNotes(data.data); });
 }
 
 function renderNotes(notes) {
     const container = document.getElementById('notesList');
     if (!notes.length) {
-        container.innerHTML = '<p class="text-muted text-center">لا توجد ملاحظات</p>';
+        container.innerHTML = '<p style="color:var(--text-light);text-align:center;">لا توجد ملاحظات</p>';
         return;
     }
     container.innerHTML = notes.map(n => `
-        <div class="card mb-2" style="border-right: 4px solid var(--primary);">
-            <div class="card-body py-2 px-3">
-                <div class="d-flex justify-content-between align-items-start">
-                    <h6 class="mb-1 fw-bold">${n.title}</h6>
-                    <div>
-                        <small class="text-muted me-2">${new Date(n.created_at).toLocaleDateString('ar-SA')}</small>
-                        <button class="btn btn-sm btn-outline-danger p-0 px-1" onclick="deleteNote(${n.id})"><i class="bi bi-trash"></i></button>
-                    </div>
+        <div class="note-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <h6>${n.title}</h6>
+                <div>
+                    <span class="note-dt">${new Date(n.created_at).toLocaleDateString('ar-SA')}</span>
+                    <button class="e-del" onclick="deleteNote(${n.id})"><i class="bi bi-trash"></i></button>
                 </div>
-                <p class="mb-0 text-muted" style="white-space: pre-wrap;">${n.content}</p>
             </div>
+            <p>${n.content}</p>
         </div>
     `).join('');
 }
@@ -796,7 +927,6 @@ function deleteNote(id) {
     .then(data => { if (data.success) loadNotes(); });
 }
 
-// Initialize Select2 for material search
 $(document).ready(function() {
     $('#add_material').select2({
         theme: 'bootstrap-5',
