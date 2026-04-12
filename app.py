@@ -575,7 +575,7 @@ def init_db():
 
     # بيانات افتراضية
     c.execute("INSERT OR IGNORE INTO users (username, password, name, role) VALUES ('admin', 'admin123', 'المدير', 'admin')")
-    c.execute("INSERT OR IGNORE INTO company_info (id, name, address, phone, email) VALUES (1, 'Perfume Vault', 'Kuwait', '+965 xxxx xxxx', 'info@perfumevault.com')")
+    c.execute("INSERT OR IGNORE INTO company_info (id, name, address, phone, email) VALUES (1, 'My Perfumery', 'Kuwait', '+965 xxxx xxxx', 'info@myperfumery.com')")
     
     # حذف العوائل القديمة وإعادة إضافتها بدون تكرار
     c.execute("DELETE FROM families")
