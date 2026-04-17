@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Perfumery - Draft System Concept</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #5c4a32;
+            --secondary: #8b7355;
+            --gold: #b8956a;
+            --brown-light: #c4a882;
+            --cream: #f5f0eb;
+            --sand: #e8ddd0;
+            --green: #7d9c7b;
+            --rose: #c9847b;
+            --red: #b85c5c;
+            --text-dark: #2d2418;
+            --text-mid: #7a6b57;
+            --text-light: #b5a898;
+            --border: rgba(139,115,85,0.12);
+        }
+        body { background: #faf9f7; font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif; color: var(--text-dark); }
+        .card {
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 2px 12px rgba(139,115,85,0.06);
+            background: white;
+        }
+        .card-header {
+            background: var(--primary);
+            color: var(--cream);
+            border-radius: 16px 16px 0 0 !important;
+            font-weight: 700;
+        }
+        .btn-primary { background: var(--primary); border-color: var(--primary); }
+        .btn-primary:hover { background: var(--secondary); border-color: var(--secondary); }
+        .btn-outline-primary { color: var(--primary); border-color: var(--primary); }
+        .btn-outline-primary:hover { background: var(--primary); border-color: var(--primary); color: white; }
+        .table th { background: var(--cream); font-weight: 600; color: var(--text-dark); }
+        .badge-draft { background: var(--gold); color: #fff; }
+        .badge-active { background: var(--green); color: #fff; }
+        .badge-final { background: var(--primary); color: #fff; }
+
+        /* Page Header */
+        .page-header {
+            background: linear-gradient(135deg, #3d2e1e, var(--primary));
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+        }
+        .page-header h1 { font-weight: 800; font-size: 2rem; margin: 0; }
+        .page-header p { opacity: 0.8; margin: 8px 0 0; }
+
+        /* Section Labels */
+        .section-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-light);
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        /* Draft Tabs */
+        .draft-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .draft-tab {
+            padding: 10px 20px;
+            border-radius: 12px;
+            border: 2px solid var(--border);
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .draft-tab:hover { border-color: var(--gold); }
+        .draft-tab.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        .draft-tab .draft-badge {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.1);
+        }
+        .draft-tab.active .draft-badge { background: rgba(255,255,255,0.2); }
+
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding-left: 30px;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 12px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--sand);
+        }
+        .timeline-item {
+            position: relative;
+            margin-bottom: 20px;
+            padding: 16px 20px;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -24px;
+            top: 22px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--gold);
+            border: 2px solid white;
+        }
+        .timeline-item.final::before { background: var(--green); }
+        .timeline-item .time { font-size: 0.8rem; color: var(--text-light); }
+
+        /* Ingredient Mini Table */
+        .mini-table { font-size: 0.85rem; }
+        .mini-table th { padding: 6px 10px; font-size: 0.75rem; }
+        .mini-table td { padding: 6px 10px; }
+
+        /* Status Flow */
+        .status-flow {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            margin: 30px 0;
+        }
+        .flow-step {
+            flex: 1;
+            text-align: center;
+            padding: 20px 15px;
+            position: relative;
+        }
+        .flow-step .flow-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-size: 1.3rem;
+        }
+        .flow-step .flow-label { font-weight: 700; font-size: 0.9rem; }
+        .flow-step .flow-desc { font-size: 0.78rem; color: var(--text-mid); margin-top: 4px; }
+        .flow-arrow {
+            font-size: 1.5rem;
+            color: var(--brown-light);
+            flex-shrink: 0;
+        }
+
+        /* Lock Badge */
+        .lock-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .lock-badge.locked { background: var(--sand); color: var(--text-mid); }
+        .lock-badge.unlocked { background: #e8f5e8; color: var(--green); }
+
+        /* Comparison Panel */
+        .compare-card {
+            border: 2px dashed var(--sand);
+            border-radius: 14px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .compare-card.selected {
+            border-color: var(--gold);
+            border-style: solid;
+            background: #fffcf7;
+        }
+
+        /* Concept Note */
+        .concept-note {
+            background: linear-gradient(135deg, #fffcf7, #fff8f0);
+            border: 1px solid var(--gold);
+            border-radius: 14px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+        }
+        .concept-note h6 { color: var(--gold); font-weight: 800; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container py-4" style="max-width: 1100px;">
+
+        <!-- Page Header -->
+        <div class="page-header">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h1><i class="bi bi-droplet-half me-2"></i>Draft System Concept</h1>
+                    <p>Formula workspace with versioned drafts, comparison, and final approval workflow</p>
+                </div>
+                <span class="badge bg-warning text-dark px-3 py-2" style="font-size: 0.85rem; border-radius: 10px;">
+                    <i class="bi bi-lightbulb me-1"></i> CONCEPT MOCKUP
+                </span>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SECTION 1: WORKFLOW OVERVIEW -->
+        <!-- ============================================ -->
+        <div class="section-label">WORKFLOW OVERVIEW</div>
+        <div class="card mb-4">
+            <div class="card-body p-4">
+                <div class="status-flow">
+                    <div class="flow-step">
+                        <div class="flow-icon" style="background: rgba(184,149,106,0.15); color: var(--gold);">
+                            <i class="bi bi-pencil"></i>
+                        </div>
+                        <div class="flow-label">Working Formula</div>
+                        <div class="flow-desc">Add & adjust ingredients freely</div>
+                    </div>
+                    <div class="flow-arrow"><i class="bi bi-arrow-right"></i></div>
+                    <div class="flow-step">
+                        <div class="flow-icon" style="background: rgba(184,149,106,0.15); color: var(--gold);">
+                            <i class="bi bi-save"></i>
+                        </div>
+                        <div class="flow-label">Save Draft</div>
+                        <div class="flow-desc">Snapshot as Draft 1, 2, 3...</div>
+                    </div>
+                    <div class="flow-arrow"><i class="bi bi-arrow-right"></i></div>
+                    <div class="flow-step">
+                        <div class="flow-icon" style="background: rgba(184,149,106,0.15); color: var(--gold);">
+                            <i class="bi bi-arrow-left-right"></i>
+                        </div>
+                        <div class="flow-label">Compare</div>
+                        <div class="flow-desc">Compare drafts side by side</div>
+                    </div>
+                    <div class="flow-arrow"><i class="bi bi-arrow-right"></i></div>
+                    <div class="flow-step">
+                        <div class="flow-icon" style="background: rgba(125,156,123,0.15); color: var(--green);">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div class="flow-label">Approve Final</div>
+                        <div class="flow-desc">Lock formula & generate reports</div>
+                    </div>
+                    <div class="flow-arrow"><i class="bi bi-arrow-right"></i></div>
+                    <div class="flow-step">
+                        <div class="flow-icon" style="background: rgba(125,156,123,0.15); color: var(--green);">
+                            <i class="bi bi-file-earmark-check"></i>
+                        </div>
+                        <div class="flow-label">IFRA + MSDS</div>
+                        <div class="flow-desc">Reports only for approved formula</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SECTION 2: FORMULA WORKSPACE -->
+        <!-- ============================================ -->
+        <div class="section-label">FORMULA WORKSPACE EXAMPLE</div>
+
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center p-3">
+                <div>
+                    <i class="bi bi-droplet me-2"></i>
+                    Oud Royale - Formula #12
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-warning text-dark">Working</span>
+                </div>
+            </div>
+            <div class="card-body p-4">
+
+                <!-- Draft Tabs -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="draft-tabs">
+                        <div class="draft-tab" style="opacity: 0.7;">
+                            <i class="bi bi-archive"></i>
+                            Draft 1
+                            <span class="draft-badge">5 ingredients</span>
+                        </div>
+                        <div class="draft-tab" style="opacity: 0.7;">
+                            <i class="bi bi-archive"></i>
+                            Draft 2
+                            <span class="draft-badge">7 ingredients</span>
+                        </div>
+                        <div class="draft-tab active">
+                            <i class="bi bi-pencil-square"></i>
+                            Draft 3 (Current)
+                            <span class="draft-badge">8 ingredients</span>
+                        </div>
+                        <div class="draft-tab" style="border-style: dashed; color: var(--text-light);">
+                            <i class="bi bi-plus-lg"></i>
+                            Save as New Draft
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Working Ingredients -->
+                <table class="table mini-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Material</th>
+                            <th>CAS</th>
+                            <th>Dilution</th>
+                            <th>Weight (g)</th>
+                            <th>Oil %</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td><strong>Oud Oil (Cambodi)</strong></td>
+                            <td>-</td>
+                            <td>100%</td>
+                            <td>50</td>
+                            <td>5.0%</td>
+                            <td><span style="color: var(--text-light);">Heart note</span></td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td><strong>Hedione HC</strong></td>
+                            <td>24851-98-7</td>
+                            <td>100%</td>
+                            <td>150</td>
+                            <td>15.0%</td>
+                            <td><span style="color: var(--text-light);">Radiance</span></td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td><strong>Iso E Super</strong></td>
+                            <td>54464-57-2</td>
+                            <td>100%</td>
+                            <td>120</td>
+                            <td>12.0%</td>
+                            <td><span style="color: var(--text-light);">Woody base</span></td>
+                        </tr>
+                        <tr>
+                            <td>4</td>
+                            <td><strong>Ambroxan</strong></td>
+                            <td>6790-58-5</td>
+                            <td>10%</td>
+                            <td>80</td>
+                            <td>8.0%</td>
+                            <td><span style="color: var(--text-light);">Ambergris effect</span></td>
+                        </tr>
+                        <tr>
+                            <td>5</td>
+                            <td><strong>Bergamot Oil</strong></td>
+                            <td>8007-75-8</td>
+                            <td>100%</td>
+                            <td>60</td>
+                            <td>6.0%</td>
+                            <td><span style="color: var(--text-light);">Fresh top</span></td>
+                        </tr>
+                        <tr style="background: #fffcf7;">
+                            <td>6</td>
+                            <td><strong>Sandalwood (Mysore)</strong></td>
+                            <td>8006-87-9</td>
+                            <td>100%</td>
+                            <td>100</td>
+                            <td>10.0%</td>
+                            <td><span style="color: var(--green);"><i class="bi bi-plus-circle me-1"></i>New in Draft 3</span></td>
+                        </tr>
+                        <tr style="background: #fffcf7;">
+                            <td>7</td>
+                            <td><strong>Vanilla Absolute</strong></td>
+                            <td>8024-06-4</td>
+                            <td>10%</td>
+                            <td>40</td>
+                            <td>4.0%</td>
+                            <td><span style="color: var(--green);"><i class="bi bi-plus-circle me-1"></i>New in Draft 3</span></td>
+                        </tr>
+                        <tr>
+                            <td>8</td>
+                            <td><strong>Ethanol</strong></td>
+                            <td>64-17-5</td>
+                            <td>-</td>
+                            <td>400</td>
+                            <td>40.0%</td>
+                            <td><span style="color: var(--text-light);">Carrier</span></td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight: 700; background: var(--cream);">
+                            <td colspan="4" class="text-end">Total:</td>
+                            <td>1000g</td>
+                            <td>100%</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SECTION 3: DRAFT COMPARISON -->
+        <!-- ============================================ -->
+        <div class="section-label">DRAFT COMPARISON</div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="compare-card">
+                    <div class="mb-2"><span class="badge badge-draft px-3 py-2" style="background: var(--sand); color: var(--text-mid);">Draft 1</span></div>
+                    <div style="font-size: 2rem; font-weight: 800; color: var(--text-dark);">5</div>
+                    <div style="font-size: 0.85rem; color: var(--text-mid);">ingredients</div>
+                    <hr style="border-color: var(--sand);">
+                    <div class="text-start" style="font-size: 0.82rem; color: var(--text-mid);">
+                        <div class="mb-1"><i class="bi bi-dot"></i> Oud Oil 5%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Hedione HC 15%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Iso E Super 12%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Bergamot 8%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Ethanol 60%</div>
+                    </div>
+                    <div class="mt-3" style="font-size: 0.75rem; color: var(--text-light);">
+                        <i class="bi bi-calendar me-1"></i> Apr 10, 2026
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="compare-card">
+                    <div class="mb-2"><span class="badge px-3 py-2" style="background: var(--sand); color: var(--text-mid);">Draft 2</span></div>
+                    <div style="font-size: 2rem; font-weight: 800; color: var(--text-dark);">7</div>
+                    <div style="font-size: 0.85rem; color: var(--text-mid);">ingredients</div>
+                    <hr style="border-color: var(--sand);">
+                    <div class="text-start" style="font-size: 0.82rem; color: var(--text-mid);">
+                        <div class="mb-1"><i class="bi bi-dot"></i> Oud Oil 5%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Hedione HC 15%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Iso E Super 12%</div>
+                        <div class="mb-1"><span style="color: var(--green);"><i class="bi bi-plus-circle me-1"></i></span> Ambroxan 8%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Bergamot 6%</div>
+                        <div class="mb-1"><span style="color: var(--green);"><i class="bi bi-plus-circle me-1"></i></span> Rose Abs 4%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Ethanol 50%</div>
+                    </div>
+                    <div class="mt-3" style="font-size: 0.75rem; color: var(--text-light);">
+                        <i class="bi bi-calendar me-1"></i> Apr 13, 2026
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="compare-card selected">
+                    <div class="mb-2"><span class="badge px-3 py-2" style="background: var(--gold); color: #fff;">Draft 3 (Current)</span></div>
+                    <div style="font-size: 2rem; font-weight: 800; color: var(--text-dark);">8</div>
+                    <div style="font-size: 0.85rem; color: var(--text-mid);">ingredients</div>
+                    <hr style="border-color: var(--gold); opacity: 0.3;">
+                    <div class="text-start" style="font-size: 0.82rem; color: var(--text-mid);">
+                        <div class="mb-1"><i class="bi bi-dot"></i> Oud Oil 5%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Hedione HC 15%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Iso E Super 12%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Ambroxan 8%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Bergamot 6%</div>
+                        <div class="mb-1"><span style="color: var(--green);"><i class="bi bi-plus-circle me-1"></i></span> Sandalwood 10%</div>
+                        <div class="mb-1"><span style="color: var(--green);"><i class="bi bi-plus-circle me-1"></i></span> Vanilla Abs 4%</div>
+                        <div class="mb-1"><i class="bi bi-dot"></i> Ethanol 40%</div>
+                    </div>
+                    <div class="mt-3" style="font-size: 0.75rem; color: var(--text-light);">
+                        <i class="bi bi-calendar me-1"></i> Apr 18, 2026
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SECTION 4: APPROVAL & REPORTS -->
+        <!-- ============================================ -->
+        <div class="section-label">REPORTS ACCESS (IFRA + MSDS)</div>
+
+        <div class="row g-3 mb-4">
+            <!-- Draft State -->
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body p-4 text-center">
+                        <div style="font-size: 3rem; color: var(--sand); margin-bottom: 10px;">
+                            <i class="bi bi-lock"></i>
+                        </div>
+                        <h5 style="color: var(--text-mid); font-weight: 700;">While Drafting</h5>
+                        <p style="color: var(--text-light); font-size: 0.9rem; margin-bottom: 20px;">
+                            Reports are locked during the drafting phase.<br>
+                            Focus on experimenting with ingredients.
+                        </p>
+                        <div class="d-flex flex-column gap-2 align-items-center">
+                            <span class="lock-badge locked"><i class="bi bi-lock"></i> IFRA Certificate - Locked</span>
+                            <span class="lock-badge locked"><i class="bi bi-lock"></i> MSDS Report - Locked</span>
+                            <span class="lock-badge locked"><i class="bi bi-lock"></i> Production Card - Locked</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Final State -->
+            <div class="col-md-6">
+                <div class="card h-100" style="border-color: var(--green); border-width: 2px;">
+                    <div class="card-body p-4 text-center">
+                        <div style="font-size: 3rem; color: var(--green); margin-bottom: 10px;">
+                            <i class="bi bi-unlock"></i>
+                        </div>
+                        <h5 style="color: var(--green); font-weight: 700;">After Approval</h5>
+                        <p style="color: var(--text-mid); font-size: 0.9rem; margin-bottom: 20px;">
+                            Once you approve a draft as Final,<br>
+                            all compliance reports become available.
+                        </p>
+                        <div class="d-flex flex-column gap-2 align-items-center">
+                            <span class="lock-badge unlocked"><i class="bi bi-unlock"></i> IFRA Certificate - Ready</span>
+                            <span class="lock-badge unlocked"><i class="bi bi-unlock"></i> MSDS Report - Ready</span>
+                            <span class="lock-badge unlocked"><i class="bi bi-unlock"></i> Production Card - Ready</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SECTION 5: DRAFT HISTORY TIMELINE -->
+        <!-- ============================================ -->
+        <div class="section-label">DRAFT HISTORY TIMELINE</div>
+
+        <div class="card mb-4">
+            <div class="card-body p-4">
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="badge badge-draft px-2 py-1" style="background: var(--gold); font-size: 0.75rem;">Draft 1</span>
+                                <strong class="ms-2">Initial concept</strong>
+                            </div>
+                            <span class="time">Apr 10, 2026 - 2:30 PM</span>
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-mid); margin-top: 8px;">
+                            5 ingredients - Basic oud + citrus structure. Simple but too flat.
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="badge px-2 py-1" style="background: var(--gold); font-size: 0.75rem; color: #fff;">Draft 2</span>
+                                <strong class="ms-2">Added depth</strong>
+                            </div>
+                            <span class="time">Apr 13, 2026 - 5:15 PM</span>
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-mid); margin-top: 8px;">
+                            7 ingredients - Added Ambroxan for ambergris effect, Rose Abs for floral heart. Better balance but needs warmth.
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="badge px-2 py-1" style="background: var(--primary); font-size: 0.75rem; color: #fff;">Draft 3</span>
+                                <strong class="ms-2">Added warmth (Current)</strong>
+                            </div>
+                            <span class="time">Apr 18, 2026 - 10:00 AM</span>
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-mid); margin-top: 8px;">
+                            8 ingredients - Replaced Rose with Sandalwood, added Vanilla Absolute. Warm, creamy, oriental.
+                        </div>
+                    </div>
+
+                    <div class="timeline-item final" style="border-color: var(--green); border-style: dashed; opacity: 0.5;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge px-2 py-1" style="background: var(--green); font-size: 0.75rem; color: #fff;">Final</span>
+                                <strong class="ms-2" style="color: var(--text-light);">Approve a draft to finalize...</strong>
+                            </div>
+                            <button class="btn btn-sm btn-outline-primary" disabled>
+                                <i class="bi bi-check-circle me-1"></i> Approve Draft
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SECTION 6: ACTION BUTTONS CONCEPT -->
+        <!-- ============================================ -->
+        <div class="section-label">FORMULA TOOLBAR CONCEPT</div>
+
+        <div class="card mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-primary">
+                        <i class="bi bi-save me-1"></i> Save as Draft 4
+                    </button>
+                    <button class="btn btn-outline-primary">
+                        <i class="bi bi-arrow-left-right me-1"></i> Compare Drafts
+                    </button>
+                    <button class="btn btn-outline-primary">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i> Load Draft 2
+                    </button>
+                    <button class="btn btn-outline-primary">
+                        <i class="bi bi-trash me-1"></i> Delete Draft
+                    </button>
+                    <div style="flex-grow: 1;"></div>
+                    <button class="btn" style="background: var(--green); color: white; font-weight: 700;">
+                        <i class="bi bi-check-circle me-1"></i> Approve as Final
+                    </button>
+                </div>
+                <div class="mt-3 p-3" style="background: #f8f6f2; border-radius: 10px; font-size: 0.85rem; color: var(--text-mid);">
+                    <i class="bi bi-info-circle me-1"></i>
+                    <strong>How it works:</strong>
+                    Save Draft snapshots your current ingredients. You can load any previous draft to continue from that point.
+                    When you're satisfied, click "Approve as Final" to lock the formula and unlock IFRA Certificate + MSDS Report.
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SECTION 7: DATABASE CONCEPT -->
+        <!-- ============================================ -->
+        <div class="section-label">TECHNICAL CONCEPT (DATABASE)</div>
+
+        <div class="card mb-5">
+            <div class="card-body p-4">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <h6 style="font-weight: 700; color: var(--primary);">
+                            <i class="bi bi-table me-2"></i>New Table: formula_drafts
+                        </h6>
+                        <table class="table mini-table table-bordered" style="font-size: 0.8rem;">
+                            <thead>
+                                <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>id</td><td>INTEGER PK</td><td>Draft ID</td></tr>
+                                <tr><td>formula_id</td><td>INTEGER FK</td><td>Parent formula</td></tr>
+                                <tr><td>draft_number</td><td>INTEGER</td><td>1, 2, 3...</td></tr>
+                                <tr><td>name</td><td>TEXT</td><td>"Draft 1", custom name</td></tr>
+                                <tr><td>notes</td><td>TEXT</td><td>What changed</td></tr>
+                                <tr><td>is_final</td><td>BOOLEAN</td><td>Approved draft</td></tr>
+                                <tr><td>created_at</td><td>TIMESTAMP</td><td>When saved</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 style="font-weight: 700; color: var(--primary);">
+                            <i class="bi bi-table me-2"></i>New Table: draft_ingredients
+                        </h6>
+                        <table class="table mini-table table-bordered" style="font-size: 0.8rem;">
+                            <thead>
+                                <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>id</td><td>INTEGER PK</td><td>Row ID</td></tr>
+                                <tr><td>draft_id</td><td>INTEGER FK</td><td>Parent draft</td></tr>
+                                <tr><td>material_id</td><td>INTEGER FK</td><td>Material ref</td></tr>
+                                <tr><td>weight</td><td>REAL</td><td>Weight in grams</td></tr>
+                                <tr><td>dilution</td><td>REAL</td><td>0-1 fraction</td></tr>
+                                <tr><td>diluent</td><td>TEXT</td><td>Diluent type</td></tr>
+                                <tr><td>notes</td><td>TEXT</td><td>Ingredient note</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="mt-3 p-3" style="background: #f8f6f2; border-radius: 10px; font-size: 0.85rem; color: var(--text-mid);">
+                    <i class="bi bi-diagram-3 me-1"></i>
+                    <strong>Relationship:</strong>
+                    Formula (1) --> (many) Drafts --> (many) Draft Ingredients.
+                    Current working ingredients stay in formula_ingredients.
+                    "Save Draft" copies them into draft_ingredients.
+                    "Load Draft" copies draft_ingredients back into formula_ingredients.
+                    "Approve" marks one draft as is_final=true and changes formula status to "final".
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
