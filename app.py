@@ -519,6 +519,29 @@ def get_db():
     fi_cols = [row[1] for row in conn.execute("PRAGMA table_info(formula_ingredients)").fetchall()]
     if 'ifra_override' not in fi_cols:
         conn.execute("ALTER TABLE formula_ingredients ADD COLUMN ifra_override REAL DEFAULT NULL")
+    # Draft system tables
+    conn.execute('''CREATE TABLE IF NOT EXISTS formula_drafts (
+        id INTEGER PRIMARY KEY,
+        formula_id INTEGER,
+        draft_number INTEGER,
+        name TEXT,
+        notes TEXT,
+        is_final INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
+    )''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS draft_ingredients (
+        id INTEGER PRIMARY KEY,
+        draft_id INTEGER,
+        material_id INTEGER,
+        weight REAL DEFAULT 0,
+        dilution REAL DEFAULT 0,
+        diluent TEXT DEFAULT '',
+        diluent_other TEXT DEFAULT '',
+        notes TEXT,
+        ifra_override REAL DEFAULT NULL,
+        FOREIGN KEY (draft_id) REFERENCES formula_drafts(id) ON DELETE CASCADE
+    )''')
     return conn
 
 def init_db():
@@ -629,6 +652,30 @@ def init_db():
         content TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS formula_drafts (
+        id INTEGER PRIMARY KEY,
+        formula_id INTEGER,
+        draft_number INTEGER,
+        name TEXT,
+        notes TEXT,
+        is_final INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (formula_id) REFERENCES formulas(id) ON DELETE CASCADE
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS draft_ingredients (
+        id INTEGER PRIMARY KEY,
+        draft_id INTEGER,
+        material_id INTEGER,
+        weight REAL DEFAULT 0,
+        dilution REAL DEFAULT 0,
+        diluent TEXT DEFAULT '',
+        diluent_other TEXT DEFAULT '',
+        notes TEXT,
+        ifra_override REAL DEFAULT NULL,
+        FOREIGN KEY (draft_id) REFERENCES formula_drafts(id) ON DELETE CASCADE
     )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS production_orders (
@@ -2238,6 +2285,11 @@ def api_formulas():
         
         elif action == 'delete':
             id = request.form.get('id')
+            # Delete draft ingredients first
+            draft_ids = [d['id'] for d in conn.execute("SELECT id FROM formula_drafts WHERE formula_id=?", (id,)).fetchall()]
+            for did in draft_ids:
+                conn.execute("DELETE FROM draft_ingredients WHERE draft_id=?", (did,))
+            conn.execute("DELETE FROM formula_drafts WHERE formula_id=?", (id,))
             conn.execute("DELETE FROM formula_ingredients WHERE formula_id=?", (id,))
             conn.execute("DELETE FROM formulas WHERE id=?", (id,))
             conn.commit()
@@ -2667,6 +2719,173 @@ def api_formula_notes(fid):
     conn.close()
     return jsonify({'success': False})
 
+# ===== API مسودات التركيبة =====
+@app.route('/api/formula/<int:fid>/drafts', methods=['GET', 'POST'])
+@login_required
+def api_formula_drafts(fid):
+    conn = get_db()
+
+    if request.method == 'GET':
+        drafts = conn.execute("""
+            SELECT fd.*, COUNT(di.id) as ingredients_count
+            FROM formula_drafts fd
+            LEFT JOIN draft_ingredients di ON di.draft_id = fd.id
+            WHERE fd.formula_id = ?
+            GROUP BY fd.id
+            ORDER BY fd.draft_number ASC
+        """, (fid,)).fetchall()
+        conn.close()
+        return jsonify({'success': True, 'data': [dict(d) for d in drafts]})
+
+    elif request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'save':
+            # Get next draft number
+            last = conn.execute("SELECT MAX(draft_number) as mx FROM formula_drafts WHERE formula_id=?", (fid,)).fetchone()
+            next_num = (last['mx'] or 0) + 1
+            draft_name = request.form.get('name', '').strip() or f'Draft {next_num}'
+            draft_notes = request.form.get('notes', '').strip()
+
+            # Create draft record
+            cur = conn.execute("INSERT INTO formula_drafts (formula_id, draft_number, name, notes) VALUES (?,?,?,?)",
+                (fid, next_num, draft_name, draft_notes))
+            draft_id = cur.lastrowid
+
+            # Copy current ingredients to draft
+            ingredients = conn.execute("SELECT * FROM formula_ingredients WHERE formula_id=?", (fid,)).fetchall()
+            for ing in ingredients:
+                conn.execute("""INSERT INTO draft_ingredients
+                    (draft_id, material_id, weight, dilution, diluent, diluent_other, notes, ifra_override)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (draft_id, ing['material_id'], ing['weight'], ing['dilution'],
+                     ing['diluent'] if 'diluent' in ing.keys() else '',
+                     ing['diluent_other'] if 'diluent_other' in ing.keys() else '',
+                     ing['notes'] if 'notes' in ing.keys() else '',
+                     ing['ifra_override'] if 'ifra_override' in ing.keys() and ing['ifra_override'] is not None else None))
+
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': f'تم حفظ {draft_name}', 'draft_id': draft_id, 'draft_number': next_num})
+
+        elif action == 'load':
+            draft_id = request.form.get('draft_id')
+            draft = conn.execute("SELECT * FROM formula_drafts WHERE id=? AND formula_id=?", (draft_id, fid)).fetchone()
+            if not draft:
+                conn.close()
+                return jsonify({'success': False, 'message': 'المسودة غير مو��ودة'})
+
+            # Clear current ingredients
+            conn.execute("DELETE FROM formula_ingredients WHERE formula_id=?", (fid,))
+
+            # Copy draft ingredients back to formula
+            draft_ings = conn.execute("SELECT * FROM draft_ingredients WHERE draft_id=?", (draft_id,)).fetchall()
+            for di in draft_ings:
+                conn.execute("""INSERT INTO formula_ingredients
+                    (formula_id, material_id, weight, dilution, diluent, diluent_other, notes, ifra_override)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (fid, di['material_id'], di['weight'], di['dilution'],
+                     di['diluent'] or '', di['diluent_other'] or '',
+                     di['notes'] or '', di['ifra_override']))
+
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': f'تم تحميل {draft["name"]}'})
+
+        elif action == 'delete':
+            draft_id = request.form.get('draft_id')
+            draft = conn.execute("SELECT * FROM formula_drafts WHERE id=? AND formula_id=?", (draft_id, fid)).fetchone()
+            if not draft:
+                conn.close()
+                return jsonify({'success': False, 'message': 'المسودة غير موجودة'})
+            if draft['is_final']:
+                conn.close()
+                return jsonify({'success': False, 'message': 'لا يمكن حذف المسودة المعتمدة'})
+            conn.execute("DELETE FROM draft_ingredients WHERE draft_id=?", (draft_id,))
+            conn.execute("DELETE FROM formula_drafts WHERE id=?", (draft_id,))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'تم ح��ف المسودة'})
+
+        elif action == 'approve':
+            draft_id = request.form.get('draft_id')
+            draft = conn.execute("SELECT * FROM formula_drafts WHERE id=? AND formula_id=?", (draft_id, fid)).fetchone()
+            if not draft:
+                conn.close()
+                return jsonify({'success': False, 'message': 'ال��سودة غير موجودة'})
+
+            # Remove previous final flag
+            conn.execute("UPDATE formula_drafts SET is_final=0 WHERE formula_id=?", (fid,))
+            # Set this draft as final
+            conn.execute("UPDATE formula_drafts SET is_final=1 WHERE id=?", (draft_id,))
+            # Update formula status to final
+            conn.execute("UPDATE formulas SET status='final' WHERE id=?", (fid,))
+
+            # Load this draft's ingredients as current
+            conn.execute("DELETE FROM formula_ingredients WHERE formula_id=?", (fid,))
+            draft_ings = conn.execute("SELECT * FROM draft_ingredients WHERE draft_id=?", (draft_id,)).fetchall()
+            for di in draft_ings:
+                conn.execute("""INSERT INTO formula_ingredients
+                    (formula_id, material_id, weight, dilution, diluent, diluent_other, notes, ifra_override)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (fid, di['material_id'], di['weight'], di['dilution'],
+                     di['diluent'] or '', di['diluent_other'] or '',
+                     di['notes'] or '', di['ifra_override']))
+
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'تم اعتماد التركيبة النهائية'})
+
+        elif action == 'rename':
+            draft_id = request.form.get('draft_id')
+            new_name = request.form.get('name', '').strip()
+            if not new_name:
+                conn.close()
+                return jsonify({'success': False, 'message': 'الاسم م��لوب'})
+            conn.execute("UPDATE formula_drafts SET name=? WHERE id=? AND formula_id=?", (new_name, draft_id, fid))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'تم التحديث'})
+
+    conn.close()
+    return jsonify({'success': False})
+
+# ===== API تفاصيل المسودة =====
+@app.route('/api/draft/<int:draft_id>/ingredients')
+@login_required
+def api_draft_ingredients(draft_id):
+    conn = get_db()
+    draft = conn.execute("SELECT * FROM formula_drafts WHERE id=?", (draft_id,)).fetchone()
+    if not draft:
+        conn.close()
+        return jsonify({'success': False, 'message': 'ا��مسودة غير موجودة'})
+
+    data = conn.execute('''
+        SELECT di.*, m.name, m.cas_number, m.ifra_limit, m.price_per_gram, m.profile
+        FROM draft_ingredients di
+        JOIN materials m ON di.material_id = m.id
+        WHERE di.draft_id = ?
+    ''', (draft_id,)).fetchall()
+
+    result = []
+    total_weight = sum(i['weight'] for i in data)
+    for i in data:
+        conc = i['dilution'] if i['dilution'] and i['dilution'] > 0 else 1
+        pure_weight = i['weight'] * conc
+        result.append({
+            'name': i['name'],
+            'cas_number': i['cas_number'],
+            'weight': i['weight'],
+            'dilution': i['dilution'],
+            'diluent': i['diluent'],
+            'weight_pct': (i['weight'] / total_weight * 100) if total_weight > 0 else 0,
+            'pure_weight': pure_weight,
+            'cost': i['weight'] * (i['price_per_gram'] or 0)
+        })
+
+    conn.close()
+    return jsonify({'success': True, 'data': result, 'total_weight': total_weight})
+
 # ===== API شهادة IFRA =====
 @app.route('/api/ifra-certificate/<int:fid>')
 @login_required
@@ -2676,7 +2895,10 @@ def api_ifra_certificate(fid):
     if not formula:
         conn.close()
         return jsonify({'success': False, 'message': 'التركيبة غير موجودة'})
-    
+    if formula['status'] != 'final':
+        conn.close()
+        return jsonify({'success': False, 'message': 'شهادة IFRA متاحة فقط للتركيبات المعتمدة (Final). اعتمد مسودة أولاً.'})
+
     ingredients = conn.execute('''
         SELECT fi.*, m.name, m.cas_number, m.ifra_limit
         FROM formula_ingredients fi
@@ -2760,7 +2982,10 @@ def api_msds_report(fid):
     if not formula:
         conn.close()
         return jsonify({'success': False, 'message': 'التركيبة غير موجودة'})
-    
+    if formula['status'] != 'final':
+        conn.close()
+        return jsonify({'success': False, 'message': 'تقرير MSDS متاح فقط للتركيبات المعتمدة (Final). اعتمد مسودة أولاً.'})
+
     company = conn.execute("SELECT * FROM company_info WHERE id=1").fetchone()
     
     ingredients = conn.execute('''

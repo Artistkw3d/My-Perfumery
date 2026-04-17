@@ -306,11 +306,153 @@
     /* Scale modal */
     .scale-info { background: var(--cream); border: 1px solid var(--sand); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 0.85rem; }
 
+    /* Draft system */
+    .draft-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        padding: 14px 18px;
+        background: white;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+    }
+    .draft-bar-label {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: var(--text-light);
+        font-weight: 700;
+        margin-left: 12px;
+    }
+    .draft-tab {
+        padding: 7px 16px;
+        border-radius: 10px;
+        border: 1.5px solid var(--border);
+        background: white;
+        cursor: pointer;
+        transition: all 0.25s;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-mid);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .draft-tab:hover { border-color: var(--gold); color: var(--gold); }
+    .draft-tab.dt-active {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+    }
+    .draft-tab.dt-final {
+        background: var(--green);
+        color: white;
+        border-color: var(--green);
+    }
+    .draft-tab .dt-count {
+        font-size: 0.65rem;
+        padding: 1px 7px;
+        border-radius: 8px;
+        background: rgba(0,0,0,0.1);
+    }
+    .draft-tab.dt-active .dt-count,
+    .draft-tab.dt-final .dt-count { background: rgba(255,255,255,0.2); }
+    .draft-tab-new {
+        border-style: dashed;
+        color: var(--text-light);
+        border-color: var(--sand);
+    }
+    .draft-tab-new:hover { border-color: var(--gold); color: var(--gold); }
+    .draft-actions {
+        margin-right: auto;
+        display: flex;
+        gap: 6px;
+    }
+    .draft-actions .da-btn {
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 5px 12px;
+        font-size: 0.75rem;
+        color: var(--text-mid);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .draft-actions .da-btn:hover { border-color: var(--gold); color: var(--gold); }
+    .draft-actions .da-btn.da-approve {
+        background: var(--green);
+        color: white;
+        border-color: var(--green);
+        font-weight: 700;
+    }
+    .draft-actions .da-btn.da-approve:hover { background: #6a8b69; }
+
+    /* Draft compare modal */
+    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .compare-col {
+        border: 1.5px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .compare-col.cc-selected { border-color: var(--gold); }
+    .compare-col-head {
+        padding: 10px 14px;
+        background: var(--cream);
+        font-weight: 700;
+        font-size: 0.85rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .compare-col-body { padding: 10px; }
+    .compare-table { width: 100%; font-size: 0.75rem; border-collapse: collapse; }
+    .compare-table th { background: var(--cream); padding: 5px 6px; font-size: 0.68rem; }
+    .compare-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); }
+    .compare-added { background: rgba(125,156,123,0.1); }
+    .compare-removed { background: rgba(184,92,92,0.08); }
+
+    /* Draft timeline */
+    .draft-timeline { position: relative; padding-right: 28px; }
+    .draft-timeline::before {
+        content: '';
+        position: absolute;
+        right: 11px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--sand);
+    }
+    .dt-item {
+        position: relative;
+        margin-bottom: 14px;
+        padding: 12px 16px;
+        background: var(--cream);
+        border-radius: 10px;
+        font-size: 0.82rem;
+    }
+    .dt-item::before {
+        content: '';
+        position: absolute;
+        right: -23px;
+        top: 16px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--gold);
+        border: 2px solid white;
+    }
+    .dt-item.dt-final-item::before { background: var(--green); }
+    .dt-item .dt-time { font-size: 0.7rem; color: var(--text-light); }
+    .dt-item .dt-name { font-weight: 700; }
+
     @media (max-width: 1024px) {
         .main-grid { grid-template-columns: 1fr; }
         .formula-header { flex-direction: column; gap: 12px; align-items: flex-start; }
         .summary-strip { flex-wrap: wrap; }
         .ss-item { min-width: 100px; }
+        .compare-grid { grid-template-columns: 1fr; }
     }
 </style>
 {% endblock %}
@@ -328,8 +470,12 @@
     </div>
     <div class="fh-left">
         <button class="fh-btn" onclick="showScaleModal()"><i class="bi bi-arrows-angle-expand"></i> Scale</button>
-        <a href="/ifra-certificate?formula={{ formula.id }}" class="fh-btn"><i class="bi bi-award"></i> IFRA</a>
-        <a href="/msds-generator?formula={{ formula.id }}" class="fh-btn"><i class="bi bi-file-medical"></i> MSDS</a>
+        <a href="/ifra-certificate?formula={{ formula.id }}" class="fh-btn" {% if formula.status != 'final' %}style="opacity:0.5;pointer-events:none;" title="متاح فقط بعد اعتماد التركيبة"{% endif %}>
+            <i class="bi {% if formula.status == 'final' %}bi-award{% else %}bi-lock{% endif %}"></i> IFRA
+        </a>
+        <a href="/msds-generator?formula={{ formula.id }}" class="fh-btn" {% if formula.status != 'final' %}style="opacity:0.5;pointer-events:none;" title="متاح فقط بعد اعتماد التركيبة"{% endif %}>
+            <i class="bi {% if formula.status == 'final' %}bi-file-medical{% else %}bi-lock{% endif %}"></i> MSDS
+        </a>
         <a href="/formula/{{ formula.id }}/card" class="fh-btn"><i class="bi bi-card-heading"></i> بطاقة</a>
     </div>
 </div>
@@ -361,6 +507,13 @@
         <div class="ss-val" id="ss_cost">-</div>
         <div class="ss-lbl">Total Cost</div>
     </div>
+</div>
+
+<!-- Draft Bar -->
+<div class="draft-bar" id="draftBar">
+    <span class="draft-bar-label"><i class="bi bi-layers"></i> DRAFTS</span>
+    <div id="draftTabs" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+    <div class="draft-actions" id="draftActions"></div>
 </div>
 
 <div class="main-grid">
@@ -672,6 +825,60 @@
     </div>
 </div>
 
+<!-- Save Draft Modal -->
+<div class="modal fade" id="saveDraftModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-save me-2"></i>حفظ مسودة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">اسم المسودة</label>
+                    <input type="text" id="draft_name" class="form-control" placeholder="مثال: Draft 1, تجربة العود...">
+                    <small class="text-muted">اتركه فارغ للترقيم التلقائي</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">ملاحظات (اختياري)</label>
+                    <textarea id="draft_notes" class="form-control" rows="2" placeholder="ماذا تغير في هذه المسودة..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="saveDraft()">
+                    <i class="bi bi-save me-1"></i> حفظ المسودة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Compare Drafts Modal -->
+<div class="modal fade" id="compareModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2"></i>مقارنة المسودات</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">المسودة الأولى</label>
+                        <select id="compare_left" class="form-select" onchange="runCompare()"></select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">المسودة الثانية</label>
+                        <select id="compare_right" class="form-select" onchange="runCompare()"></select>
+                    </div>
+                </div>
+                <div id="compareResult"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Scale Modal -->
 <div class="modal fade" id="scaleModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
@@ -719,6 +926,9 @@
 const formulaId = {{ formula.id }};
 const addModal = new bootstrap.Modal(document.getElementById('addModal'));
 const scaleModal = new bootstrap.Modal(document.getElementById('scaleModal'));
+const saveDraftModal = new bootstrap.Modal(document.getElementById('saveDraftModal'));
+const compareModal = new bootstrap.Modal(document.getElementById('compareModal'));
+let allDrafts = [];
 
 const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
 const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
@@ -1222,7 +1432,270 @@ document.getElementById('rv_scent').value = {{ (formula.scent_type or '')|tojson
 document.getElementById('rv_notes').value = {{ (formula.review_notes or '')|tojson }};
 updateReviewDisplay();
 
+// ===== Draft System =====
+function loadDrafts() {
+    fetch(`/api/formula/${formulaId}/drafts`)
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            allDrafts = data.data;
+            renderDraftBar(data.data);
+        }
+    });
+}
+
+function renderDraftBar(drafts) {
+    const tabs = document.getElementById('draftTabs');
+    const actions = document.getElementById('draftActions');
+
+    let tabsHtml = '';
+    drafts.forEach(d => {
+        const cls = d.is_final ? 'draft-tab dt-final' : 'draft-tab';
+        const icon = d.is_final ? 'bi-check-circle-fill' : 'bi-archive';
+        tabsHtml += `
+            <div class="${cls}" onclick="loadDraft(${d.id})" title="${d.notes || ''}">
+                <i class="bi ${icon}"></i>
+                ${d.name}
+                <span class="dt-count">${d.ingredients_count}</span>
+                ${d.is_final ? '<i class="bi bi-star-fill" style="font-size:0.6rem;"></i>' : ''}
+            </div>`;
+    });
+
+    // Add "Save Draft" button
+    tabsHtml += `
+        <div class="draft-tab draft-tab-new" onclick="showSaveDraftModal()">
+            <i class="bi bi-plus-lg"></i> حفظ مسودة
+        </div>`;
+
+    tabs.innerHTML = tabsHtml;
+
+    // Actions
+    let actionsHtml = '';
+    if (drafts.length >= 2) {
+        actionsHtml += `<button class="da-btn" onclick="showCompareModal()"><i class="bi bi-arrow-left-right me-1"></i>مقارنة</button>`;
+    }
+    if (drafts.length > 0) {
+        actionsHtml += `<button class="da-btn da-approve" onclick="showApproveDialog()"><i class="bi bi-check-circle me-1"></i>اعتماد نهائي</button>`;
+    }
+    actions.innerHTML = actionsHtml;
+}
+
+function showSaveDraftModal() {
+    document.getElementById('draft_name').value = '';
+    document.getElementById('draft_notes').value = '';
+    saveDraftModal.show();
+}
+
+function saveDraft() {
+    const fd = new FormData();
+    fd.append('action', 'save');
+    fd.append('name', document.getElementById('draft_name').value);
+    fd.append('notes', document.getElementById('draft_notes').value);
+    fetch(`/api/formula/${formulaId}/drafts`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            saveDraftModal.hide();
+            loadDrafts();
+            showAlert(data.message);
+        } else {
+            showAlert(data.message || 'خطأ', 'danger');
+        }
+    });
+}
+
+function loadDraft(draftId) {
+    if (!confirm('سيتم استبدال المكونات الحالية بمكونات هذه المسودة. متأكد؟')) return;
+    const fd = new FormData();
+    fd.append('action', 'load');
+    fd.append('draft_id', draftId);
+    fetch(`/api/formula/${formulaId}/drafts`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            loadIngredients();
+            showAlert(data.message);
+        } else {
+            showAlert(data.message || 'خطأ', 'danger');
+        }
+    });
+}
+
+function deleteDraft(draftId) {
+    if (!confirm('حذف هذه المسودة نهائياً؟')) return;
+    const fd = new FormData();
+    fd.append('action', 'delete');
+    fd.append('draft_id', draftId);
+    fetch(`/api/formula/${formulaId}/drafts`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            loadDrafts();
+            showAlert(data.message);
+        } else {
+            showAlert(data.message || 'خطأ', 'danger');
+        }
+    });
+}
+
+function showApproveDialog() {
+    if (allDrafts.length === 0) { showAlert('لا توجد مسودات', 'warning'); return; }
+
+    let options = allDrafts.map(d =>
+        `<option value="${d.id}">${d.name} (${d.ingredients_count} مكون)</option>`
+    ).join('');
+
+    // Use a simple prompt approach with a temporary UI
+    const html = `
+        <div class="p-3" style="background:var(--cream);border-radius:10px;">
+            <p style="font-size:0.9rem;color:var(--text-mid);margin-bottom:12px;">
+                <i class="bi bi-exclamation-triangle" style="color:var(--gold);"></i>
+                اعتماد مسودة كنهائية سيغير حالة التركيبة إلى "نهائي" ويفتح تقارير IFRA و MSDS
+            </p>
+            <label class="form-label fw-bold">اختر المسودة للاعتماد:</label>
+            <select id="approve_draft_select" class="form-select mb-3">${options}</select>
+            <div style="display:flex;gap:8px;">
+                <button class="btn" style="background:var(--green);color:white;font-weight:700;" onclick="approveDraft()">
+                    <i class="bi bi-check-circle me-1"></i> اعتماد
+                </button>
+                <button class="btn btn-secondary" onclick="document.getElementById('approveOverlay').remove()">إلغاء</button>
+            </div>
+        </div>`;
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'approveOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `<div style="background:white;border-radius:16px;padding:24px;max-width:450px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,0.15);">
+        <h5 style="margin-bottom:16px;font-weight:800;"><i class="bi bi-star-fill" style="color:var(--gold);"></i> اعتماد التركيبة النهائية</h5>
+        ${html}
+    </div>`;
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+}
+
+function approveDraft() {
+    const draftId = document.getElementById('approve_draft_select').value;
+    const fd = new FormData();
+    fd.append('action', 'approve');
+    fd.append('draft_id', draftId);
+    fetch(`/api/formula/${formulaId}/drafts`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        const overlay = document.getElementById('approveOverlay');
+        if (overlay) overlay.remove();
+        if (data.success) {
+            loadIngredients();
+            loadDrafts();
+            showAlert(data.message);
+            // Update status pill
+            const pill = document.querySelector('.status-pill');
+            if (pill) {
+                pill.className = 'status-pill sp-final';
+                pill.textContent = 'نهائي';
+            }
+            // Update status select
+            const sel = document.getElementById('f_status');
+            if (sel) sel.value = 'final';
+        } else {
+            showAlert(data.message || 'خطأ', 'danger');
+        }
+    });
+}
+
+function showCompareModal() {
+    const left = document.getElementById('compare_left');
+    const right = document.getElementById('compare_right');
+    const options = allDrafts.map(d =>
+        `<option value="${d.id}">${d.name} (${d.ingredients_count} مكون)</option>`
+    ).join('');
+    left.innerHTML = options;
+    right.innerHTML = options;
+    // Select second draft in right if available
+    if (allDrafts.length >= 2) {
+        right.selectedIndex = 1;
+    }
+    compareModal.show();
+    runCompare();
+}
+
+function runCompare() {
+    const leftId = document.getElementById('compare_left').value;
+    const rightId = document.getElementById('compare_right').value;
+    if (!leftId || !rightId) return;
+
+    Promise.all([
+        fetch(`/api/draft/${leftId}/ingredients`).then(r => r.json()),
+        fetch(`/api/draft/${rightId}/ingredients`).then(r => r.json())
+    ]).then(([leftData, rightData]) => {
+        if (!leftData.success || !rightData.success) return;
+        const leftItems = leftData.data;
+        const rightItems = rightData.data;
+
+        // Build material maps
+        const leftMap = {};
+        leftItems.forEach(i => { leftMap[i.name] = i; });
+        const rightMap = {};
+        rightItems.forEach(i => { rightMap[i.name] = i; });
+
+        // Find all unique materials
+        const allMats = [...new Set([...leftItems.map(i => i.name), ...rightItems.map(i => i.name)])];
+
+        const leftDraft = allDrafts.find(d => d.id == leftId);
+        const rightDraft = allDrafts.find(d => d.id == rightId);
+
+        let html = `<div class="compare-grid">`;
+
+        // Left column
+        html += `<div class="compare-col">
+            <div class="compare-col-head">
+                <span>${leftDraft ? leftDraft.name : 'Draft'}</span>
+                <span style="font-size:0.75rem;color:var(--text-light);">${leftItems.length} مكون | ${leftData.total_weight.toFixed(1)}g</span>
+            </div>
+            <div class="compare-col-body">
+                <table class="compare-table"><thead><tr><th>المادة</th><th>الوزن</th><th>%</th></tr></thead><tbody>`;
+        allMats.forEach(name => {
+            const item = leftMap[name];
+            const inRight = !!rightMap[name];
+            if (item) {
+                const cls = !inRight ? 'compare-removed' : '';
+                html += `<tr class="${cls}"><td>${name}</td><td>${item.weight.toFixed(2)}</td><td>${item.weight_pct.toFixed(1)}%</td></tr>`;
+            }
+        });
+        html += `</tbody></table></div></div>`;
+
+        // Right column
+        html += `<div class="compare-col">
+            <div class="compare-col-head">
+                <span>${rightDraft ? rightDraft.name : 'Draft'}</span>
+                <span style="font-size:0.75rem;color:var(--text-light);">${rightItems.length} مكون | ${rightData.total_weight.toFixed(1)}g</span>
+            </div>
+            <div class="compare-col-body">
+                <table class="compare-table"><thead><tr><th>المادة</th><th>الوزن</th><th>%</th></tr></thead><tbody>`;
+        allMats.forEach(name => {
+            const item = rightMap[name];
+            const inLeft = !!leftMap[name];
+            if (item) {
+                const cls = !inLeft ? 'compare-added' : '';
+                html += `<tr class="${cls}"><td>${name}</td><td>${item.weight.toFixed(2)}</td><td>${item.weight_pct.toFixed(1)}%</td></tr>`;
+            }
+        });
+        html += `</tbody></table></div></div></div>`;
+
+        // Legend
+        html += `<div style="display:flex;gap:16px;margin-top:12px;font-size:0.78rem;color:var(--text-mid);">
+            <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:rgba(125,156,123,0.2);margin-left:4px;"></span> جديد</span>
+            <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:rgba(184,92,92,0.15);margin-left:4px;"></span> محذوف</span>
+        </div>`;
+
+        document.getElementById('compareResult').innerHTML = html;
+    });
+}
+
+// ===== End Draft System =====
+
 loadIngredients();
 loadNotes();
+loadDrafts();
 </script>
 {% endblock %}
