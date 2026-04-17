@@ -2251,11 +2251,11 @@ def api_formulas():
                     for cat in olf_cats:
                         val = 0
                         for row in fi_rows:
-                            olf = conn.execute('SELECT value FROM material_olfactive WHERE material_id=? AND category=?',
-                                (row['material_id'], cat)).fetchone()
-                            if olf:
+                            olf = conn.execute('SELECT * FROM material_olfactive WHERE material_id=?',
+                                (row['material_id'],)).fetchone()
+                            if olf and olf[cat]:
                                 pure_w = row['weight'] * (row['dilution'] or 1)
-                                val += olf['value'] * (pure_w / total_pure)
+                                val += olf[cat] * (pure_w / total_pure)
                         olf_profile[cat] = round(val, 1)
 
                 r = dict(f)
