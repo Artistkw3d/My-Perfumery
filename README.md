@@ -1,4 +1,4 @@
-# Perfume Vault v3
+# My Perfumery v3
 
 نظام متكامل لإدارة تركيبات العطور مع دعم كامل لـ IFRA و MSDS
 
@@ -19,6 +19,11 @@
 
 ### 2. إدارة التركيبات
 - إنشاء تركيبات مع بطاقات عرض وعجلة عطرية
+- **نظام المسودات (Drafts)** - حفظ نسخ متعددة من التركيبة أثناء التجريب:
+  - حفظ مسودات مرقمة (Draft 1, 2, 3...)
+  - تحميل أي مسودة سابقة للعمل عليها
+  - مقارنة المسودات جنباً إلى جنب
+  - اعتماد مسودة كتركيبة نهائية
 - مكونات مع نسب الوزن والتخفيف ومادة التخفيف (Diluent)
 - حقل التخفيف (Dilution):
   - `1` = نقي/صافي (100%)
@@ -37,6 +42,7 @@
 - أنواع المعايير: Prohibition, Restriction, Specification
 - حساب التوافق لكل فئة بالتركيبة
 - شهادة IFRA قابلة للطباعة
+- **تقارير IFRA و MSDS متاحة فقط للتركيبات المعتمدة (Final)**
 
 ### 4. تقرير MSDS
 - توليد تقرير SDS كامل (16 قسم)
@@ -62,6 +68,9 @@
 - قاعدة بيانات الموردين
 - معلومات الاتصال
 
+### 8. النسخ الاحتياطي
+- نظام نسخ احتياطي تلقائي مع إمكانية الاستعادة
+
 ## التشغيل
 
 ### باستخدام Docker (موصى به)
@@ -86,7 +95,7 @@ python app.py
 
 ```
 My-Perfumery/
-├── app.py              # التطبيق الرئيسي (Flask) ~3000 سطر
+├── app.py              # التطبيق الرئيسي (Flask) ~3200 سطر
 ├── Dockerfile
 ├── docker-compose.yml
 ├── data/
@@ -98,7 +107,7 @@ My-Perfumery/
 │   ├── index.html            # لوحة التحكم
 │   ├── materials.html        # إدارة المواد (5 تابات)
 │   ├── formulas.html         # قائمة التركيبات (بطاقات)
-│   ├── formula.html          # تفاصيل التركيبة
+│   ├── formula.html          # تفاصيل التركيبة + نظام المسودات
 │   ├── import.html           # الاستيراد الذكي (4 خطوات)
 │   ├── ifra_certificate.html
 │   ├── msds_generator.html
@@ -124,14 +133,19 @@ GET  /api/formulas                     # قائمة التركيبات
 GET  /api/formula/<id>/ingredients     # مكونات التركيبة مع حسابات IFRA
 POST /api/formula/<id>/ingredients     # إضافة/تعديل/حذف مكون
 
+# المسودات
+GET  /api/formula/<id>/drafts          # قائمة مسودات التركيبة
+POST /api/formula/<id>/drafts          # حفظ/تحميل/حذف/اعتماد مسودة
+GET  /api/draft/<id>/ingredients       # مكونات مسودة محددة
+
 # IFRA
 GET  /api/ifra/lookup?cas=<cas>        # بحث IFRA بالـ CAS
 GET  /api/ifra/categories              # قائمة فئات IFRA الـ 18
 GET  /api/ifra/formula-check/<id>      # فحص توافق IFRA للتركيبة
-GET  /api/ifra-certificate/<id>        # شهادة IFRA
+GET  /api/ifra-certificate/<id>        # شهادة IFRA (يتطلب حالة Final)
 
 # MSDS
-GET  /api/msds/<id>                    # تقرير MSDS
+GET  /api/msds/<id>                    # تقرير MSDS (يتطلب حالة Final)
 
 # جلب بيانات خارجية
 GET  /api/cas-lookup?cas=<cas>         # PubChem (خصائص فيزيائية)
