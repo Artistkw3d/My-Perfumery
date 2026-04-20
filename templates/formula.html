@@ -85,8 +85,10 @@
     .ss-item .ss-icon { color: var(--gold); font-size: 0.95rem; margin-bottom: 4px; }
 
     /* Layout */
-    .main-grid { display: grid; grid-template-columns: 240px 1fr 320px; gap: 24px; }
-    .right-sidebar { display: flex; flex-direction: column; gap: 16px; }
+    .main-grid { display: grid; grid-template-columns: 280px 1fr 320px; gap: 24px; }
+    .right-sidebar { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .right-sidebar .e-card { overflow: hidden; }
+    .right-sidebar canvas { max-width: 100% !important; height: auto !important; display: block; margin: 0 auto; }
     .ifra-final-big {
         text-align: center;
         padding: 20px 12px;
@@ -559,7 +561,21 @@
         <div class="e-card">
             <div class="e-card-head"><i class="bi bi-bullseye"></i> Olfactive Profile</div>
             <div class="chart-center">
-                <canvas id="formulaWheel" width="280" height="280"></canvas>
+                <canvas id="formulaWheel" width="240" height="240"></canvas>
+            </div>
+        </div>
+        <!-- Dilution -->
+        <div class="e-card">
+            <div class="e-card-head"><i class="bi bi-info-circle"></i> شرح التخفيف</div>
+            <div class="e-card-body">
+                <div class="dil-row">
+                    <div><code>100%</code> = صافي</div>
+                    <div><code>50%</code> = نصف</div>
+                    <div><code>10%</code> = عُشر</div>
+                </div>
+                <div style="margin-top:8px;font-size:0.75rem;color:var(--text-light);">
+                    أدخل النسبة المئوية (مثلاً 10 لتركيز 10%)
+                </div>
             </div>
         </div>
     </aside>
@@ -778,21 +794,6 @@
                 <div style="display:flex;align-items:center;gap:8px;">
                     <span style="color:var(--green);">NR</span>
                     <span>بدون قيود (No Restriction)</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Dilution -->
-        <div class="e-card">
-            <div class="e-card-head"><i class="bi bi-info-circle"></i> شرح التخفيف</div>
-            <div class="e-card-body">
-                <div class="dil-row">
-                    <div><code>100%</code> = صافي</div>
-                    <div><code>50%</code> = نصف</div>
-                    <div><code>10%</code> = عُشر</div>
-                </div>
-                <div style="margin-top:8px;font-size:0.75rem;color:var(--text-light);">
-                    أدخل النسبة المئوية (مثلاً 10 لتركيز 10%)
                 </div>
             </div>
         </div>
