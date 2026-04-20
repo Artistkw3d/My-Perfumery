@@ -15,6 +15,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -53,8 +56,15 @@ jobs:
           path: dist/MyPerfumery.exe
           if-no-files-found: error
 
-      - name: Attach .exe to release
-        if: github.event_name == 'release'
+      - name: Publish rolling "latest" release with .exe
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: latest
+          name: Latest build
+          body: |
+            Automatic build of the latest main.
+            Download `MyPerfumery.exe` below and double-click to run.
           files: dist/MyPerfumery.exe
+          prerelease: false
+          make_latest: true
