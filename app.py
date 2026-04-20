@@ -2213,6 +2213,28 @@ def api_materials():
             conn.commit()
             conn.close()
             return jsonify({'success': True, 'message': 'تم الحذف'})
+
+        elif action == 'delete_all_unused':
+            # Delete every material that is not referenced by any formula_ingredients row.
+            unused_ids = [r[0] for r in conn.execute("""
+                SELECT m.id FROM materials m
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM formula_ingredients fi WHERE fi.material_id = m.id
+                )
+            """).fetchall()]
+            total = conn.execute("SELECT COUNT(*) FROM materials").fetchone()[0]
+            skipped = total - len(unused_ids)
+            if unused_ids:
+                placeholders = ','.join('?' * len(unused_ids))
+                conn.execute(f"DELETE FROM material_msds WHERE material_id IN ({placeholders})", unused_ids)
+                conn.execute(f"DELETE FROM material_olfactive WHERE material_id IN ({placeholders})", unused_ids)
+                conn.execute(f"DELETE FROM materials WHERE id IN ({placeholders})", unused_ids)
+                conn.commit()
+            conn.close()
+            msg = f'تم حذف {len(unused_ids)} مادة'
+            if skipped:
+                msg += f' (تم تخطي {skipped} مستخدمة في تركيبات)'
+            return jsonify({'success': True, 'message': msg, 'deleted': len(unused_ids), 'skipped': skipped})
     
     conn.close()
     return jsonify({'success': False})

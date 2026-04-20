@@ -155,6 +155,9 @@
             <button class="btn btn-outline-secondary btn-sm" onclick="setView('table')" id="btnTable"><i class="bi bi-list"></i></button>
         </div>
         <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="بحث..." onkeyup="filterMaterials()" style="width:220px;">
+        <button class="btn btn-outline-danger btn-sm" onclick="deleteAllUnusedMaterials()" title="حذف كل المواد غير المستخدمة في أي تركيبة">
+            <i class="bi bi-trash"></i> حذف غير المستخدمة
+        </button>
         <button class="btn btn-primary btn-sm" onclick="showMaterialModal()">
             <i class="bi bi-plus-circle"></i> إضافة مادة
         </button>
@@ -1447,6 +1450,23 @@ function deleteMaterial(id, name) {
             }
         });
     }
+}
+
+function deleteAllUnusedMaterials() {
+    if (!confirm('سيتم حذف كل المواد غير المستخدمة في أي تركيبة. المواد المستخدمة لن تتأثر. هل تريد المتابعة؟')) return;
+    if (!confirm('تأكيد أخير: هذا الإجراء لا يمكن التراجع عنه.')) return;
+    const formData = new FormData();
+    formData.append('action', 'delete_all_unused');
+    fetch('/api/materials', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            loadMaterials();
+            showAlert(data.message);
+        } else {
+            showAlert(data.message || 'خطأ', 'danger');
+        }
+    });
 }
 
 // ===== Init =====
