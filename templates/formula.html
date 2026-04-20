@@ -85,7 +85,12 @@
     .ss-item .ss-icon { color: var(--gold); font-size: 0.95rem; margin-bottom: 4px; }
 
     /* Layout */
-    .main-grid { display: grid; grid-template-columns: 280px 1fr 320px; gap: 24px; }
+    .main-grid {
+        display: grid;
+        grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(300px, 340px);
+        gap: 24px;
+        align-items: start;
+    }
     .right-sidebar { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
     .right-sidebar .e-card { overflow: hidden; }
     .right-sidebar canvas { max-width: 100% !important; height: auto !important; display: block; margin: 0 auto; }
@@ -466,8 +471,8 @@
     .dt-item .dt-time { font-size: 0.7rem; color: var(--text-light); }
     .dt-item .dt-name { font-weight: 700; }
 
-    @media (max-width: 1280px) {
-        .main-grid { grid-template-columns: 1fr 320px; }
+    @media (max-width: 1500px) {
+        .main-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); }
         .right-sidebar {
             grid-column: 1 / -1;
             flex-direction: row;
@@ -475,7 +480,7 @@
         }
         .right-sidebar > * { flex: 1 1 260px; }
     }
-    @media (max-width: 1024px) {
+    @media (max-width: 1100px) {
         .main-grid { grid-template-columns: 1fr; }
         .right-sidebar { flex-direction: column; }
         .right-sidebar > * { flex: 1 1 auto; }
@@ -613,7 +618,11 @@
                     <tfoot id="ingredientsFoot"></tfoot>
                 </table>
             </div>
-            <div style="padding:8px 12px;display:flex;justify-content:flex-end;border-top:1px solid var(--border);">
+            <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--border);">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteAllIngredients()"
+                        title="حذف جميع المواد من هذه التركيبة">
+                    <i class="bi bi-trash"></i> حذف الكل
+                </button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetIfraOverrides()"
                         title="إعادة جميع قيم IFRA إلى القيم الافتراضية (قبل التعديل)">
                     <i class="bi bi-arrow-counterclockwise"></i> إعادة ضبط قيم IFRA
@@ -1264,6 +1273,22 @@ function resetIfraOverrides() {
             if (data.success) {
                 loadIngredients();
                 showAlert(data.message || 'تم إعادة الضبط');
+            } else {
+                showAlert(data.message || 'خطأ', 'danger');
+            }
+        });
+}
+
+function deleteAllIngredients() {
+    if (!confirm('هل أنت متأكد من حذف جميع المواد من هذه التركيبة؟ لا يمكن التراجع.')) return;
+    const formData = new FormData();
+    formData.append('action', 'delete_all');
+    fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                loadIngredients();
+                showAlert(data.message || 'تم الحذف');
             } else {
                 showAlert(data.message || 'خطأ', 'danger');
             }

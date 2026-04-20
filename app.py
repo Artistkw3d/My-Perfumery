@@ -2674,6 +2674,13 @@ def api_formula_ingredients(fid):
             conn.close()
             return jsonify({'success': True, 'message': 'تم الحذف'})
 
+        elif action == 'delete_all':
+            cur = conn.execute("DELETE FROM formula_ingredients WHERE formula_id=?", (fid,))
+            affected = cur.rowcount
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': f'تم حذف {affected} مادة', 'affected': affected})
+
         elif action == 'reset_ifra':
             # Clear all manual ifra_override values for this formula, reverting to standard IFRA limits
             cur = conn.execute(
