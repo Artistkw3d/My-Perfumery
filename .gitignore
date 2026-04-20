@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller output
+build/
+dist/
+*.spec
+
+# Local data (per-user SQLite DB + backups)
+database/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Claude Code local state
+.claude/
