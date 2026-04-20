@@ -26,11 +26,12 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install flask pywebview pyinstaller
+          python -m pip install -r requirements.txt
 
       - name: Build single-file .exe
         run: |
