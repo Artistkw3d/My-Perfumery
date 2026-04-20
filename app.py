@@ -2909,6 +2909,18 @@ def api_ifra_certificate(fid):
     total_weight = sum(i['weight'] for i in ingredients)
     total_pure = sum(i['weight'] * get_concentration(i['dilution']) for i in ingredients)
 
+    # Mark which ingredients are IFRA-regulated (match in ifra_standards or manual ifra_limit > 0)
+    regulated_ids = set()
+    for ing in ingredients:
+        cas = ing['cas_number'] or ''
+        if cas:
+            hit = conn.execute('SELECT 1 FROM ifra_cas_lookup WHERE cas_number = ?', (cas,)).fetchone()
+            if hit:
+                regulated_ids.add(ing['id'])
+                continue
+        if ing['ifra_limit'] and ing['ifra_limit'] > 0:
+            regulated_ids.add(ing['id'])
+
     # For each category, check compliance using ifra_standards table
     category_limits = []
     cat_ids = [c['id'] for c in IFRA_CATEGORIES]
@@ -2950,8 +2962,10 @@ def api_ifra_certificate(fid):
                 elif pure_pct_in_formula > 0:
                     # max fragrance % in final product = ifra_limit / pure_pct_in_formula * 100
                     max_frag = (ifra_limit_val / pure_pct_in_formula) * 100
-                    if max_fragrance_pct is None or max_frag < max_fragrance_pct:
-                        max_fragrance_pct = max_frag
+                    # Cap: anything above 100% is effectively no restriction (can't exceed 100% of the product)
+                    if max_frag <= 100:
+                        if max_fragrance_pct is None or max_frag < max_fragrance_pct:
+                            max_fragrance_pct = max_frag
 
         limit_value = round(max_fragrance_pct, 3) if max_fragrance_pct else None
 
@@ -2964,11 +2978,14 @@ def api_ifra_certificate(fid):
             'restricted': restricted_materials
         })
 
+    # Return ONLY regulated materials in the composition table
+    regulated_ingredients = [dict(i) for i in ingredients if i['id'] in regulated_ids]
+
     conn.close()
     return jsonify({
         'success': True,
         'formula': dict(formula),
-        'ingredients': [dict(i) for i in ingredients],
+        'ingredients': regulated_ingredients,
         'categories': category_limits,
         'total_weight': total_weight
     })
@@ -3006,13 +3023,19 @@ def api_msds_report(fid):
     
     ingredient_list = []
     for i in ingredients:
-        pct = (i['weight'] / total_weight * 100) if total_weight > 0 else 0
-        ingredient_list.append({
-            'name': i['name'],
-            'cas_number': i['cas_number'],
-            'percentage': round(pct, 2)
-        })
-        
+        has_ghs = bool((i['h_codes'] and i['h_codes'].strip())
+                       or (i['p_codes'] and i['p_codes'].strip())
+                       or (i['pictograms'] and i['pictograms'].strip())
+                       or (i['signal_word'] and i['signal_word'].strip()))
+
+        if has_ghs:
+            pct = (i['weight'] / total_weight * 100) if total_weight > 0 else 0
+            ingredient_list.append({
+                'name': i['name'],
+                'cas_number': i['cas_number'],
+                'percentage': round(pct, 2)
+            })
+
         if i['h_codes']:
             for h in i['h_codes'].split(','):
                 if h.strip():

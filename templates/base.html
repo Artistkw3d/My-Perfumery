@@ -32,7 +32,77 @@
             padding: 20px;
             position: fixed;
             width: 250px;
+            right: 0;
+            top: 0;
             box-shadow: 2px 0 20px rgba(92,74,50,0.15);
+            z-index: 1040;
+            transition: transform 0.3s ease;
+        }
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 1035;
+        }
+        .mobile-top-bar {
+            display: none;
+            position: sticky;
+            top: 0;
+            background: var(--primary);
+            color: var(--cream);
+            padding: 10px 14px;
+            z-index: 1030;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        }
+        .mobile-top-bar .brand-mini {
+            color: var(--gold);
+            font-weight: 800;
+            font-size: 1.1rem;
+            letter-spacing: 1px;
+        }
+        .mobile-top-bar .hamburger {
+            background: transparent;
+            border: 0;
+            color: var(--cream);
+            font-size: 1.6rem;
+            padding: 4px 10px;
+            cursor: pointer;
+        }
+        .view-mode-toggle {
+            position: fixed;
+            bottom: 18px;
+            left: 18px;
+            z-index: 1060;
+            background: var(--primary);
+            color: var(--gold);
+            border: 2px solid var(--gold);
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+            transition: transform 0.2s;
+        }
+        .view-mode-toggle:hover { transform: scale(1.08); }
+        .view-mode-toggle .mode-label {
+            position: absolute;
+            bottom: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.65rem;
+            color: var(--text-mid);
+            background: white;
+            padding: 1px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
+            border: 1px solid var(--border);
         }
         .sidebar .brand {
             color: var(--gold);
@@ -128,15 +198,66 @@
         a { color: var(--primary); }
         a:hover { color: var(--gold); }
         @media print {
-            .sidebar, .no-print { display: none !important; }
+            .sidebar, .no-print, .mobile-top-bar, .view-mode-toggle, .sidebar-backdrop { display: none !important; }
             .main-content { margin: 0 !important; padding: 0 !important; }
             .card { box-shadow: none !important; border: 1px solid #ddd !important; }
         }
+
+        /* ===== Mobile layout (auto + force-mobile) ===== */
+        @media (max-width: 768px) {
+            body:not(.force-desktop) .sidebar {
+                transform: translateX(100%);
+                width: 260px;
+            }
+            body:not(.force-desktop) .sidebar.open { transform: translateX(0); }
+            body:not(.force-desktop) .sidebar.open ~ .sidebar-backdrop { display: block; }
+            body:not(.force-desktop) .main-content {
+                margin-right: 0;
+                padding: 14px 12px;
+            }
+            body:not(.force-desktop) .mobile-top-bar { display: flex; }
+            body:not(.force-desktop) .card { border-radius: 12px; }
+            body:not(.force-desktop) .stat-card h3 { font-size: 1.4rem; }
+            body:not(.force-desktop) .table-responsive,
+            body:not(.force-desktop) .table { font-size: 0.85rem; }
+            body:not(.force-desktop) table { display: block; overflow-x: auto; white-space: nowrap; }
+            body:not(.force-desktop) h2 { font-size: 1.3rem; }
+            body:not(.force-desktop) .btn { font-size: 0.88rem; }
+        }
+
+        /* Force mobile layout even on desktop */
+        body.force-mobile .sidebar {
+            transform: translateX(100%);
+            width: 260px;
+        }
+        body.force-mobile .sidebar.open { transform: translateX(0); }
+        body.force-mobile .sidebar.open ~ .sidebar-backdrop { display: block; }
+        body.force-mobile .main-content {
+            margin-right: 0;
+            padding: 14px 12px;
+            max-width: 480px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        body.force-mobile .mobile-top-bar { display: flex; }
+        body.force-mobile .card { border-radius: 12px; }
+        body.force-mobile table { display: block; overflow-x: auto; white-space: nowrap; }
+
+        /* Force desktop layout even on small screens */
+        body.force-desktop .mobile-top-bar { display: none !important; }
+        body.force-desktop .sidebar { transform: none !important; width: 250px; }
+        body.force-desktop .main-content { margin-right: 250px; padding: 24px 32px; }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <div class="sidebar no-print">
+    <div class="mobile-top-bar no-print">
+        <button class="hamburger" id="sidebarToggle" aria-label="Menu"><i class="bi bi-list"></i></button>
+        <span class="brand-mini"><i class="bi bi-droplet-fill"></i> My Perfumery</span>
+        <span style="width:40px;"></span>
+    </div>
+
+    <div class="sidebar no-print" id="sidebar">
         <div class="brand">
             <i class="bi bi-droplet-fill"></i> My Perfumery
         </div>
@@ -179,9 +300,16 @@
         </nav>
     </div>
 
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
     <div class="main-content">
         {% block content %}{% endblock %}
     </div>
+
+    <button class="view-mode-toggle no-print" id="viewModeToggle" title="Switch view mode">
+        <i class="bi bi-laptop" id="viewModeIcon"></i>
+        <span class="mode-label" id="viewModeLabel">Auto</span>
+    </button>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -196,6 +324,52 @@
             document.body.appendChild(alert);
             setTimeout(() => alert.remove(), 3000);
         }
+
+        // ===== Sidebar toggle (mobile) =====
+        (function() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            const toggleBtn = document.getElementById('sidebarToggle');
+            function closeSidebar() { sidebar && sidebar.classList.remove('open'); }
+            function openSidebar() { sidebar && sidebar.classList.add('open'); }
+            toggleBtn && toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                sidebar.classList.toggle('open');
+            });
+            backdrop && backdrop.addEventListener('click', closeSidebar);
+            // Close when a nav link is clicked (mobile UX)
+            sidebar && sidebar.querySelectorAll('.nav-link').forEach(a =>
+                a.addEventListener('click', closeSidebar));
+        })();
+
+        // ===== View mode toggle: auto -> desktop -> mobile -> auto =====
+        (function() {
+            const MODES = ['auto', 'desktop', 'mobile'];
+            const ICONS = { auto: 'bi-display', desktop: 'bi-laptop', mobile: 'bi-phone' };
+            const LABELS = { auto: 'Auto', desktop: 'Desktop', mobile: 'Mobile' };
+            const btn = document.getElementById('viewModeToggle');
+            const icon = document.getElementById('viewModeIcon');
+            const label = document.getElementById('viewModeLabel');
+            if (!btn) return;
+
+            function apply(mode) {
+                document.body.classList.remove('force-desktop', 'force-mobile');
+                if (mode === 'desktop') document.body.classList.add('force-desktop');
+                else if (mode === 'mobile') document.body.classList.add('force-mobile');
+                icon.className = 'bi ' + ICONS[mode];
+                label.textContent = LABELS[mode];
+            }
+
+            let current = localStorage.getItem('viewMode') || 'auto';
+            if (!MODES.includes(current)) current = 'auto';
+            apply(current);
+
+            btn.addEventListener('click', function() {
+                current = MODES[(MODES.indexOf(current) + 1) % MODES.length];
+                localStorage.setItem('viewMode', current);
+                apply(current);
+            });
+        })();
 
         $(document).ready(function() {
             $('.select2').select2({
