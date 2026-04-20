@@ -85,7 +85,24 @@
     .ss-item .ss-icon { color: var(--gold); font-size: 0.95rem; margin-bottom: 4px; }
 
     /* Layout */
-    .main-grid { display: grid; grid-template-columns: 1fr 320px; gap: 24px; }
+    .main-grid { display: grid; grid-template-columns: 240px 1fr 320px; gap: 24px; }
+    .right-sidebar { display: flex; flex-direction: column; gap: 16px; }
+    .ifra-final-big {
+        text-align: center;
+        padding: 20px 12px;
+    }
+    .ifra-final-big .ifra-final-value {
+        font-size: 2.4rem;
+        font-weight: 800;
+        color: var(--green);
+        line-height: 1;
+    }
+    .ifra-final-big .ifra-final-label {
+        font-size: 0.78rem;
+        color: var(--text-light);
+        margin-top: 8px;
+    }
+    .ifra-final-big.exceeded .ifra-final-value { color: var(--red); }
 
     /* Cards */
     .e-card {
@@ -447,8 +464,19 @@
     .dt-item .dt-time { font-size: 0.7rem; color: var(--text-light); }
     .dt-item .dt-name { font-weight: 700; }
 
+    @media (max-width: 1280px) {
+        .main-grid { grid-template-columns: 1fr 320px; }
+        .right-sidebar {
+            grid-column: 1 / -1;
+            flex-direction: row;
+            flex-wrap: wrap;
+        }
+        .right-sidebar > * { flex: 1 1 260px; }
+    }
     @media (max-width: 1024px) {
         .main-grid { grid-template-columns: 1fr; }
+        .right-sidebar { flex-direction: column; }
+        .right-sidebar > * { flex: 1 1 auto; }
         .formula-header { flex-direction: column; gap: 12px; align-items: flex-start; }
         .summary-strip { flex-wrap: wrap; }
         .ss-item { min-width: 100px; }
@@ -517,6 +545,25 @@
 </div>
 
 <div class="main-grid">
+    <!-- Right-hand sidebar: IFRA final + Olfactive Profile -->
+    <aside class="right-sidebar">
+        <div class="e-card">
+            <div class="e-card-head" style="background:var(--primary);color:var(--cream);">
+                <span><i class="bi bi-shield-check" style="color:var(--cream);"></i> حد IFRA النهائي</span>
+            </div>
+            <div class="e-card-body ifra-final-big" id="ifraFinalBig">
+                <div class="ifra-final-value" id="calc_ifra_final_big">-</div>
+                <div class="ifra-final-label">E3: الحد النهائي المسموح</div>
+            </div>
+        </div>
+        <div class="e-card">
+            <div class="e-card-head"><i class="bi bi-bullseye"></i> Olfactive Profile</div>
+            <div class="chart-center">
+                <canvas id="formulaWheel" width="280" height="280"></canvas>
+            </div>
+        </div>
+    </aside>
+
     <!-- Left: Table + Notes -->
     <div>
         <!-- Ingredients -->
@@ -709,14 +756,6 @@
                         <div class="ifra-l">E3: حد IFRA النهائي</div>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- Chart -->
-        <div class="e-card">
-            <div class="e-card-head"><i class="bi bi-bullseye"></i> Olfactive Profile</div>
-            <div class="chart-center">
-                <canvas id="formulaWheel" width="280" height="280"></canvas>
             </div>
         </div>
 
@@ -1023,6 +1062,13 @@ function loadIngredients() {
                 }
                 if (data.ifra_final_limit !== undefined) {
                     document.getElementById('calc_ifra_final').textContent = data.ifra_final_limit.toFixed(4);
+                    const bigEl = document.getElementById('calc_ifra_final_big');
+                    if (bigEl) bigEl.textContent = data.ifra_final_limit.toFixed(4);
+                    const wrapEl = document.getElementById('ifraFinalBig');
+                    if (wrapEl) {
+                        const anyExceeded = Array.isArray(data.data) && data.data.some(x => x.ifra_final_exceeded);
+                        wrapEl.classList.toggle('exceeded', anyExceeded);
+                    }
                 }
                 if (data.olfactive_profile) {
                     updateFormulaWheel(data.olfactive_profile);
