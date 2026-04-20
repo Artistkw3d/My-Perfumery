@@ -698,6 +698,8 @@ def init_db():
     # بيانات افتراضية
     c.execute("INSERT OR IGNORE INTO users (username, password, name, role) VALUES ('admin', 'admin123', 'المدير', 'admin')")
     c.execute("INSERT OR IGNORE INTO company_info (id, name, address, phone, email) VALUES (1, 'My Perfumery', 'Kuwait', '+965 xxxx xxxx', 'info@myperfumery.com')")
+    # Rebrand stale company name
+    c.execute("UPDATE company_info SET name='My Perfumery' WHERE LOWER(TRIM(name)) IN ('perfume vault', 'perfumevault', 'perfume-vault')")
     
     # حذف العوائل القديمة وإعادة إضافتها بدون تكرار
     c.execute("DELETE FROM families")
