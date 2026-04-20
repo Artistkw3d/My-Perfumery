@@ -550,6 +550,12 @@
                     <tfoot id="ingredientsFoot"></tfoot>
                 </table>
             </div>
+            <div style="padding:8px 12px;display:flex;justify-content:flex-end;border-top:1px solid var(--border);">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetIfraOverrides()"
+                        title="إعادة جميع قيم IFRA إلى القيم الافتراضية (قبل التعديل)">
+                    <i class="bi bi-arrow-counterclockwise"></i> إعادة ضبط قيم IFRA
+                </button>
+            </div>
         </div>
 
         <div id="contribWarnings"></div>
@@ -1199,6 +1205,22 @@ function updateIngredientFull(ingId, weight, dilution, diluent, diluentOther, if
 
 function updateIfraOverride(ingId, value, weight, dilution, diluent, diluentOther) {
     updateIngredientFull(ingId, weight, dilution, diluent, diluentOther, value);
+}
+
+function resetIfraOverrides() {
+    if (!confirm('هل تريد إعادة جميع قيم IFRA إلى القيم الافتراضية؟ سيتم حذف كل التعديلات اليدوية لهذه التركيبة.')) return;
+    const formData = new FormData();
+    formData.append('action', 'reset_ifra');
+    fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                loadIngredients();
+                showAlert(data.message || 'تم إعادة الضبط');
+            } else {
+                showAlert(data.message || 'خطأ', 'danger');
+            }
+        });
 }
 
 function updateIngredient(ingId, weight, dilution) {
