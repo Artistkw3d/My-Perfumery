@@ -3333,6 +3333,7 @@ def api_formula_card(fid):
         })
 
     company = conn.execute("SELECT * FROM company_info WHERE id=1").fetchone()
+    all_families = conn.execute("SELECT id, name, name_ar, icon FROM families ORDER BY name_ar").fetchall()
     conn.close()
 
     # Parse card_settings JSON
@@ -3348,6 +3349,7 @@ def api_formula_card(fid):
         'success': True,
         'formula': dict(formula),
         'families': family_list,
+        'all_families': [dict(f) for f in all_families],
         'pyramid': pyramid,
         'total_weight': total_weight,
         'ingredients_count': len(ingredients),

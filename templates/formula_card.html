@@ -341,10 +341,10 @@
             <hr class="my-2">
             <label class="form-label fw-bold"><i class="bi bi-flower1"></i> إضافة عائلة عطرية</label>
             <div class="d-flex gap-2 align-items-start flex-wrap mb-2">
-                <input type="text" id="newFamilyName" class="form-control" placeholder="اسم العائلة (مثلاً: زهري)" style="flex:1; min-width:180px;">
-                <input type="text" id="newFamilyNameEn" class="form-control" placeholder="الاسم بالإنجليزي (اختياري)" style="flex:1; min-width:160px;">
-                <input type="text" id="newFamilyIcon" class="form-control" placeholder="🌸" style="max-width:90px; text-align:center;" maxlength="4">
-                <input type="number" id="newFamilyPct" class="form-control" placeholder="%" step="0.1" min="0" max="100" style="max-width:100px;">
+                <select id="newFamilySelect" class="form-select" style="flex:1; min-width:220px;">
+                    <option value="">-- اختر عائلة --</option>
+                </select>
+                <input type="number" id="newFamilyPct" class="form-control" placeholder="النسبة %" step="0.1" min="0" max="100" style="max-width:140px;">
                 <button class="btn btn-outline-primary" onclick="addCustomFamily()"><i class="bi bi-plus-lg"></i> إضافة</button>
             </div>
             <div id="customFamiliesList" class="d-flex flex-wrap gap-2"></div>
@@ -446,6 +446,7 @@ const formulaId = {{ formula.id }};
 let cardData = null;
 let customFamilies = [];  // user-added families on top of auto-detected ones
 let autoFamilies = [];    // families computed from ingredients
+let allFamiliesDB = [];   // every family from the DB (for the picker)
 
 function toggleCustomize() {
     const panel = document.getElementById('customizePanel');
@@ -544,6 +545,8 @@ function loadCard() {
 
             // العائلات
             autoFamilies = data.families || [];
+            allFamiliesDB = data.all_families || [];
+            populateFamilySelect();
             renderFamilies();
 
             // الهرم
@@ -614,26 +617,35 @@ function renderFamilies() {
     document.getElementById('familiesContainer').innerHTML = html;
 }
 
+function populateFamilySelect() {
+    const sel = document.getElementById('newFamilySelect');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- اختر عائلة --</option>' +
+        allFamiliesDB.map(f =>
+            `<option value="${f.id}">${f.icon || '🔮'} ${f.name_ar || f.name} ${f.name_ar ? '— ' + f.name : ''}</option>`
+        ).join('');
+}
+
 function addCustomFamily() {
-    const nameAr = document.getElementById('newFamilyName').value.trim();
-    const nameEn = document.getElementById('newFamilyNameEn').value.trim();
-    const icon = document.getElementById('newFamilyIcon').value.trim();
+    const sel = document.getElementById('newFamilySelect');
+    const famId = parseInt(sel.value, 10);
     const pctRaw = document.getElementById('newFamilyPct').value.trim();
-    if (!nameAr && !nameEn) {
-        showAlert('ادخل اسم العائلة', 'warning');
+    if (!famId) {
+        showAlert('اختر عائلة من القائمة', 'warning');
         return;
     }
+    const src = allFamiliesDB.find(f => f.id === famId);
+    if (!src) return;
     const fam = {
-        name_ar: nameAr,
-        name: nameEn,
-        icon: icon || '🔮',
+        family_id: src.id,
+        name: src.name,
+        name_ar: src.name_ar,
+        icon: src.icon || '🔮',
         custom: true
     };
     if (pctRaw !== '') fam.percentage = parseFloat(pctRaw);
     customFamilies.push(fam);
-    document.getElementById('newFamilyName').value = '';
-    document.getElementById('newFamilyNameEn').value = '';
-    document.getElementById('newFamilyIcon').value = '';
+    sel.value = '';
     document.getElementById('newFamilyPct').value = '';
     renderFamilies();
     renderCustomFamiliesList();
