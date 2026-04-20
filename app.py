@@ -17,19 +17,37 @@ import uuid
 from datetime import datetime
 from functools import wraps
 
-app = Flask(__name__)
+# --- Path resolution: dev script, Docker, and PyInstaller-frozen desktop build ---
+IS_FROZEN = getattr(sys, 'frozen', False)
+
+def _asset_dir():
+    """Directory that contains read-only bundled assets (templates/, static/, data/)."""
+    if IS_FROZEN:
+        return getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(sys.executable)))
+    return os.path.dirname(os.path.abspath(__file__))
+
+def _user_data_dir():
+    """Writable per-user directory for the DB + backups."""
+    if os.path.exists('/app'):
+        return '/app'
+    if IS_FROZEN:
+        base = os.environ.get('APPDATA') or os.path.expanduser('~')
+        return os.path.join(base, 'MyPerfumery')
+    return os.path.dirname(os.path.abspath(__file__))
+
+ASSET_DIR = _asset_dir()
+USER_DIR = _user_data_dir()
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(ASSET_DIR, 'templates'),
+    static_folder=os.path.join(ASSET_DIR, 'static'),
+)
 app.secret_key = 'perfume_vault_2024_v3'
 
-# تحديد مسار قاعدة البيانات حسب البيئة
-if os.path.exists('/app'):
-    # داخل Docker
-    DB_PATH = '/app/database/perfume.db'
-    BACKUP_DIR = '/app/database/backups'
-else:
-    # تشغيل مباشر
-    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'perfume.db')
-    BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'backups')
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+DB_PATH = os.path.join(USER_DIR, 'database', 'perfume.db')
+BACKUP_DIR = os.path.join(USER_DIR, 'database', 'backups')
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 MAX_BACKUPS = 20  # Keep last 20 backups
@@ -761,7 +779,7 @@ def import_ifra_standards():
     import zipfile
     import xml.etree.ElementTree as ET
 
-    xlsx_path = os.path.join(os.path.dirname(__file__), 'data', 'ifra_standards.xlsx')
+    xlsx_path = os.path.join(ASSET_DIR, 'data', 'ifra_standards.xlsx')
     if not os.path.exists(xlsx_path):
         log("[IFRA] Standards file not found, skipping import")
         return
@@ -935,7 +953,7 @@ def import_ifra_contributions():
     import zipfile
     import xml.etree.ElementTree as ET
 
-    xlsx_path = os.path.join(os.path.dirname(__file__), 'data', 'ifra_annex_contributions.xlsx')
+    xlsx_path = os.path.join(ASSET_DIR, 'data', 'ifra_annex_contributions.xlsx')
     if not os.path.exists(xlsx_path):
         log("[IFRA] Contributions annex file not found, skipping import")
         return
@@ -3914,9 +3932,16 @@ def api_import_execute():
         log(f"[IMPORT ERROR] {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-if __name__ == '__main__':
+def bootstrap():
+    """One-shot init used by both the dev entrypoint and the desktop launcher."""
     log("Starting My Perfumery v3...")
     init_db()
     import_ifra_standards()
     import_ifra_contributions()
-    app.run(host='0.0.0.0', port=8000, debug=True)
+
+if __name__ == '__main__':
+    bootstrap()
+    port = int(os.environ.get('MYPERFUMERY_PORT', '8000'))
+    host = os.environ.get('MYPERFUMERY_HOST', '0.0.0.0')
+    debug = os.environ.get('MYPERFUMERY_DEBUG', '0' if IS_FROZEN else '1') == '1'
+    app.run(host=host, port=port, debug=debug, use_reloader=debug)
