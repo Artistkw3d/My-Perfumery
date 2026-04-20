@@ -2655,6 +2655,16 @@ def api_formula_ingredients(fid):
             conn.commit()
             conn.close()
             return jsonify({'success': True, 'message': 'تم الحذف'})
+
+        elif action == 'reset_ifra':
+            # Clear all manual ifra_override values for this formula, reverting to standard IFRA limits
+            cur = conn.execute(
+                "UPDATE formula_ingredients SET ifra_override=NULL WHERE formula_id=? AND ifra_override IS NOT NULL",
+                (fid,))
+            affected = cur.rowcount
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': f'تم إعادة ضبط {affected} قيمة IFRA', 'affected': affected})
         
         elif action == 'update_formula':
             conn.execute("""UPDATE formulas SET name=?, description=?, status=?, ifra_category=?,
