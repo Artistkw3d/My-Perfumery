@@ -130,10 +130,40 @@
         .main-content {
             margin-right: 250px;
             padding: 24px 32px;
+            transition: margin-right 0.3s ease;
         }
         @media (min-width: 1600px) {
             .main-content { padding: 24px 40px; }
         }
+
+        /* Desktop sidebar collapse toggle */
+        .sidebar-collapse-btn {
+            position: fixed;
+            top: 14px;
+            right: 250px;
+            z-index: 1050;
+            width: 28px;
+            height: 44px;
+            border: 0;
+            background: var(--primary);
+            color: var(--gold);
+            border-radius: 8px 0 0 8px;
+            box-shadow: -2px 2px 8px rgba(0,0,0,0.15);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            transition: right 0.3s ease, background 0.2s;
+        }
+        .sidebar-collapse-btn:hover { background: var(--secondary); }
+        body.sidebar-collapsed .sidebar { transform: translateX(100%); }
+        body.sidebar-collapsed .main-content { margin-right: 0; }
+        body.sidebar-collapsed .sidebar-collapse-btn { right: 0; border-radius: 8px 0 0 8px; }
+        @media (max-width: 768px) {
+            body:not(.force-desktop) .sidebar-collapse-btn { display: none; }
+        }
+        body.force-mobile .sidebar-collapse-btn { display: none; }
         .card {
             border: 1px solid var(--border);
             border-radius: 16px;
@@ -309,6 +339,10 @@
         {% block content %}{% endblock %}
     </div>
 
+    <button class="sidebar-collapse-btn no-print" id="sidebarCollapseBtn" title="إخفاء/إظهار القائمة">
+        <i class="bi bi-chevron-right" id="sidebarCollapseIcon"></i>
+    </button>
+
     <button class="view-mode-toggle no-print" id="viewModeToggle" title="Switch view mode">
         <i class="bi bi-laptop" id="viewModeIcon"></i>
         <span class="mode-label" id="viewModeLabel">Auto</span>
@@ -343,6 +377,24 @@
             // Close when a nav link is clicked (mobile UX)
             sidebar && sidebar.querySelectorAll('.nav-link').forEach(a =>
                 a.addEventListener('click', closeSidebar));
+        })();
+
+        // ===== Desktop sidebar collapse toggle =====
+        (function() {
+            const btn = document.getElementById('sidebarCollapseBtn');
+            const icon = document.getElementById('sidebarCollapseIcon');
+            if (!btn) return;
+            function apply(collapsed) {
+                document.body.classList.toggle('sidebar-collapsed', collapsed);
+                // RTL: collapsed -> chevron points left (reopen direction), open -> points right (close direction)
+                icon.className = 'bi ' + (collapsed ? 'bi-chevron-left' : 'bi-chevron-right');
+            }
+            apply(localStorage.getItem('sidebarCollapsed') === '1');
+            btn.addEventListener('click', function() {
+                const next = !document.body.classList.contains('sidebar-collapsed');
+                localStorage.setItem('sidebarCollapsed', next ? '1' : '0');
+                apply(next);
+            });
         })();
 
         // ===== View mode toggle: auto -> desktop -> mobile -> auto =====
