@@ -1,0 +1,840 @@
+{% extends "base.html" %}
+{% block title %}My Perfumery - المذكرات{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ===== Notebook page ===== */
+.nb-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.nb-head h2 { margin: 0; font-size: 1.5rem; font-weight: 800; }
+.nb-head h2 i { color: var(--gold); margin-left: 8px; }
+.nb-head .sub { color: var(--text-light); font-size: 0.85rem; }
+.nb-save-pill {
+    color: var(--green);
+    font-size: 0.78rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+.nb-save-pill.show { opacity: 1; }
+
+.nb-layout {
+    display: grid;
+    grid-template-columns: 220px 320px minmax(0, 1fr);
+    gap: 14px;
+    height: calc(100vh - 170px);
+    min-height: 520px;
+}
+.nb-col {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Category / tag side panel */
+.nb-side { padding: 14px 10px; overflow-y: auto; }
+.nb-side h6 {
+    font-size: 0.7rem;
+    letter-spacing: 1px;
+    color: var(--text-light);
+    font-weight: 700;
+    margin: 12px 10px 6px;
+    text-transform: uppercase;
+}
+.nb-side h6:first-child { margin-top: 0; }
+.nb-side .filter {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    color: var(--text-mid);
+    cursor: pointer;
+    font-size: 0.9rem;
+    border: 0;
+    background: transparent;
+    width: 100%;
+    text-align: right;
+    transition: background 0.2s;
+}
+.nb-side .filter:hover { background: var(--cream); color: var(--text-dark); }
+.nb-side .filter.active { background: var(--cream); color: var(--primary); font-weight: 700; }
+.nb-side .filter .count {
+    margin-right: auto;
+    background: var(--sand);
+    color: var(--text-mid);
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+.nb-side .tag-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    border-radius: 12px;
+    margin: 2px 3px;
+    background: var(--sand);
+    color: var(--text-mid);
+    cursor: pointer;
+    border: 0;
+}
+.nb-side .tag-pill.active { background: var(--gold); color: #fff; }
+
+/* List column */
+.nb-list-head {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #fff;
+}
+.nb-list-head .row-actions { display: flex; gap: 6px; }
+.nb-list-head input[type=search] {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 7px 11px;
+    font-size: 0.88rem;
+    background: #faf9f7;
+    outline: none;
+    font-family: inherit;
+}
+.nb-list-head input[type=search]:focus { border-color: var(--gold); }
+.nb-btn-new {
+    background: var(--primary);
+    color: var(--cream);
+    border: 0;
+    border-radius: 10px;
+    padding: 7px 13px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+}
+.nb-btn-new:hover { background: var(--secondary, #8b7355); }
+.nb-list-body { flex: 1; padding: 10px; overflow-y: auto; }
+
+.nb-card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    position: relative;
+}
+.nb-card:hover { border-color: var(--gold); box-shadow: 0 3px 10px rgba(139,115,85,0.07); }
+.nb-card.active { border-color: var(--primary); box-shadow: 0 3px 10px rgba(92,74,50,0.1); }
+.nb-card .title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text-dark);
+    margin: 0 0 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.nb-card .excerpt {
+    font-size: 0.8rem;
+    color: var(--text-mid);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+.nb-card .meta { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; color: var(--text-light); }
+.nb-card .cat-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+.cat-story { background: rgba(201,132,123,0.15); color: var(--rose, #c9847b); }
+.cat-idea { background: rgba(184,149,106,0.15); color: var(--gold); }
+.cat-observation { background: rgba(125,156,123,0.15); color: var(--green); }
+.cat-log { background: rgba(139,115,85,0.15); color: var(--secondary, #8b7355); }
+
+/* Editor column */
+.nb-editor { padding: 20px 24px 16px; overflow-y: auto; }
+.nb-editor-empty { margin: auto; text-align: center; color: var(--text-light); padding-top: 60px; }
+.nb-editor-empty i { font-size: 3.5rem; color: var(--sand); display: block; margin-bottom: 10px; }
+.nb-editor-empty h4 { color: var(--text-mid); font-weight: 700; margin-bottom: 4px; }
+
+.nb-edit-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.nb-edit-head .date { color: var(--text-light); font-size: 0.78rem; }
+.nb-edit-actions { display: flex; gap: 6px; }
+.nb-btn-icon {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 10px;
+    color: var(--text-mid);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+.nb-btn-icon:hover { border-color: var(--gold); color: var(--gold); }
+.nb-btn-icon.danger:hover { border-color: var(--red, #c17a6f); color: var(--red, #c17a6f); }
+
+.nb-title-input {
+    font-size: 1.5rem;
+    font-weight: 800;
+    border: 0;
+    outline: none;
+    width: 100%;
+    color: var(--text-dark);
+    padding: 2px 0;
+    margin-bottom: 6px;
+    background: transparent;
+    font-family: inherit;
+}
+.nb-title-input::placeholder { color: var(--text-light); font-weight: 400; }
+.nb-meta-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 6px 0 14px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+}
+.nb-cat-select {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 0.85rem;
+    background: #faf9f7;
+    color: var(--text-mid);
+    font-family: inherit;
+}
+.nb-tags-input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 0.85rem;
+    background: #faf9f7;
+    outline: none;
+    min-width: 180px;
+    font-family: inherit;
+}
+
+.nb-section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--text-light);
+    text-transform: uppercase;
+    margin: 14px 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.nb-section-title i { color: var(--gold); }
+.nb-body-input {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    background: #fdfcf9;
+    font-family: inherit;
+    font-size: 0.94rem;
+    line-height: 1.75;
+    color: var(--text-dark);
+    min-height: 120px;
+    resize: vertical;
+    outline: none;
+}
+.nb-body-input:focus { border-color: var(--gold); }
+
+/* Olfactive profile section */
+.nb-profile-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 18px;
+    align-items: start;
+}
+@media (max-width: 1280px) { .nb-profile-grid { grid-template-columns: 1fr; } }
+
+.nb-axes {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 16px;
+}
+@media (max-width: 640px) { .nb-axes { grid-template-columns: 1fr; } }
+.nb-axis {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.nb-axis .lbl {
+    width: 110px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text-mid);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.nb-axis .dot { width: 8px; height: 8px; border-radius: 50%; }
+.nb-axis .ico { font-size: 1rem; line-height: 1; }
+.nb-axis input[type=range] {
+    flex: 1;
+    appearance: none;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--sand);
+    outline: none;
+}
+.nb-axis input[type=range]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--gold);
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+.nb-axis input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--gold);
+    cursor: pointer;
+    border: 2px solid #fff;
+}
+.nb-axis .val { width: 24px; text-align: center; font-weight: 700; color: var(--primary); font-size: 0.85rem; }
+
+.nb-chart-card {
+    background: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+}
+.nb-chart-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 260px;
+    aspect-ratio: 1 / 1;
+    margin: 0 auto;
+}
+.nb-presets {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 12px;
+}
+.nb-preset-btn {
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text-mid);
+    padding: 5px 10px;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.15;
+}
+.nb-preset-btn:hover { border-color: var(--gold); color: var(--gold); }
+.nb-preset-btn .pn { font-weight: 700; font-size: 0.8rem; }
+.nb-preset-btn .ps {
+    font-size: 0.62rem;
+    color: var(--text-light);
+    margin-top: 1px;
+    letter-spacing: 0.3px;
+}
+.nb-preset-btn:hover .ps { color: var(--gold); }
+.nb-preset-btn.clear { color: var(--red, #c17a6f); }
+.nb-preset-btn.clear:hover { border-color: var(--red, #c17a6f); color: var(--red, #c17a6f); }
+.nb-ct-hint {
+    color: var(--text-light);
+    font-size: 0.66rem;
+    line-height: 1.5;
+    max-width: 260px;
+    margin: 10px auto 0;
+}
+.nb-ct-hint b { color: var(--text-mid); }
+
+@media (max-width: 1100px) {
+    .nb-layout { grid-template-columns: 180px 280px minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+    .nb-layout { grid-template-columns: 1fr; height: auto; }
+    .nb-col { min-height: 300px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="nb-head">
+    <div>
+        <h2><i class="bi bi-journal-richtext"></i> المذكرات</h2>
+        <span class="sub">قصص، أفكار، ملاحظات، يوميات — مع بروفايل عطري لكل مذكرة</span>
+    </div>
+    <span class="nb-save-pill" id="nbSavePill"><i class="bi bi-check-circle-fill"></i> تم الحفظ</span>
+</div>
+
+<div class="nb-layout">
+    <aside class="nb-col nb-side">
+        <h6>الفئات</h6>
+        <button class="filter active" data-filter="all"><i class="bi bi-collection"></i> الكل <span class="count" id="nbCount-all">0</span></button>
+        <button class="filter" data-filter="story"><i class="bi bi-book"></i> قصص <span class="count" id="nbCount-story">0</span></button>
+        <button class="filter" data-filter="idea"><i class="bi bi-lightbulb"></i> أفكار <span class="count" id="nbCount-idea">0</span></button>
+        <button class="filter" data-filter="observation"><i class="bi bi-eye"></i> ملاحظات <span class="count" id="nbCount-observation">0</span></button>
+        <button class="filter" data-filter="log"><i class="bi bi-journal-text"></i> يوميات <span class="count" id="nbCount-log">0</span></button>
+
+        <h6>الوسوم</h6>
+        <div id="nbTagsBox"><span style="font-size:0.75rem;color:var(--text-light);padding:0 10px;">لا توجد وسوم بعد</span></div>
+    </aside>
+
+    <section class="nb-col">
+        <div class="nb-list-head">
+            <div class="row-actions">
+                <input type="search" id="nbSearch" placeholder="ابحث في المذكرات…">
+                <button class="nb-btn-new" onclick="NB.newEntry()"><i class="bi bi-plus-lg"></i> جديدة</button>
+            </div>
+        </div>
+        <div class="nb-list-body" id="nbList"></div>
+    </section>
+
+    <section class="nb-col nb-editor" id="nbEditor">
+        <div class="nb-editor-empty">
+            <i class="bi bi-journal-plus"></i>
+            <h4>اختر مذكرة من القائمة</h4>
+            <p>أو اضغط «جديدة» لبدء كتابة مذكرة الآن.</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const NB_AXES = [
+    { key: 'citrus',    label: 'حمضي',    icon: '🍋',  color: '#f4c542' },
+    { key: 'aldehydic', label: 'ألدهيدي', icon: '✨',  color: '#dde3e8' },
+    { key: 'aromatic',  label: 'أروماتيك',icon: '🌿',  color: '#9bc488' },
+    { key: 'green',     label: 'أخضر',    icon: '🍃',  color: '#6fa769' },
+    { key: 'marine',    label: 'مائي',    icon: '🌊',  color: '#6fb2c9' },
+    { key: 'floral',    label: 'زهري',    icon: '🌸',  color: '#e89ab3' },
+    { key: 'fruity',    label: 'فاكهي',   icon: '🍑',  color: '#e88a6c' },
+    { key: 'spicy',     label: 'توابل',   icon: '🌶️', color: '#c75a3a' },
+    { key: 'balsamic',  label: 'بلسمي',   icon: '🍶',  color: '#a67142' },
+    { key: 'woody',     label: 'خشبي',    icon: '🪵',  color: '#8b5a3c' },
+    { key: 'ambery',    label: 'عنبري',   icon: '💎',  color: '#c9a06b' },
+    { key: 'musky',     label: 'مسكي',    icon: '🫧',  color: '#b5a898' },
+    { key: 'leathery',  label: 'جلدي',    icon: '🧳',  color: '#6b4a32' },
+    { key: 'animal',    label: 'حيواني',  icon: '🐾',  color: '#3d2e1e' }
+];
+const NB_AXIS_KEYS = NB_AXES.map(a => a.key);
+const NB_CATS = {
+    story:       { label: 'قصة',    cls: 'cat-story' },
+    idea:        { label: 'فكرة',   cls: 'cat-idea' },
+    observation: { label: 'ملاحظة', cls: 'cat-observation' },
+    log:         { label: 'يومية',  cls: 'cat-log' }
+};
+const NB_PRESETS = {
+    fresh:    { citrus: 9, aldehydic: 7, aromatic: 8, green: 9, marine: 7, floral: 1, fruity: 2, spicy: 0, balsamic: 0, woody: 0, ambery: 0, musky: 1, leathery: 0, animal: 0 },
+    floral:   { citrus: 2, aldehydic: 3, aromatic: 2, green: 2, marine: 1, floral: 9, fruity: 3, spicy: 1, balsamic: 2, woody: 6, ambery: 6, musky: 4, leathery: 1, animal: 0 },
+    oriental: { citrus: 7, aldehydic: 4, aromatic: 1, green: 0, marine: 0, floral: 3, fruity: 2, spicy: 9, balsamic: 8, woody: 5, ambery: 9, musky: 4, leathery: 3, animal: 2 },
+    woody:    { citrus: 0, aldehydic: 0, aromatic: 2, green: 1, marine: 0, floral: 1, fruity: 1, spicy: 3, balsamic: 7, woody: 9, ambery: 7, musky: 6, leathery: 8, animal: 4 },
+    gourmand: { citrus: 7, aldehydic: 1, aromatic: 1, green: 1, marine: 0, floral: 7, fruity: 3, spicy: 2, balsamic: 3, woody: 2, ambery: 8, musky: 2, leathery: 1, animal: 0 },
+    clear:    Object.fromEntries(NB_AXIS_KEYS.map(k => [k, 0]))
+};
+const NB_PRESET_META = [
+    { key: 'fresh',    icon: '🌬️', label: 'منعش', scheme: 'تشابه' },
+    { key: 'floral',   icon: '🌸',  label: 'زهري', scheme: 'تكميل مجزأ' },
+    { key: 'oriental', icon: '🌙',  label: 'شرقي', scheme: 'تضاد' },
+    { key: 'woody',    icon: '🪵',  label: 'خشبي', scheme: 'تشابه عميق' },
+    { key: 'gourmand', icon: '🍯',  label: 'حلو',  scheme: 'ثلاثي' }
+];
+
+const NB = (function() {
+    const state = {
+        entries: [],
+        filter: 'all',
+        tag: null,
+        search: '',
+        activeId: null,
+        chart: null,
+        saveTimer: null
+    };
+
+    function parseProfile(raw) {
+        const out = Object.fromEntries(NB_AXIS_KEYS.map(k => [k, 0]));
+        try {
+            const obj = typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {});
+            for (const k of NB_AXIS_KEYS) if (typeof obj[k] === 'number') out[k] = obj[k];
+        } catch (e) {}
+        return out;
+    }
+
+    function flash() {
+        const p = document.getElementById('nbSavePill');
+        p.classList.add('show');
+        clearTimeout(flash._t);
+        flash._t = setTimeout(() => p.classList.remove('show'), 900);
+    }
+
+    function relTime(ts) {
+        if (!ts) return '';
+        const t = new Date(ts.replace ? ts.replace(' ', 'T') : ts).getTime();
+        const d = Math.floor((Date.now() - t) / 86400000);
+        if (d === 0) return 'اليوم';
+        if (d === 1) return 'أمس';
+        if (d < 7) return 'قبل ' + d + ' أيام';
+        if (d < 30) return 'قبل ' + Math.floor(d / 7) + ' أسابيع';
+        return new Date(t).toLocaleDateString('ar');
+    }
+
+    function escapeHtml(s) {
+        return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    async function loadAll() {
+        const res = await fetch('/api/notebook/entries');
+        const j = await res.json();
+        state.entries = j.data || [];
+        renderAll();
+    }
+
+    function visible() {
+        return state.entries
+            .filter(e => state.filter === 'all' || e.category === state.filter)
+            .filter(e => !state.tag || ((e.tags || '').split(',').map(s => s.trim()).includes(state.tag)))
+            .filter(e => {
+                if (!state.search) return true;
+                const s = state.search.toLowerCase();
+                return (e.title || '').toLowerCase().includes(s) ||
+                       (e.body  || '').toLowerCase().includes(s) ||
+                       (e.tags  || '').toLowerCase().includes(s);
+            });
+    }
+
+    function renderCounts() {
+        document.getElementById('nbCount-all').textContent = state.entries.length;
+        Object.keys(NB_CATS).forEach(c => {
+            const el = document.getElementById('nbCount-' + c);
+            if (el) el.textContent = state.entries.filter(e => e.category === c).length;
+        });
+    }
+
+    function renderTags() {
+        const tags = [...new Set(state.entries.flatMap(e => (e.tags || '').split(',').map(s => s.trim()).filter(Boolean)))].sort();
+        const box = document.getElementById('nbTagsBox');
+        if (tags.length === 0) {
+            box.innerHTML = '<span style="font-size:0.75rem;color:var(--text-light);padding:0 10px;">لا توجد وسوم بعد</span>';
+            return;
+        }
+        box.innerHTML = tags.map(t =>
+            '<button class="tag-pill ' + (state.tag === t ? 'active' : '') +
+            '" onclick="NB.toggleTag(' + JSON.stringify(t) + ')">' + escapeHtml(t) + '</button>'
+        ).join('');
+    }
+
+    function renderList() {
+        const list = document.getElementById('nbList');
+        const entries = visible();
+        if (entries.length === 0) {
+            list.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-light);font-size:0.88rem;">' +
+                '<i class="bi bi-search" style="font-size:1.8rem;opacity:0.5;"></i><br>لا توجد نتائج</div>';
+            return;
+        }
+        list.innerHTML = entries.map(e => {
+            const cat = NB_CATS[e.category] || NB_CATS.log;
+            const excerpt = (e.body || '').slice(0, 120).replace(/\n/g, ' ');
+            return '<div class="nb-card ' + (state.activeId === e.id ? 'active' : '') + '" onclick="NB.open(' + e.id + ')">' +
+                '<div class="title">' + escapeHtml(e.title || '(بدون عنوان)') + '</div>' +
+                '<div class="excerpt">' + (excerpt ? escapeHtml(excerpt) : '<em style="color:var(--text-light);">فارغة</em>') + '</div>' +
+                '<div class="meta">' +
+                    '<span class="cat-badge ' + cat.cls + '">' + cat.label + '</span>' +
+                    '<span>' + relTime(e.updated_at) + '</span>' +
+                '</div></div>';
+        }).join('');
+    }
+
+    function renderEditor() {
+        const col = document.getElementById('nbEditor');
+        const entry = state.entries.find(e => e.id === state.activeId);
+        if (state.chart) { state.chart.destroy(); state.chart = null; }
+        if (!entry) {
+            col.innerHTML = '<div class="nb-editor-empty">' +
+                '<i class="bi bi-journal-plus"></i>' +
+                '<h4>اختر مذكرة من القائمة</h4>' +
+                '<p>أو اضغط «جديدة» لبدء كتابة مذكرة الآن.</p></div>';
+            return;
+        }
+        const profile = parseProfile(entry.profile);
+
+        col.innerHTML =
+            '<div class="nb-edit-head">' +
+                '<span class="date"><i class="bi bi-calendar3"></i> ' + (entry.created_at || '') + '</span>' +
+                '<div class="nb-edit-actions">' +
+                    '<button class="nb-btn-icon" onclick="NB.duplicate()"><i class="bi bi-files"></i> نسخ</button>' +
+                    '<button class="nb-btn-icon danger" onclick="NB.remove()"><i class="bi bi-trash"></i> حذف</button>' +
+                '</div>' +
+            '</div>' +
+            '<input class="nb-title-input" id="nbTitle" placeholder="عنوان المذكرة…" value="' + escapeHtml(entry.title) + '">' +
+            '<div class="nb-meta-row">' +
+                '<select class="nb-cat-select" id="nbCat">' +
+                    Object.entries(NB_CATS).map(([k, v]) =>
+                        '<option value="' + k + '" ' + (entry.category === k ? 'selected' : '') + '>' + v.label + '</option>'
+                    ).join('') +
+                '</select>' +
+                '<input class="nb-tags-input" id="nbTagsField" placeholder="وسوم، مفصولة بفواصل" value="' + escapeHtml(entry.tags || '') + '">' +
+            '</div>' +
+            '<h6 class="nb-section-title"><i class="bi bi-journal-text"></i> النص</h6>' +
+            '<textarea class="nb-body-input" id="nbBody" placeholder="اكتب القصة، الفكرة، أو الملاحظة هنا…">' + escapeHtml(entry.body || '') + '</textarea>' +
+            '<h6 class="nb-section-title"><i class="bi bi-flower1"></i> البروفايل العطري</h6>' +
+            '<div class="nb-profile-grid">' +
+                '<div class="nb-axes" id="nbAxes"></div>' +
+                '<div class="nb-chart-card">' +
+                    '<div class="nb-chart-wrap"><canvas id="nbChart"></canvas></div>' +
+                    '<div class="nb-presets" id="nbPresets"></div>' +
+                    '<div class="nb-ct-hint">كل بريسيت يطبّق سكيم من نظرية الألوان: ' +
+                        '<b>تشابه</b> (محاور متجاورة)، <b>تضاد</b> (متقابلان)، ' +
+                        '<b>تكميل مجزأ</b> (محور + جاري ضدّه)، <b>ثلاثي</b> (3 متساوية البُعد).' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+
+        // Build sliders
+        const axes = document.getElementById('nbAxes');
+        axes.innerHTML = NB_AXES.map(a =>
+            '<div class="nb-axis">' +
+                '<span class="lbl">' +
+                    '<span class="dot" style="background:' + a.color + '"></span>' +
+                    '<span class="ico" aria-hidden="true">' + a.icon + '</span>' + a.label +
+                '</span>' +
+                '<input type="range" min="0" max="10" step="1" value="' + profile[a.key] + '" data-key="' + a.key + '">' +
+                '<span class="val" data-val="' + a.key + '">' + profile[a.key] + '</span>' +
+            '</div>'
+        ).join('');
+        axes.addEventListener('input', onAxisInput);
+
+        // Build preset buttons
+        const presets = document.getElementById('nbPresets');
+        presets.innerHTML = NB_PRESET_META.map(p =>
+            '<button class="nb-preset-btn" onclick="NB.applyPreset(' + JSON.stringify(p.key) + ')">' +
+                '<span class="pn">' + p.icon + ' ' + p.label + '</span>' +
+                '<span class="ps">' + p.scheme + '</span>' +
+            '</button>'
+        ).join('') +
+        '<button class="nb-preset-btn clear" onclick="NB.applyPreset(\'clear\')"><span class="pn"><i class="bi bi-eraser"></i> مسح</span></button>';
+
+        // Wire text fields → debounced save
+        ['nbTitle', 'nbCat', 'nbTagsField', 'nbBody'].forEach(id => {
+            const el = document.getElementById(id);
+            el.addEventListener('input', () => queueSave());
+            el.addEventListener('change', () => queueSave());
+        });
+
+        buildChart(profile);
+    }
+
+    function onAxisInput(e) {
+        const s = e.target.closest('input[type=range]');
+        if (!s) return;
+        const entry = state.entries.find(x => x.id === state.activeId);
+        if (!entry) return;
+        const profile = parseProfile(entry.profile);
+        const k = s.dataset.key;
+        profile[k] = parseInt(s.value, 10);
+        entry.profile = JSON.stringify(profile);
+        document.querySelector('[data-val="' + k + '"]').textContent = profile[k];
+        updateChart(profile);
+        queueSave();
+    }
+
+    function buildChart(profile) {
+        const ctx = document.getElementById('nbChart').getContext('2d');
+        state.chart = new Chart(ctx, {
+            type: 'polarArea',
+            data: {
+                labels: NB_AXES.map(a => a.icon + ' ' + a.label),
+                datasets: [{
+                    data: NB_AXES.map(a => profile[a.key]),
+                    backgroundColor: NB_AXES.map(a => a.color + 'cc'),
+                    borderColor: '#fff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: (c) => c.label + ': ' + c.raw + ' / 10' } }
+                },
+                scales: {
+                    r: {
+                        suggestedMax: 10,
+                        ticks: { display: false, stepSize: 2 },
+                        grid: { color: 'rgba(139,115,85,0.12)' },
+                        angleLines: { color: 'rgba(139,115,85,0.12)' },
+                        pointLabels: { font: { size: 9, family: 'Tajawal' }, color: '#7a6b57' }
+                    }
+                }
+            }
+        });
+    }
+    function updateChart(profile) {
+        if (!state.chart) return;
+        state.chart.data.datasets[0].data = NB_AXES.map(a => profile[a.key]);
+        state.chart.update('none');
+    }
+
+    function queueSave() {
+        clearTimeout(state.saveTimer);
+        state.saveTimer = setTimeout(saveActive, 500);
+    }
+
+    async function saveActive() {
+        const entry = state.entries.find(e => e.id === state.activeId);
+        if (!entry) return;
+        const title = document.getElementById('nbTitle');
+        const cat = document.getElementById('nbCat');
+        const tags = document.getElementById('nbTagsField');
+        const body = document.getElementById('nbBody');
+        if (title) entry.title = title.value;
+        if (cat) entry.category = cat.value;
+        if (tags) entry.tags = tags.value;
+        if (body) entry.body = body.value;
+
+        const fd = new FormData();
+        fd.append('action', 'update');
+        fd.append('id', entry.id);
+        fd.append('title', entry.title || '');
+        fd.append('category', entry.category || 'idea');
+        fd.append('tags', entry.tags || '');
+        fd.append('body', entry.body || '');
+        fd.append('profile', entry.profile || '{}');
+        const res = await fetch('/api/notebook/entries', { method: 'POST', body: fd });
+        if (res.ok) {
+            flash();
+            entry.updated_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+            renderCounts();
+            renderTags();
+            renderList();
+        }
+    }
+
+    async function newEntry() {
+        const fd = new FormData();
+        fd.append('action', 'create');
+        fd.append('category', 'idea');
+        const res = await fetch('/api/notebook/entries', { method: 'POST', body: fd });
+        const j = await res.json();
+        if (j.success) {
+            state.entries.unshift(j.data);
+            state.activeId = j.data.id;
+            renderAll();
+            setTimeout(() => { const t = document.getElementById('nbTitle'); t && t.focus(); }, 50);
+        }
+    }
+
+    async function remove() {
+        if (!confirm('حذف هذه المذكرة نهائياً؟')) return;
+        const fd = new FormData();
+        fd.append('action', 'delete');
+        fd.append('id', state.activeId);
+        const res = await fetch('/api/notebook/entries', { method: 'POST', body: fd });
+        if (res.ok) {
+            state.entries = state.entries.filter(e => e.id !== state.activeId);
+            state.activeId = null;
+            renderAll();
+        }
+    }
+
+    async function duplicate() {
+        const fd = new FormData();
+        fd.append('action', 'duplicate');
+        fd.append('id', state.activeId);
+        const res = await fetch('/api/notebook/entries', { method: 'POST', body: fd });
+        const j = await res.json();
+        if (j.success) {
+            state.entries.unshift(j.data);
+            state.activeId = j.data.id;
+            renderAll();
+        }
+    }
+
+    function applyPreset(name) {
+        const entry = state.entries.find(e => e.id === state.activeId);
+        if (!entry) return;
+        const p = NB_PRESETS[name];
+        if (!p) return;
+        const profile = Object.fromEntries(NB_AXIS_KEYS.map(k => [k, p[k] || 0]));
+        entry.profile = JSON.stringify(profile);
+        // Sync UI
+        NB_AXES.forEach(a => {
+            const s = document.querySelector('.nb-axis input[type=range][data-key="' + a.key + '"]');
+            if (s) s.value = profile[a.key];
+            const v = document.querySelector('[data-val="' + a.key + '"]');
+            if (v) v.textContent = profile[a.key];
+        });
+        updateChart(profile);
+        queueSave();
+    }
+
+    function open(id) {
+        state.activeId = id;
+        renderList();
+        renderEditor();
+    }
+
+    function toggleTag(t) {
+        state.tag = state.tag === t ? null : t;
+        renderAll();
+    }
+
+    function renderAll() { renderCounts(); renderTags(); renderList(); renderEditor(); }
+
+    // Wire sidebar filters + search
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.nb-side .filter[data-filter]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.nb-side .filter[data-filter]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                state.filter = btn.dataset.filter;
+                state.tag = null;
+                renderAll();
+            });
+        });
+        document.getElementById('nbSearch').addEventListener('input', (e) => {
+            state.search = e.target.value;
+            renderList();
+        });
+        loadAll();
+    });
+
+    return { open, newEntry, remove, duplicate, applyPreset, toggleTag };
+})();
+</script>
+{% endblock %}
