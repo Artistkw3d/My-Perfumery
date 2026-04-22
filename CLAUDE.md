@@ -1,12 +1,12 @@
 # CLAUDE.md
 
 ## Project Overview
-My Perfumery v3 - Flask web application for managing perfume formulations, materials, IFRA compliance, and MSDS reports. Single-file Flask app (`app.py` ~3900 lines) with SQLite database. Rebranded from "Perfume Vault"; legacy seeded company names are auto-corrected on startup.
+My Perfumery v3 - Flask web application for managing perfume formulations, materials, IFRA compliance, MSDS reports, and a perfumer's notebook with olfactive profiles. Single-file Flask app (`app.py` ~4000 lines) with SQLite database. Rebranded from "Perfume Vault"; legacy seeded company names are auto-corrected on startup. Ships as an offline Windows `.exe` via `launcher.py` + PyInstaller (WebView2 desktop shell).
 
 ## Tech Stack
 - **Backend:** Python Flask, SQLite3
 - **Frontend:** Bootstrap 5 (RTL), Chart.js (polar area charts), Select2, jQuery, Bootstrap Icons
-- **Deployment:** Docker (docker-compose)
+- **Deployment:** Docker (docker-compose), and PyInstaller single-file Windows `.exe` built via GitHub Actions (`.github/workflows/build-windows.yml`) and attached to the rolling `latest` release
 - **Templates:** Jinja2 (Arabic RTL interface)
 
 ## Key Architecture
@@ -24,6 +24,7 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - `formula_ingredients` - Ingredients with weight, dilution, diluent, `ifra_override` (manual per-row IFRA limit override)
 - `formula_drafts` / `formula_draft_ingredients` - Versioned drafts per formula for compare/approve workflow
 - `formula_notes` - Notes per formula
+- `notebook_entries` - Journal entries (title, category, tags, body, `profile` JSON of the 14 olfactive axes, created_at, updated_at)
 - `ifra_standards` - 263 IFRA regulated materials with 18 category limits
 - `ifra_cas_lookup` - CAS to IFRA standard mapping
 - `families`, `suppliers`, `users`, `company_info`, `production_orders`
@@ -50,11 +51,28 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - Custom fragrance families are added via a dropdown sourced from the `families` table (icon + name imported automatically; only percentage is user-entered)
 - Total-weight stat was removed from the footer per user preference; only ingredient count remains
 
+## Notebook (`notebook.html`)
+- Journal at `/notebook` for perfumer stories, ideas, observations, daily logs. Three-column RTL layout: categories/tags sidebar → notes list → editor with olfactive profile.
+- Each entry carries a 14-axis olfactive profile (same axes/keys as `material_olfactive`) rendered as a polar-area chart plus 0–10 sliders. Icons per axis mirror the emoji icons in the `families` table (🍋 حمضي، 🌿 أروماتيك، 🍃 أخضر، 🌊 مائي، 🌸 زهري، 🍑 فاكهي، 🌶️ توابل، 🍶 بلسمي، 🪵 خشبي، 💎 عنبري، 🫧 مسكي، 🧳 جلدي، 🐾 حيواني، ✨ ألدهيدي).
+- Five presets embody classic color-theory schemes from the reference wheel — `منعش` analogous, `زهري` split-complementary, `شرقي` complementary, `خشبي` analogous-deep, `حلو` triadic — so the chart itself visibly demonstrates the scheme. Axis colors stay with the warm brand palette (do not swap them to wheel hues; rejected 2026-04-22).
+- CRUD via action-based `POST /api/notebook/entries` (create/update/delete/duplicate) + `GET` for the list, matching the materials/formulas API style. Auto-save is debounced at 500 ms on the client.
+
+## Desktop build (Windows `.exe`)
+- `launcher.py` picks a free TCP port (tries 8000–8099, else OS-assigned), starts Flask in a daemon thread on `127.0.0.1`, waits for readiness, then opens a pywebview (WebView2) window.
+- `app.py` detects `sys.frozen` to: (a) resolve read-only assets from `sys._MEIPASS`, (b) store the DB + backups under `%APPDATA%\MyPerfumery\database\`, (c) disable Flask debug and the reloader. Port/host/debug are controlled by env vars (`MYPERFUMERY_PORT`, `MYPERFUMERY_HOST`, `MYPERFUMERY_DEBUG`).
+- `build.bat` is the local one-click build; `.github/workflows/build-windows.yml` produces the same `.exe` on every main push and attaches it to the rolling `latest` release.
+
 ## Development Commands
 ```bash
-# Run locally
-pip install flask
+# Run locally (Flask dev server)
+pip install -r requirements.txt
 python app.py
+
+# Run locally inside a pywebview window (how the .exe runs)
+python launcher.py
+
+# Build the Windows single-file .exe locally
+build.bat                       # → dist\MyPerfumery.exe
 
 # Docker
 docker-compose up -d --build

@@ -1,6 +1,13 @@
 # My Perfumery v3
 
-نظام متكامل لإدارة تركيبات العطور مع دعم كامل لـ IFRA و MSDS
+نظام متكامل لإدارة تركيبات العطور مع دعم كامل لـ IFRA و MSDS، بالإضافة إلى **مذكرات العطّار** مع بروفايل عطري 14-محور لكل مذكرة. يعمل عبر المتصفح أو كبرنامج ويندوز مستقل (`MyPerfumery.exe`).
+
+## تحميل نسخة ويندوز (EXE)
+
+- آخر نسخة جاهزة (يُعاد بناؤها تلقائياً عند كل تحديث على `main`):
+  https://github.com/Artistkw3d/My-Perfumery/releases/tag/latest
+- حمّل `MyPerfumery.exe` وشغّله بدون أي تثبيت. البرنامج يختار أول بورت متاح تلقائياً، فلا يحتاج إعدادات شبكة.
+- قاعدة البيانات الخاصة بك تُحفظ محلياً في `%APPDATA%\MyPerfumery\database\perfume.db` مع نسخ احتياطية تلقائية.
 
 ## المميزات الرئيسية
 
@@ -71,19 +78,46 @@
 ### 8. النسخ الاحتياطي
 - نظام نسخ احتياطي تلقائي مع إمكانية الاستعادة
 
+### 9. المذكرات (Notebook) مع بروفايل عطري
+- صفحة `/notebook` مخصّصة لتدوين **قصص، أفكار، ملاحظات، يوميات** العطّار — كل مذكرة مع تصنيف ووسوم ونص حر
+- لكل مذكرة **بروفايل عطري كامل** (14 محور، نفس محاور `material_olfactive`) بسلايدرز + **Polar Area Chart**
+- الأيقونات مأخوذة من جدول `families` (🍋 حمضي، 🌸 زهري، 🪵 خشبي، 🌊 مائي، ...) لتوحيد الهوية البصرية
+- **5 بريسيتات** مبنية على نظرية الألوان:
+  - 🌬️ **منعش** — تشابه (analogous)
+  - 🌸 **زهري** — تكميل مجزأ (split-complementary)
+  - 🌙 **شرقي** — تضاد (complementary)
+  - 🪵 **خشبي** — تشابه عميق (analogous-deep)
+  - 🍯 **حلو** — ثلاثي (triadic)
+- بحث، فلترة بالفئة أو الوسم، ونسخ/حذف، مع حفظ تلقائي (debounced 500ms)
+
 ## التشغيل
 
-### باستخدام Docker (موصى به)
+### نسخة ويندوز الجاهزة (أسهل خيار)
+
+حمّل `MyPerfumery.exe` من صفحة [Releases → latest](https://github.com/Artistkw3d/My-Perfumery/releases/tag/latest) ثم انقر مرتين. البرنامج:
+- يختار أول بورت شبكة متاح تلقائياً (لا يتعارض مع أي برنامج آخر)
+- يفتح نافذة WebView2 محلية (مو متصفح خارجي)
+- يحفظ البيانات في `%APPDATA%\MyPerfumery\database\`
+
+### باستخدام Docker
 
 ```bash
 docker-compose up -d --build
 ```
 
-### تشغيل مباشر
+### تشغيل مباشر (Python)
 
 ```bash
-pip install flask
-python app.py
+pip install -r requirements.txt
+python app.py                # خادم Flask فقط
+# أو
+python launcher.py           # Flask داخل نافذة pywebview
+```
+
+### بناء الـ EXE محلياً
+
+```bash
+build.bat   # ينتج dist\MyPerfumery.exe
 ```
 
 ## بيانات الدخول الافتراضية
@@ -95,30 +129,36 @@ python app.py
 
 ```
 My-Perfumery/
-├── app.py              # التطبيق الرئيسي (Flask) ~3200 سطر
+├── app.py                      # التطبيق الرئيسي (Flask) ~4000 سطر
+├── launcher.py                 # مُشغِّل سطح المكتب (pywebview + port picker)
+├── build.bat                   # بناء MyPerfumery.exe محلياً
+├── requirements.txt            # flask, pywebview, pyinstaller
+├── .github/workflows/
+│   └── build-windows.yml       # CI يبني الـ .exe ويرفعه على release "latest"
 ├── Dockerfile
 ├── docker-compose.yml
 ├── data/
-│   ├── ifra_standards.xlsx   # IFRA 51st Amendment (263 مادة)
-│   └── ifra_annex.xlsx       # IFRA Annex (مساهمات المصادر الطبيعية)
+│   ├── ifra_standards.xlsx     # IFRA 51st Amendment (263 مادة)
+│   └── ifra_annex.xlsx         # IFRA Annex (مساهمات المصادر الطبيعية)
 ├── templates/
 │   ├── base.html
 │   ├── login.html
-│   ├── index.html            # لوحة التحكم
-│   ├── materials.html        # إدارة المواد (5 تابات)
-│   ├── formulas.html         # قائمة التركيبات (بطاقات)
-│   ├── formula.html          # تفاصيل التركيبة + نظام المسودات
-│   ├── import.html           # الاستيراد الذكي (4 خطوات)
+│   ├── index.html              # لوحة التحكم
+│   ├── materials.html          # إدارة المواد
+│   ├── formulas.html           # قائمة التركيبات (بطاقات)
+│   ├── formula.html            # تفاصيل التركيبة + نظام المسودات
+│   ├── notebook.html           # المذكرات + بروفايل عطري
+│   ├── import.html             # الاستيراد الذكي (4 خطوات)
 │   ├── ifra_certificate.html
 │   ├── msds_generator.html
 │   ├── production.html
 │   ├── suppliers.html
 │   ├── calculator.html
-│   ├── formula_card.html     # بطاقة تعريفية
+│   ├── formula_card.html       # بطاقة تعريفية
 │   └── settings.html
 ├── static/
 └── database/
-    └── perfume.db            # SQLite (ينشأ تلقائياً)
+    └── perfume.db              # SQLite (ينشأ تلقائياً — أو %APPDATA%\MyPerfumery\ في نسخة الـ .exe)
 ```
 
 ## API Endpoints
@@ -143,6 +183,11 @@ GET  /api/ifra/lookup?cas=<cas>        # بحث IFRA بالـ CAS
 GET  /api/ifra/categories              # قائمة فئات IFRA الـ 18
 GET  /api/ifra/formula-check/<id>      # فحص توافق IFRA للتركيبة
 GET  /api/ifra-certificate/<id>        # شهادة IFRA (يتطلب حالة Final)
+
+# المذكرات (Notebook)
+GET  /notebook                         # صفحة المذكرات
+GET  /api/notebook/entries             # قائمة المذكرات
+POST /api/notebook/entries             # action=create|update|delete|duplicate
 
 # MSDS
 GET  /api/msds/<id>                    # تقرير MSDS (يتطلب حالة Final)
