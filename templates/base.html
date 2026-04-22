@@ -136,6 +136,25 @@
             .main-content { padding: 24px 40px; }
         }
 
+        /* ===== Compact density for laptop widths ===== */
+        @media (min-width: 769px) and (max-width: 1400px) {
+            body:not(.force-mobile) .main-content { padding: 14px 18px; }
+            body:not(.force-mobile) h2 { font-size: 1.25rem; }
+            body:not(.force-mobile) .card-body { padding: 0.75rem 0.9rem; }
+            body:not(.force-mobile) .card-header { padding: 0.55rem 0.9rem; font-size: 0.95rem; }
+            body:not(.force-mobile) .table th,
+            body:not(.force-mobile) .table td { padding: 0.35rem 0.45rem; font-size: 0.85rem; }
+            body:not(.force-mobile) .form-control,
+            body:not(.force-mobile) .form-select,
+            body:not(.force-mobile) .btn { font-size: 0.88rem; }
+            body:not(.force-mobile) .form-control-sm,
+            body:not(.force-mobile) .form-select-sm,
+            body:not(.force-mobile) .btn-sm { font-size: 0.8rem; padding: 0.2rem 0.55rem; }
+            body:not(.force-mobile) .stat-card { padding: 14px 16px; }
+            body:not(.force-mobile) .stat-card h3 { font-size: 1.5rem; }
+            body:not(.force-mobile) .modal-dialog { margin: 0.5rem auto; }
+        }
+
         /* Desktop sidebar collapse toggle */
         .sidebar-collapse-btn {
             position: fixed;
