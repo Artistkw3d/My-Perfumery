@@ -304,6 +304,9 @@
             <a class="nav-link {% if request.endpoint in ['formulas', 'formula_detail', 'formula_card'] %}active{% endif %}" href="/formulas">
                 <i class="bi bi-file-earmark-text"></i> التركيبات
             </a>
+            <a class="nav-link {% if request.endpoint == 'notebook' %}active{% endif %}" href="/notebook">
+                <i class="bi bi-journal-richtext"></i> المذكرات
+            </a>
             <a class="nav-link {% if request.endpoint == 'production' %}active{% endif %}" href="/production">
                 <i class="bi bi-gear"></i> الإنتاج
             </a>

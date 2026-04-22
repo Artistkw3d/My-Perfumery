@@ -713,6 +713,17 @@ def init_db():
         concentration_pct REAL NOT NULL
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS notebook_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT DEFAULT '',
+        category TEXT DEFAULT 'idea',
+        tags TEXT DEFAULT '',
+        body TEXT DEFAULT '',
+        profile TEXT DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     # بيانات افتراضية
     c.execute("INSERT OR IGNORE INTO users (username, password, name, role) VALUES ('admin', 'admin123', 'المدير', 'admin')")
     c.execute("INSERT OR IGNORE INTO company_info (id, name, address, phone, email) VALUES (1, 'My Perfumery', 'Kuwait', '+965 xxxx xxxx', 'info@myperfumery.com')")
@@ -1191,6 +1202,84 @@ def production():
     formulas = conn.execute("SELECT id, name FROM formulas ORDER BY name").fetchall()
     conn.close()
     return render_template('production.html', formulas=formulas)
+
+# ===== المذكرات (Notebook) =====
+@app.route('/notebook')
+@login_required
+def notebook():
+    return render_template('notebook.html')
+
+@app.route('/api/notebook/entries', methods=['GET', 'POST'])
+@login_required
+def api_notebook_entries():
+    conn = get_db()
+    if request.method == 'GET':
+        rows = conn.execute('''
+            SELECT id, title, category, tags, body, profile, created_at, updated_at
+            FROM notebook_entries ORDER BY updated_at DESC
+        ''').fetchall()
+        conn.close()
+        return jsonify({'success': True, 'data': [dict(r) for r in rows]})
+
+    action = request.form.get('action', 'create')
+
+    if action == 'create':
+        title = request.form.get('title', '')
+        category = request.form.get('category', 'idea')
+        tags = request.form.get('tags', '')
+        body = request.form.get('body', '')
+        profile = request.form.get('profile', '{}')
+        cur = conn.execute('''
+            INSERT INTO notebook_entries (title, category, tags, body, profile)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (title, category, tags, body, profile))
+        new_id = cur.lastrowid
+        conn.commit()
+        row = conn.execute('SELECT * FROM notebook_entries WHERE id=?', (new_id,)).fetchone()
+        conn.close()
+        return jsonify({'success': True, 'data': dict(row)})
+
+    if action == 'update':
+        eid = request.form.get('id')
+        fields = []
+        params = []
+        for col in ('title', 'category', 'tags', 'body', 'profile'):
+            if col in request.form:
+                fields.append(f"{col}=?")
+                params.append(request.form.get(col))
+        if fields:
+            fields.append("updated_at=CURRENT_TIMESTAMP")
+            params.append(eid)
+            conn.execute(f"UPDATE notebook_entries SET {', '.join(fields)} WHERE id=?", params)
+            conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+
+    if action == 'delete':
+        eid = request.form.get('id')
+        conn.execute('DELETE FROM notebook_entries WHERE id=?', (eid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'تم الحذف'})
+
+    if action == 'duplicate':
+        eid = request.form.get('id')
+        src = conn.execute('SELECT * FROM notebook_entries WHERE id=?', (eid,)).fetchone()
+        if not src:
+            conn.close()
+            return jsonify({'success': False, 'message': 'غير موجودة'})
+        cur = conn.execute('''
+            INSERT INTO notebook_entries (title, category, tags, body, profile)
+            VALUES (?, ?, ?, ?, ?)
+        ''', ((src['title'] or '') + ' (نسخة)', src['category'], src['tags'], src['body'], src['profile']))
+        new_id = cur.lastrowid
+        conn.commit()
+        row = conn.execute('SELECT * FROM notebook_entries WHERE id=?', (new_id,)).fetchone()
+        conn.close()
+        return jsonify({'success': True, 'data': dict(row)})
+
+    conn.close()
+    return jsonify({'success': False, 'message': 'إجراء غير معروف'}), 400
 
 @app.route('/calculator')
 @login_required
