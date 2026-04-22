@@ -40,11 +40,17 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - MSDS report (`/api/msds/<fid>`): Section 3 lists only ingredients with GHS data (H/P codes, pictograms, or signal word); percentages remain computed from the full formula
 
 ## Formula Page Layout (`formula.html`)
-- 3-column grid on wide screens (>1280px): `[right sidebar 280px] [main table] [left side panel 320px]`
+- 3-column grid on wide screens (>1500px): `[right sidebar (minmax 260-300px)] [main table (1fr)] [left side panel (minmax 300-340px)]`
   - Right sidebar: big highlighted "حد IFRA النهائي" (E3) readout, Olfactive Profile polar chart (240×240), Dilution key
   - Main column: ingredients table (with per-row IFRA override input + reset-all button), review card, notes
   - Left side panel: formula form (name/status/category), IFRA results box (J2/N3/E3), IFRA legend
-- Collapses to 2 columns under 1280px (right sidebar stacks horizontally) and single column under 1024px
+- Collapses to 2 columns under 1500px (right sidebar stacks horizontally above) and single column under 1100px
+- Ingredients table has 15 columns total; the 5 derived helper columns (H، N، M، J، K) carry class `.adv-col` and are hidden by default. Toggle button in the card footer (`toggleAdvCols()`) adds/removes `.show-adv` on `.e-table`; state persists in `localStorage` under key `formulaShowAdvCols`. Default-visible columns: #, material, diluent (C), dilution (E), IFRA (F), oil weight (G), net weight (I), final IFRA (L), cost, delete.
+
+## Laptop / compact density
+- Global media-query block in `base.html` between 769px and 1400px viewport tightens padding, font sizes, and table-row height (`.table th`, `.table td` → 0.35rem padding, 0.85rem font). No layout changes — purely visual density.
+- Excluded when `body.force-mobile` is active so the mobile-view toggle still wins.
+- Desktop sidebar (right nav) has a chevron button on its inner edge that collapses it entirely; state persists under `localStorage.sidebarCollapsed`.
 
 ## Formula Card (`formula_card.html`)
 - Customize panel persists to `formulas.card_settings` JSON: brand name, header/footer text, logo data URL, date, code, and `customFamilies[]`
@@ -52,8 +58,8 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - Total-weight stat was removed from the footer per user preference; only ingredient count remains
 
 ## Notebook (`notebook.html`)
-- Journal at `/notebook` for perfumer stories, ideas, observations, daily logs. Three-column RTL layout: categories/tags sidebar → notes list → editor with olfactive profile.
-- Each entry carries a 14-axis olfactive profile (same axes/keys as `material_olfactive`) rendered as a polar-area chart plus 0–10 sliders. Icons per axis mirror the emoji icons in the `families` table (🍋 حمضي، 🌿 أروماتيك، 🍃 أخضر، 🌊 مائي، 🌸 زهري، 🍑 فاكهي، 🌶️ توابل، 🍶 بلسمي، 🪵 خشبي، 💎 عنبري، 🫧 مسكي، 🧳 جلدي، 🐾 حيواني، ✨ ألدهيدي).
+- Journal at `/notebook` for perfumer stories, ideas, observations, daily logs. Three-column RTL layout on wide screens: `[200px categories/tags sidebar] [300px notes list] [1fr editor]`, collapses to single column under 900px.
+- Each entry carries a 14-axis olfactive profile (same axes/keys as `material_olfactive`) rendered as a polar-area chart (max 320px square) plus 0–10 sliders. Icons per axis mirror the emoji icons in the `families` table (🍋 حمضي، 🌿 أروماتيك، 🍃 أخضر، 🌊 مائي، 🌸 زهري، 🍑 فاكهي، 🌶️ توابل، 🍶 بلسمي، 🪵 خشبي، 💎 عنبري، 🫧 مسكي، 🧳 جلدي، 🐾 حيواني، ✨ ألدهيدي).
 - Five presets embody classic color-theory schemes from the reference wheel — `منعش` analogous, `زهري` split-complementary, `شرقي` complementary, `خشبي` analogous-deep, `حلو` triadic — so the chart itself visibly demonstrates the scheme. Axis colors stay with the warm brand palette (do not swap them to wheel hues; rejected 2026-04-22).
 - CRUD via action-based `POST /api/notebook/entries` (create/update/delete/duplicate) + `GET` for the list, matching the materials/formulas API style. Auto-save is debounced at 500 ms on the client.
 
