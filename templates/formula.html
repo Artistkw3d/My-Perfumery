@@ -471,6 +471,10 @@
     .dt-item .dt-time { font-size: 0.7rem; color: var(--text-light); }
     .dt-item .dt-name { font-weight: 700; }
 
+    /* Advanced (derived) columns — hidden by default, toggled per-user */
+    .e-table .adv-col { display: none; }
+    .e-table.show-adv .adv-col { display: table-cell; }
+
     @media (max-width: 1500px) {
         .main-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); }
         .right-sidebar {
@@ -603,13 +607,13 @@
                             <th>التخفيف<small>(E)</small></th>
                             <th>IFRA<small>(F)</small></th>
                             <th>وزن الزيت<small>(G)</small></th>
-                            <th>نسبة الزيت<small>(H=G/ΣG)</small></th>
-                            <th>IFRA تصميم<small>(N=F/H)</small></th>
-                            <th>تجاوز؟<small>(M)</small></th>
+                            <th class="adv-col">نسبة الزيت<small>(H=G/ΣG)</small></th>
+                            <th class="adv-col">IFRA تصميم<small>(N=F/H)</small></th>
+                            <th class="adv-col">تجاوز؟<small>(M)</small></th>
                             <th>وزن صافي<small>(I=G×E)</small></th>
-                            <th>نسبة صافي<small>(J=I/ΣI)</small></th>
+                            <th class="adv-col">نسبة صافي<small>(J=I/ΣI)</small></th>
                             <th>IFRA نهائي<small>(L=F/J)</small></th>
-                            <th>تجاوز؟<small>(K)</small></th>
+                            <th class="adv-col">تجاوز؟<small>(K)</small></th>
                             <th>تكلفة</th>
                             <th></th>
                         </tr>
@@ -618,15 +622,21 @@
                     <tfoot id="ingredientsFoot"></tfoot>
                 </table>
             </div>
-            <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--border);">
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteAllIngredients()"
-                        title="حذف جميع المواد من هذه التركيبة">
-                    <i class="bi bi-trash"></i> حذف الكل
+            <div style="padding:8px 12px;display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--border);flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="toggleAdvColsBtn" onclick="toggleAdvCols()"
+                        title="إظهار/إخفاء الأعمدة المشتقة (H، N، M، J، K)">
+                    <i class="bi bi-eye"></i> <span id="toggleAdvColsLabel">عرض الأعمدة المتقدمة</span>
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetIfraOverrides()"
-                        title="إعادة جميع قيم IFRA إلى القيم الافتراضية (قبل التعديل)">
-                    <i class="bi bi-arrow-counterclockwise"></i> إعادة ضبط قيم IFRA
-                </button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteAllIngredients()"
+                            title="حذف جميع المواد من هذه التركيبة">
+                        <i class="bi bi-trash"></i> حذف الكل
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetIfraOverrides()"
+                            title="إعادة جميع قيم IFRA إلى القيم الافتراضية (قبل التعديل)">
+                        <i class="bi bi-arrow-counterclockwise"></i> إعادة ضبط قيم IFRA
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -1172,13 +1182,13 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
                 <input type="number" class="e-inp" style="width:65px;" value="${i.weight}" step="0.0001" min="0"
                     onchange="updateIngredientFull(${i.id}, this.value, ${i.dilution || 1}, '${i.diluent || ''}', '${escapedDiluentOther}')">
             </td>
-            <td>${i.weight_percentage?.toFixed(2) || '-'}%</td>
-            <td>${nDisplay}</td>
-            <td>${mDisplay}</td>
+            <td class="adv-col">${i.weight_percentage?.toFixed(2) || '-'}%</td>
+            <td class="adv-col">${nDisplay}</td>
+            <td class="adv-col">${mDisplay}</td>
             <td>${i.pure_weight?.toFixed(4) || '-'}</td>
-            <td>${i.percentage?.toFixed(2) || '-'}%</td>
+            <td class="adv-col">${i.percentage?.toFixed(2) || '-'}%</td>
             <td>${lDisplay}</td>
-            <td>${kDisplay}</td>
+            <td class="adv-col">${kDisplay}</td>
             <td>${(i.cost || 0).toFixed(2)}</td>
             <td><button class="e-del" onclick="deleteIngredient(${i.id})"><i class="bi bi-trash"></i></button></td>
         </tr>
@@ -1202,11 +1212,12 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
             <td style="text-align:right;">المجموع</td>
             <td></td><td></td><td></td>
             <td>${totalWeight?.toFixed(4) || 0}</td>
-            <td>100%</td>
-            <td></td><td></td>
+            <td class="adv-col">100%</td>
+            <td class="adv-col"></td><td class="adv-col"></td>
             <td>${totalPure?.toFixed(4) || 0}</td>
-            <td>100%</td>
-            <td></td><td></td>
+            <td class="adv-col">100%</td>
+            <td></td>
+            <td class="adv-col"></td>
             <td>${totalCost.toFixed(2)}</td>
             <td></td>
         </tr>`;
@@ -1278,6 +1289,27 @@ function resetIfraOverrides() {
             }
         });
 }
+
+function applyAdvColsState(show) {
+    const table = document.querySelector('.e-card .e-table');
+    const label = document.getElementById('toggleAdvColsLabel');
+    const btn = document.getElementById('toggleAdvColsBtn');
+    if (table) table.classList.toggle('show-adv', show);
+    if (label) label.textContent = show ? 'إخفاء الأعمدة المتقدمة' : 'عرض الأعمدة المتقدمة';
+    if (btn) {
+        const icon = btn.querySelector('i');
+        if (icon) icon.className = 'bi ' + (show ? 'bi-eye-slash' : 'bi-eye');
+    }
+}
+function toggleAdvCols() {
+    const table = document.querySelector('.e-card .e-table');
+    const next = !(table && table.classList.contains('show-adv'));
+    localStorage.setItem('formulaShowAdvCols', next ? '1' : '0');
+    applyAdvColsState(next);
+}
+document.addEventListener('DOMContentLoaded', () => {
+    applyAdvColsState(localStorage.getItem('formulaShowAdvCols') === '1');
+});
 
 function deleteAllIngredients() {
     if (!confirm('هل أنت متأكد من حذف جميع المواد من هذه التركيبة؟ لا يمكن التراجع.')) return;

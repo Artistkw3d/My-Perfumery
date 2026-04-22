@@ -8,13 +8,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
     gap: 12px;
     flex-wrap: wrap;
 }
-.nb-head h2 { margin: 0; font-size: 1.5rem; font-weight: 800; }
+.nb-head h2 { margin: 0; font-size: 1.25rem; font-weight: 800; }
 .nb-head h2 i { color: var(--gold); margin-left: 8px; }
-.nb-head .sub { color: var(--text-light); font-size: 0.85rem; }
+.nb-head .sub { color: var(--text-light); font-size: 0.8rem; }
 .nb-save-pill {
     color: var(--green);
     font-size: 0.78rem;
@@ -28,10 +28,10 @@
 
 .nb-layout {
     display: grid;
-    grid-template-columns: 220px 320px minmax(0, 1fr);
-    gap: 14px;
-    height: calc(100vh - 170px);
-    min-height: 520px;
+    grid-template-columns: 200px 300px minmax(0, 1fr);
+    gap: 12px;
+    height: calc(100vh - 140px);
+    min-height: 500px;
 }
 .nb-col {
     background: #fff;
@@ -170,7 +170,7 @@
 .cat-log { background: rgba(139,115,85,0.15); color: var(--secondary, #8b7355); }
 
 /* Editor column */
-.nb-editor { padding: 20px 24px 16px; overflow-y: auto; }
+.nb-editor { padding: 14px 18px; overflow-y: auto; }
 .nb-editor-empty { margin: auto; text-align: center; color: var(--text-light); padding-top: 60px; }
 .nb-editor-empty i { font-size: 3.5rem; color: var(--sand); display: block; margin-bottom: 10px; }
 .nb-editor-empty h4 { color: var(--text-mid); font-weight: 700; margin-bottom: 4px; }
@@ -199,14 +199,14 @@
 .nb-btn-icon.danger:hover { border-color: var(--red, #c17a6f); color: var(--red, #c17a6f); }
 
 .nb-title-input {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 800;
     border: 0;
     outline: none;
     width: 100%;
     color: var(--text-dark);
     padding: 2px 0;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     background: transparent;
     font-family: inherit;
 }
@@ -216,9 +216,9 @@
     gap: 8px;
     flex-wrap: wrap;
     align-items: center;
-    padding: 6px 0 14px;
+    padding: 4px 0 10px;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 14px;
+    margin-bottom: 10px;
 }
 .nb-cat-select {
     border: 1px solid var(--border);
@@ -247,7 +247,7 @@
     letter-spacing: 1px;
     color: var(--text-light);
     text-transform: uppercase;
-    margin: 14px 0 8px;
+    margin: 10px 0 6px;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -256,14 +256,14 @@
 .nb-body-input {
     width: 100%;
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 14px;
+    border-radius: 10px;
+    padding: 10px 12px;
     background: #fdfcf9;
     font-family: inherit;
-    font-size: 0.94rem;
-    line-height: 1.75;
+    font-size: 0.92rem;
+    line-height: 1.65;
     color: var(--text-dark);
-    min-height: 120px;
+    min-height: 90px;
     resize: vertical;
     outline: none;
 }
@@ -272,8 +272,8 @@
 /* Olfactive profile section */
 .nb-profile-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 16px;
     align-items: start;
 }
 @media (max-width: 1280px) { .nb-profile-grid { grid-template-columns: 1fr; } }
@@ -281,7 +281,7 @@
 .nb-axes {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 8px 16px;
+    gap: 5px 14px;
 }
 @media (max-width: 640px) { .nb-axes { grid-template-columns: 1fr; } }
 .nb-axis {
@@ -290,8 +290,8 @@
     gap: 10px;
 }
 .nb-axis .lbl {
-    width: 110px;
-    font-size: 0.84rem;
+    width: 105px;
+    font-size: 0.82rem;
     font-weight: 600;
     color: var(--text-mid);
     display: flex;
@@ -336,7 +336,7 @@
 .nb-chart-wrap {
     position: relative;
     width: 100%;
-    max-width: 260px;
+    max-width: 320px;
     aspect-ratio: 1 / 1;
     margin: 0 auto;
 }
