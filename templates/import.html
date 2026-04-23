@@ -346,28 +346,95 @@ function loadColumns() {
 function autoGuessField(header, fields) {
     if (!header) return '';
     const h = header.toLowerCase().trim();
-    const guessMap = {
-        'name': 'name', 'اسم': 'name', 'الاسم': 'name', 'material': 'name',
-        'cas': 'cas_number', 'cas number': 'cas_number',
-        'العائلة': 'family', 'family': 'family', 'olfactive': 'family',
-        'العائله': 'family', 'التصنيف': 'family',
-        'profile': 'profile', 'الموقع': 'profile', 'pyramid': 'profile',
-        'المورد': 'supplier', 'supplier': 'supplier', 'الشركه': 'supplier',
-        'الشركه المصدر': 'supplier', 'source': 'supplier', 'brand': 'supplier',
-        'ifra': 'ifra_limit', 'ifra limit': 'ifra_limit',
-        'سعر': 'purchase_price', 'price': 'purchase_price', 'سعر الشراء': 'purchase_price',
-        'كمية': 'purchase_quantity', 'quantity': 'purchase_quantity', 'الكمية المشتراه': 'purchase_quantity', 'الكمية': 'purchase_quantity',
-        'odor': 'odor_description', 'تدرج': 'odor_description', 'رائحة': 'odor_description',
-        'تدرج الرائحة': 'odor_description', 'وصف': 'odor_description', 'description': 'odor_description',
-        'notes': 'notes', 'ملاحظات': 'notes', 'synonyms': 'notes',
-        'flash': 'flash_point', 'color': 'color', 'اللون': 'color',
-        'strength': 'notes', 'vapore': 'notes',
-    };
-    // Exact match
-    if (guessMap[h]) return guessMap[h];
-    // Partial match
-    for (const [key, val] of Object.entries(guessMap)) {
-        if (h.includes(key)) return val;
+
+    // Ordered list — earlier/more-specific entries win over generic ones.
+    // Each pair is [needle, system_field]; the needle is matched as exact first, then as substring.
+    const guessPairs = [
+        // price per gram (must come BEFORE generic "سعر" → purchase_price)
+        ['price per gram', 'price_per_gram'],
+        ['price/gram', 'price_per_gram'],
+        ['سعر الجرام', 'price_per_gram'],
+        ['سعر الغرام', 'price_per_gram'],
+        ['سعر القرام', 'price_per_gram'],  // user's spelling variant
+        ['سعر قرام', 'price_per_gram'],
+        ['ppg', 'price_per_gram'],
+
+        // name + CAS
+        ['name', 'name'], ['اسم', 'name'], ['الاسم', 'name'], ['material', 'name'],
+        ['cas number', 'cas_number'], ['cas', 'cas_number'],
+
+        // family / classification
+        ['العائلة', 'family'], ['العائله', 'family'],
+        ['family', 'family'], ['olfactive', 'family'], ['التصنيف', 'family'],
+
+        // profile (top/heart/base)
+        ['top/heart/base', 'profile'], ['profile', 'profile'],
+        ['الموقع', 'profile'], ['pyramid', 'profile'],
+
+        // supplier
+        ['الشركه المصدر', 'supplier'], ['الشركة المصدرة', 'supplier'],
+        ['supplier', 'supplier'], ['المورد', 'supplier'],
+        ['الشركه', 'supplier'], ['source', 'supplier'], ['brand', 'supplier'],
+
+        // IFRA
+        ['ifra limit', 'ifra_limit'], ['ifra', 'ifra_limit'],
+
+        // purchase price + quantity (after price-per-gram to avoid collision)
+        ['purchase price', 'purchase_price'],
+        ['سعر الشراء', 'purchase_price'], ['السعر', 'purchase_price'],
+        ['price', 'purchase_price'], ['سعر', 'purchase_price'],
+        ['الكمية المشتراه', 'purchase_quantity'], ['الكمية المشتراة', 'purchase_quantity'],
+        ['الكمية', 'purchase_quantity'], ['purchase quantity', 'purchase_quantity'],
+        ['quantity', 'purchase_quantity'], ['كمية', 'purchase_quantity'],
+
+        // odor description
+        ['odor description', 'odor_description'], ['تدرج الرائحة', 'odor_description'],
+        ['وصف الرائحة', 'odor_description'], ['odor', 'odor_description'],
+        ['تدرج', 'odor_description'], ['رائحة', 'odor_description'],
+        ['وصف', 'odor_description'], ['description', 'odor_description'],
+
+        // synonyms + lot + notes
+        ['synonyms', 'synonyms'], ['مرادفات', 'synonyms'],
+        ['lot', 'lot'], ['batch', 'lot'],
+        ['notes', 'notes'], ['ملاحظات', 'notes'],
+
+        // physical
+        ['flash point', 'flash_point'], ['flash', 'flash_point'],
+        ['specific gravity', 'specific_gravity'], ['الكثافة', 'specific_gravity'],
+        ['color', 'color'], ['اللون', 'color'],
+        ['appearance', 'appearance'], ['المظهر', 'appearance'],
+        ['physical state', 'physical_state'], ['الحالة الفيزيائية', 'physical_state'], ['الحالة', 'physical_state'],
+        ['melting point', 'melting_point'], ['درجة الانصهار', 'melting_point'],
+        ['boiling point', 'boiling_point'], ['درجة الغليان', 'boiling_point'],
+        ['refractive index', 'refractive_index'], ['معامل الانكسار', 'refractive_index'],
+        ['solubility', 'solubility'], ['الذوبان', 'solubility'],
+        ['vapor density', 'vapor_density'], ['كثافة البخار', 'vapor_density'],
+        ['vapor pressure', 'vapor_pressure'], ['vapore pr', 'vapor_pressure'], ['ضغط البخار', 'vapor_pressure'],
+        ['ph', 'ph'],
+
+        // classification tags
+        ['strength odor', 'strength_odor'], ['strength', 'strength_odor'],
+        ['درجة الشم الموصى بها', 'recommended_smell_pct'],
+        ['recommended smell', 'recommended_smell_pct'],
+        ['effect', 'effect'], ['التأثير', 'effect'],
+
+        // properties
+        ['properties', 'properties'], ['خصائص', 'properties'], ['الخصائص', 'properties'],
+
+        // stock
+        ['in stock', 'in_stock'], ['stock', 'in_stock'], ['المخزون', 'in_stock'], ['الرصيد', 'in_stock'],
+
+        // Arabic name
+        ['الاسم العربي', 'name_ar'], ['arabic name', 'name_ar'],
+    ];
+
+    // Exact match first (preserves order — first hit wins)
+    for (const [needle, val] of guessPairs) {
+        if (h === needle) return val;
+    }
+    // Substring match
+    for (const [needle, val] of guessPairs) {
+        if (h.includes(needle)) return val;
     }
     return '';
 }
@@ -411,10 +478,17 @@ function runPreview() {
         const cols = Object.values(mapping);
         const colLabels = {
             name: 'الاسم', name_ar: 'العربي', cas_number: 'CAS', family: 'العائلة',
-            profile: 'الموقع', supplier: 'المورد', ifra_limit: 'IFRA', purchase_price: 'السعر',
-            purchase_quantity: 'الكمية', odor_description: 'الرائحة', notes: 'ملاحظات',
+            profile: 'الموقع', supplier: 'المورد', ifra_limit: 'IFRA',
+            purchase_price: 'السعر', purchase_quantity: 'الكمية', price_per_gram: 'سعر الجرام',
+            odor_description: 'الرائحة', notes: 'ملاحظات',
             flash_point: 'Flash', specific_gravity: 'SG', color: 'اللون',
-            appearance: 'المظهر', physical_state: 'الحالة'
+            appearance: 'المظهر', physical_state: 'الحالة',
+            synonyms: 'Synonyms', lot: 'Lot', strength_odor: 'قوة الرائحة',
+            vapor_pressure: 'Vapor Pr.', effect: 'Effect',
+            recommended_smell_pct: 'درجة الشم %', properties: 'خصائص', in_stock: 'In Stock',
+            melting_point: 'Melting', boiling_point: 'Boiling',
+            refractive_index: 'Refractive', solubility: 'Solubility',
+            vapor_density: 'Vapor Density', ph: 'pH'
         };
 
         // Stats
