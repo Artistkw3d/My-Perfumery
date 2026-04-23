@@ -7,7 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-@page { size: A4; margin: 12mm; }
+@page { size: A4; margin: 8mm; }
 
 html, body {
     margin: 0; padding: 0;
@@ -34,12 +34,12 @@ html, body {
 
 .sheet {
     width: 210mm; min-height: 297mm;
-    margin: 18px auto; padding: 12mm;
+    margin: 18px auto; padding: 10mm;
     background: #fff;
     box-shadow: 0 4px 18px rgba(0,0,0,0.12);
     box-sizing: border-box;
-    font-size: 9pt;
-    line-height: 1.45;
+    font-size: 8.8pt;
+    line-height: 1.4;
 }
 
 h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
@@ -49,10 +49,10 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
 .p-head {
     display: flex; align-items: flex-end; justify-content: space-between;
     border-bottom: 1.5px solid #5c4a32;
-    padding-bottom: 6px; margin-bottom: 10px;
+    padding-bottom: 4px; margin-bottom: 7px;
     gap: 12px;
 }
-.p-head .title-group h1 { font-size: 18pt; color: #3d2e1e; letter-spacing: 0.2px; }
+.p-head .title-group h1 { font-size: 15pt; color: #3d2e1e; letter-spacing: 0.2px; }
 .p-head .title-group .sub { color: #6b5a47; font-size: 9pt; margin-top: 2px; }
 .p-head .brand-col { text-align: left; }
 .p-head .brand-col .brand { font-weight: 800; font-size: 10pt; color: #3d2e1e; }
@@ -67,19 +67,19 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
 .sp-draft   { background: #eee8dc; color: #6b5a47; border: 1px solid #d4c7a8; }
 
 /* Stats */
-.p-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
+.p-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 7px; }
 .p-stat {
-    border: 1px solid #d4c7a8; border-radius: 6px;
-    padding: 6px 8px; text-align: center; background: #fdfbf7;
+    border: 1px solid #d4c7a8; border-radius: 5px;
+    padding: 4px 6px; text-align: center; background: #fdfbf7;
 }
-.p-stat .lbl { font-size: 7pt; color: #6b5a47; text-transform: uppercase; letter-spacing: 0.4px; }
-.p-stat .val { font-size: 12pt; font-weight: 800; color: #3d2e1e; margin-top: 2px; }
+.p-stat .lbl { font-size: 6.5pt; color: #6b5a47; text-transform: uppercase; letter-spacing: 0.3px; }
+.p-stat .val { font-size: 11pt; font-weight: 800; color: #3d2e1e; margin-top: 1px; }
 
 /* Section titles */
 .p-section-title {
-    font-size: 10pt; font-weight: 800; color: #3d2e1e;
-    border-right: 3px solid #b8956a; padding-right: 8px;
-    margin: 12px 0 6px;
+    font-size: 9.5pt; font-weight: 800; color: #3d2e1e;
+    border-right: 3px solid #b8956a; padding-right: 7px;
+    margin: 8px 0 4px;
     display: flex; align-items: center; gap: 6px;
 }
 .p-section-title i { color: #b8956a; }
@@ -91,7 +91,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
 .p-ing tr { page-break-inside: avoid; page-break-after: auto; }
 .p-ing th, .p-ing td {
     border: 1px solid #d4c7a8;
-    padding: 4px 6px; text-align: right;
+    padding: 3px 5px; text-align: right;
     vertical-align: middle;
 }
 .p-ing th { background: #f5efe4; color: #3d2e1e; font-weight: 700; font-size: 8pt; }
@@ -108,74 +108,75 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
 /* Two-column row */
 .p-row-2 {
     display: grid; grid-template-columns: 1fr 1fr;
-    gap: 10px; margin-top: 10px;
+    gap: 8px; margin-top: 6px;
     page-break-inside: avoid;
 }
 .p-row-2.single { grid-template-columns: 1fr; }
 .p-panel {
-    border: 1px solid #d4c7a8; border-radius: 6px;
-    padding: 8px 10px; background: #fdfbf7;
+    border: 1px solid #d4c7a8; border-radius: 5px;
+    padding: 6px 8px; background: #fdfbf7;
 }
 .p-panel-title {
-    font-size: 8.5pt; color: #6b5a47; text-transform: uppercase; letter-spacing: 0.5px;
-    font-weight: 700; margin-bottom: 6px;
+    font-size: 8pt; color: #6b5a47; text-transform: uppercase; letter-spacing: 0.4px;
+    font-weight: 700; margin-bottom: 4px;
     display: flex; align-items: center; gap: 5px;
 }
 .p-panel-title i { color: #b8956a; }
 
 /* IFRA big */
-.ifra-big { text-align: center; padding: 10px 6px 6px; }
-.ifra-big .cat-line { font-size: 8pt; color: #6b5a47; margin-bottom: 4px; }
+.ifra-big { text-align: center; padding: 4px 4px 2px; }
+.ifra-big .cat-line { font-size: 7.5pt; color: #6b5a47; margin-bottom: 2px; }
 .ifra-big .cat-line b { color: #3d2e1e; }
 .ifra-big .e3-value {
-    font-size: 32pt; font-weight: 800; color: #5c4a32;
+    font-size: 24pt; font-weight: 800; color: #5c4a32;
     line-height: 1; letter-spacing: -0.5px;
 }
-.ifra-big .e3-value .pct { font-size: 14pt; color: #b8956a; margin-right: 2px; }
-.ifra-big .e3-label { font-size: 8pt; color: #9a8a77; margin-top: 4px; }
+.ifra-big .e3-value .pct { font-size: 12pt; color: #b8956a; margin-right: 2px; }
+.ifra-big .e3-label { font-size: 7.5pt; color: #9a8a77; margin-top: 3px; }
 .ifra-legend {
-    font-size: 7.5pt; color: #6b5a47;
-    border-top: 1px dashed #d4c7a8; margin-top: 8px; padding-top: 6px;
-    line-height: 1.6;
+    font-size: 7pt; color: #6b5a47;
+    border-top: 1px dashed #d4c7a8; margin-top: 5px; padding-top: 4px;
+    line-height: 1.45;
 }
-.ifra-legend .row { display: flex; gap: 8px; }
-.ifra-legend .k { color: #9a8a77; min-width: 22px; font-weight: 600; }
+.ifra-legend .row { display: flex; gap: 6px; }
+.ifra-legend .k { color: #9a8a77; min-width: 20px; font-weight: 600; }
 
-/* Chart */
-.chart-wrap { width: 100%; max-width: 220px; aspect-ratio: 1/1; margin: 0 auto; position: relative; }
-.chart-caption { text-align: center; font-size: 7.5pt; color: #9a8a77; margin-top: 4px; }
+/* Chart — fixed pixel size, no responsive (reliable in print / across DPRs) */
+.chart-wrap { width: 200px; height: 200px; margin: 0 auto; position: relative; }
+.chart-wrap canvas { width: 200px !important; height: 200px !important; }
+.chart-caption { text-align: center; font-size: 7pt; color: #9a8a77; margin-top: 2px; }
 
 /* Review */
 .review-grid {
     display: grid; grid-template-columns: repeat(3, 1fr);
-    gap: 4px 12px; font-size: 8.5pt;
+    gap: 2px 10px; font-size: 8pt;
 }
-.review-grid .rv { display: flex; gap: 6px; padding: 3px 0; border-bottom: 1px dotted #e6dfd2; }
-.review-grid .rv .k { color: #9a8a77; min-width: 70px; font-weight: 500; }
+.review-grid .rv { display: flex; gap: 5px; padding: 2px 0; border-bottom: 1px dotted #e6dfd2; }
+.review-grid .rv .k { color: #9a8a77; min-width: 65px; font-weight: 500; }
 .review-grid .rv .v { color: #3d2e1e; font-weight: 600; }
 .review-notes {
-    margin-top: 6px; padding: 6px 8px;
+    margin-top: 4px; padding: 5px 7px;
     background: #faf7f1; border-right: 2px solid #b8956a;
-    font-size: 8.5pt; color: #3d2e1e; border-radius: 3px;
+    font-size: 8pt; color: #3d2e1e; border-radius: 3px;
     white-space: pre-wrap;
 }
 
 /* Notes */
 .note-item {
-    border: 1px solid #d4c7a8; border-radius: 5px;
-    padding: 6px 8px; margin-bottom: 5px; background: #fdfbf7;
-    page-break-inside: avoid; font-size: 8.5pt;
+    border: 1px solid #d4c7a8; border-radius: 4px;
+    padding: 4px 7px; margin-bottom: 3px; background: #fdfbf7;
+    page-break-inside: avoid; font-size: 8pt;
 }
-.note-item h6 { font-size: 9pt; color: #3d2e1e; margin-bottom: 2px; }
-.note-item .note-meta { font-size: 7pt; color: #9a8a77; margin-bottom: 3px; }
-.note-item .note-body { color: #3d2e1e; line-height: 1.5; white-space: pre-wrap; }
+.note-item h6 { font-size: 8.5pt; color: #3d2e1e; margin-bottom: 1px; }
+.note-item .note-meta { font-size: 6.5pt; color: #9a8a77; margin-bottom: 2px; }
+.note-item .note-body { color: #3d2e1e; line-height: 1.4; white-space: pre-wrap; }
 
 /* Footer */
 .p-foot {
-    margin-top: 14px; padding-top: 6px;
+    margin-top: 8px; padding-top: 4px;
     border-top: 1px solid #d4c7a8;
     display: flex; justify-content: space-between;
-    font-size: 7pt; color: #9a8a77;
+    font-size: 6.5pt; color: #9a8a77;
 }
 
 .empty-state {
@@ -400,14 +401,16 @@ function renderIfraAndOlfactive(data) {
     const profilePanel = hasProfile ? `
         <div class="p-panel">
             <div class="p-panel-title"><i class="bi bi-bullseye"></i> البروفايل العطري</div>
-            <div class="chart-wrap"><canvas id="pChart"></canvas></div>
+            <div class="chart-wrap"><canvas id="pChart" width="200" height="200"></canvas></div>
             <div class="chart-caption">حسب متوسط المكونات، 14 محوراً</div>
         </div>` : '';
 
     wrap.innerHTML = `<div class="p-row-2 ${hasIfra && hasProfile ? '' : 'single'}">${ifraPanel}${profilePanel}</div>`;
 
     if (hasProfile) {
-        new Chart(document.getElementById('pChart').getContext('2d'), {
+        const canvas = document.getElementById('pChart');
+        canvas.width = 200; canvas.height = 200;
+        new Chart(canvas.getContext('2d'), {
             type: 'polarArea',
             data: {
                 labels: AXES.map(a => a.icon + ' ' + a.label),
@@ -418,7 +421,9 @@ function renderIfraAndOlfactive(data) {
                 }]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, animation: false,
+                responsive: false, maintainAspectRatio: true, animation: false,
+                devicePixelRatio: 2,
+                layout: { padding: 4 },
                 plugins: { legend: { display: false }, tooltip: { enabled: false } },
                 scales: {
                     r: {
@@ -426,7 +431,7 @@ function renderIfraAndOlfactive(data) {
                         ticks: { display: false },
                         grid:       { color: 'rgba(139,115,85,0.15)' },
                         angleLines: { color: 'rgba(139,115,85,0.15)' },
-                        pointLabels:{ font: { size: 7, family: 'Tajawal' }, color: '#6b5a47' }
+                        pointLabels:{ font: { size: 8, family: 'Tajawal', weight: '600' }, color: '#5c4a32' }
                     }
                 }
             }
