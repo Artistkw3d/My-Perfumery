@@ -1195,6 +1195,32 @@ def formula_detail(id):
         return redirect('/formulas')
     return render_template('formula.html', formula=formula, materials=materials, ifra_categories=IFRA_CATEGORIES)
 
+@app.route('/formula/<int:id>/print')
+@login_required
+def formula_print(id):
+    conn = get_db()
+    formula = conn.execute("SELECT * FROM formulas WHERE id=?", (id,)).fetchone()
+    if not formula:
+        conn.close()
+        return redirect('/formulas')
+    notes = conn.execute(
+        "SELECT * FROM formula_notes WHERE formula_id=? ORDER BY created_at DESC",
+        (id,)
+    ).fetchall()
+    company = conn.execute("SELECT * FROM company_info WHERE id=1").fetchone()
+    conn.close()
+    cat_key = formula['ifra_category'] or 'cat4'
+    cat = next((c for c in IFRA_CATEGORIES if c['id'] == cat_key), None)
+    return render_template(
+        'formula_print.html',
+        formula=formula,
+        notes=notes,
+        company=company,
+        category_name=(cat['name'] if cat else ''),
+        category_desc=(cat['desc'] if cat else ''),
+        today=datetime.now().strftime('%Y-%m-%d')
+    )
+
 @app.route('/production')
 @login_required
 def production():
