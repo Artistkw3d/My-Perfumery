@@ -515,6 +515,9 @@
         <a href="/msds-generator?formula={{ formula.id }}" class="fh-btn" {% if formula.status != 'final' %}style="opacity:0.5;pointer-events:none;" title="متاح فقط بعد اعتماد التركيبة"{% endif %}>
             <i class="bi {% if formula.status == 'final' %}bi-file-medical{% else %}bi-lock{% endif %}"></i> MSDS
         </a>
+        <a href="/formula/{{ formula.id }}/print" class="fh-btn" target="_blank" title="فتح صفحة طباعة A4 (احفظ كـ PDF من مربع الحوار)">
+            <i class="bi bi-printer-fill"></i> طباعة PDF
+        </a>
         <a href="/formula/{{ formula.id }}/card" class="fh-btn"><i class="bi bi-card-heading"></i> بطاقة</a>
     </div>
 </div>

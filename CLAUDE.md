@@ -39,6 +39,13 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - IFRA certificate (`/api/ifra-certificate/<fid>`): per-category computed limit is capped at 100% (anything higher becomes "No Restriction"); Composition table lists only IFRA-regulated materials (CAS hit in `ifra_standards` or manual `ifra_limit > 0`)
 - MSDS report (`/api/msds/<fid>`): Section 3 lists only ingredients with GHS data (H/P codes, pictograms, or signal word); percentages remain computed from the full formula
 
+## Formula print / PDF export (`formula_print.html`, `GET /formula/<id>/print`)
+- Standalone A4-portrait print page opened in a new tab from the "طباعة PDF" button in the formula header (next to MSDS). The button is always available regardless of formula status — unlike IFRA/MSDS reports which are gated to Final.
+- `@page { size: A4; margin: 12mm }` + Tajawal font + no shadows/backgrounds on screen's print media. On-screen a yellow action bar shows "طباعة / حفظ PDF" (calls `window.print()`) and a "رجوع" link. Bar is hidden via `@media print`.
+- Page auto-invokes `window.print()` 700ms after ingredients finish loading (browser Save-as-PDF handles the conversion, no server-side PDF library).
+- Sections (empty ones are skipped): Header (name + status pill + IFRA category name + company brand + date) → 5-stat strip (ingredients / total weight / pure weight / active ratio J2 / total cost) → Ingredients table (9-col compact: #, material+CAS, C, E, F, G, I, L, cost) → IFRA-final (E3) big readout + Olfactive polar chart side-by-side (collapses to single panel if only one has data) → Review card (server-rendered with Arabic labels for gender/season/age) → Notes list. Over-limit L cells are styled red.
+- Client-side fetches `/api/formula/<id>/ingredients` (reuses the live IFRA calc + aggregate olfactive profile). `formula`, `notes`, `company`, and IFRA category label are passed server-side from the route.
+
 ## Formula Page Layout (`formula.html`)
 - 3-column grid on wide screens (>1500px): `[right sidebar (minmax 260-300px)] [main table (1fr)] [left side panel (minmax 300-340px)]`
   - Right sidebar: big highlighted "حد IFRA النهائي" (E3) readout, Olfactive Profile polar chart (240×240), Dilution key
