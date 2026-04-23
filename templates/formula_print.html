@@ -452,35 +452,13 @@ function escapeHtml(s) {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/**
- * Auto-shrink the whole sheet if content exceeds one A4 page.
- * Uses CSS `zoom` which affects both layout and rendering in Chromium
- * (so it works for both the preview and the actual print pagination).
- * Floor at 0.7 so the text never becomes unreadable — very extreme
- * formulas will just spill to a 2nd page rather than shrink illegibly.
- */
-function fitToPage() {
-    const sheet = document.getElementById('sheet');
-    const pxPerMm = sheet.getBoundingClientRect().width / 210;
-    // Target ≈ A4 height minus a tiny safety margin so printer rasterizers
-    // don't push content onto a 2nd page from a sub-mm rounding error.
-    const targetPx = 295 * pxPerMm;
-    const current = sheet.scrollHeight;
-    if (current > targetPx) {
-        const z = Math.max(0.7, targetPx / current);
-        sheet.style.zoom = z.toFixed(3);
-    }
-}
-
 fetch(`/api/formula/${FORMULA_ID}/ingredients`)
     .then(r => r.json())
     .then(data => {
         if (!data.success) throw new Error('failed');
         renderIngredients(data);
         renderIfraAndOlfactive(data);
-        // Let the chart + reflow settle, then shrink-to-fit and auto-print.
         setTimeout(() => {
-            fitToPage();
             if (!window.matchMedia('print').matches) window.print();
         }, 700);
     })
