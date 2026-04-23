@@ -28,7 +28,7 @@
 
 .nb-layout {
     display: grid;
-    grid-template-columns: 200px 300px minmax(0, 1fr);
+    grid-template-columns: 320px minmax(0, 1fr);
     gap: 12px;
     height: calc(100vh - 140px);
     min-height: 500px;
@@ -42,55 +42,68 @@
     flex-direction: column;
 }
 
-/* Category / tag side panel */
-.nb-side { padding: 14px 10px; overflow-y: auto; }
-.nb-side h6 {
-    font-size: 0.7rem;
-    letter-spacing: 1px;
-    color: var(--text-light);
-    font-weight: 700;
-    margin: 12px 10px 6px;
-    text-transform: uppercase;
-}
-.nb-side h6:first-child { margin-top: 0; }
-.nb-side .filter {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 8px 12px;
+/* Category chips (horizontal, compact) */
+.nb-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.nb-chip {
+    background: #faf9f7;
+    border: 1px solid var(--border);
     border-radius: 10px;
+    padding: 5px 9px;
+    font-size: 0.76rem;
     color: var(--text-mid);
     cursor: pointer;
-    font-size: 0.9rem;
-    border: 0;
-    background: transparent;
-    width: 100%;
-    text-align: right;
-    transition: background 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: inherit;
+    transition: all 0.15s;
 }
-.nb-side .filter:hover { background: var(--cream); color: var(--text-dark); }
-.nb-side .filter.active { background: var(--cream); color: var(--primary); font-weight: 700; }
-.nb-side .filter .count {
-    margin-right: auto;
+.nb-chip:hover { border-color: var(--gold); color: var(--text-dark); }
+.nb-chip.active { background: var(--cream); border-color: var(--primary); color: var(--primary); font-weight: 700; }
+.nb-chip .count {
+    font-size: 0.66rem;
     background: var(--sand);
     color: var(--text-mid);
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
     font-weight: 600;
+    margin-right: 2px;
 }
-.nb-side .tag-pill {
+.nb-chip.active .count { background: #fff; color: var(--primary); }
+
+/* Tags collapsible block pinned at the bottom of the left column */
+.nb-tags-block { border-top: 1px solid var(--border); background: #fdfbf7; }
+.nb-tags-toggle {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-mid);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+}
+.nb-tags-toggle:hover { color: var(--text-dark); }
+.nb-tags-toggle .chev { transition: transform 0.2s; }
+.nb-tags-block.open .nb-tags-toggle .chev { transform: rotate(180deg); }
+.nb-tags-box { display: none; padding: 0 10px 10px; flex-wrap: wrap; gap: 3px; max-height: 140px; overflow-y: auto; }
+.nb-tags-block.open .nb-tags-box { display: flex; }
+.tag-pill {
     display: inline-block;
     padding: 3px 10px;
     font-size: 0.72rem;
     border-radius: 12px;
-    margin: 2px 3px;
     background: var(--sand);
     color: var(--text-mid);
     cursor: pointer;
     border: 0;
+    font-family: inherit;
 }
-.nb-side .tag-pill.active { background: var(--gold); color: #fff; }
+.tag-pill.active { background: var(--gold); color: #fff; }
 
 /* List column */
 .nb-list-head {
@@ -272,11 +285,11 @@
 /* Olfactive profile section */
 .nb-profile-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-columns: minmax(0, 1fr) 300px;
     gap: 16px;
     align-items: start;
 }
-@media (max-width: 1280px) { .nb-profile-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1400px) { .nb-profile-grid { grid-template-columns: 1fr; } }
 
 .nb-axes {
     display: grid;
@@ -336,7 +349,7 @@
 .nb-chart-wrap {
     position: relative;
     width: 100%;
-    max-width: 320px;
+    max-width: 280px;
     aspect-ratio: 1 / 1;
     margin: 0 auto;
 }
@@ -383,7 +396,7 @@
 .nb-ct-hint b { color: var(--text-mid); }
 
 @media (max-width: 1100px) {
-    .nb-layout { grid-template-columns: 180px 280px minmax(0, 1fr); }
+    .nb-layout { grid-template-columns: 280px minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
     .nb-layout { grid-template-columns: 1fr; height: auto; }
@@ -402,27 +415,29 @@
 </div>
 
 <div class="nb-layout">
-    <aside class="nb-col nb-side">
-        <h6>الفئات</h6>
-        <button class="filter active" data-filter="all"><i class="bi bi-collection"></i> الكل <span class="count" id="nbCount-all">0</span></button>
-        <button class="filter" data-filter="story"><i class="bi bi-book"></i> قصص <span class="count" id="nbCount-story">0</span></button>
-        <button class="filter" data-filter="idea"><i class="bi bi-lightbulb"></i> أفكار <span class="count" id="nbCount-idea">0</span></button>
-        <button class="filter" data-filter="observation"><i class="bi bi-eye"></i> ملاحظات <span class="count" id="nbCount-observation">0</span></button>
-        <button class="filter" data-filter="log"><i class="bi bi-journal-text"></i> يوميات <span class="count" id="nbCount-log">0</span></button>
-
-        <h6>الوسوم</h6>
-        <div id="nbTagsBox"><span style="font-size:0.75rem;color:var(--text-light);padding:0 10px;">لا توجد وسوم بعد</span></div>
-    </aside>
-
-    <section class="nb-col">
+    <aside class="nb-col">
         <div class="nb-list-head">
             <div class="row-actions">
                 <input type="search" id="nbSearch" placeholder="ابحث في المذكرات…">
                 <button class="nb-btn-new" onclick="NB.newEntry()"><i class="bi bi-plus-lg"></i> جديدة</button>
             </div>
+            <div class="nb-chips">
+                <button class="nb-chip active" data-filter="all"><i class="bi bi-collection"></i> الكل <span class="count" id="nbCount-all">0</span></button>
+                <button class="nb-chip" data-filter="story"><i class="bi bi-book"></i> قصص <span class="count" id="nbCount-story">0</span></button>
+                <button class="nb-chip" data-filter="idea"><i class="bi bi-lightbulb"></i> أفكار <span class="count" id="nbCount-idea">0</span></button>
+                <button class="nb-chip" data-filter="observation"><i class="bi bi-eye"></i> ملاحظات <span class="count" id="nbCount-observation">0</span></button>
+                <button class="nb-chip" data-filter="log"><i class="bi bi-journal-text"></i> يوميات <span class="count" id="nbCount-log">0</span></button>
+            </div>
         </div>
         <div class="nb-list-body" id="nbList"></div>
-    </section>
+        <div class="nb-tags-block" id="nbTagsBlock">
+            <button class="nb-tags-toggle" onclick="document.getElementById('nbTagsBlock').classList.toggle('open')">
+                <span><i class="bi bi-tags"></i> الوسوم <span id="nbTagsCount" style="color:var(--text-light);font-weight:500;">(0)</span></span>
+                <i class="bi bi-chevron-up chev"></i>
+            </button>
+            <div class="nb-tags-box" id="nbTagsBox"></div>
+        </div>
+    </aside>
 
     <section class="nb-col nb-editor" id="nbEditor">
         <div class="nb-editor-empty">
@@ -548,8 +563,10 @@ const NB = (function() {
     function renderTags() {
         const tags = [...new Set(state.entries.flatMap(e => (e.tags || '').split(',').map(s => s.trim()).filter(Boolean)))].sort();
         const box = document.getElementById('nbTagsBox');
+        const count = document.getElementById('nbTagsCount');
+        if (count) count.textContent = '(' + tags.length + ')';
         if (tags.length === 0) {
-            box.innerHTML = '<span style="font-size:0.75rem;color:var(--text-light);padding:0 10px;">لا توجد وسوم بعد</span>';
+            box.innerHTML = '<span style="font-size:0.75rem;color:var(--text-light);padding:0 4px;">لا توجد وسوم بعد</span>';
             return;
         }
         box.innerHTML = tags.map(t =>
@@ -818,9 +835,9 @@ const NB = (function() {
 
     // Wire sidebar filters + search
     document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('.nb-side .filter[data-filter]').forEach(btn => {
+        document.querySelectorAll('.nb-chips .nb-chip[data-filter]').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.nb-side .filter[data-filter]').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.nb-chips .nb-chip[data-filter]').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 state.filter = btn.dataset.filter;
                 state.tag = null;
