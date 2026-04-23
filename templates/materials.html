@@ -296,8 +296,11 @@
                                 </div>
                                 <div class="col-md-4">
                                     <div class="mb-3">
-                                        <label class="form-label">IFRA Limit (%)</label>
-                                        <input type="number" name="ifra_limit" id="mat_ifra" class="form-control" step="0.001" min="0">
+                                        <label class="form-label">حد IFRA يدوي (%) <i class="bi bi-pencil-square" style="color:var(--gold);font-size:0.85rem;" title="قيمة مخصصة"></i></label>
+                                        <input type="number" name="ifra_limit" id="mat_ifra" class="form-control" step="0.001" min="0" placeholder="اتركه فارغاً لاستخدام IFRA القياسي">
+                                        <small class="form-text text-muted" style="font-size:0.72rem;line-height:1.4;display:block;margin-top:3px;">
+                                            عند التعبئة يتجاوز هذا القيمة الافتراضية من قاعدة IFRA. استعمله عند تحديث IFRA قبل ما يوصل للبرنامج، أو للمواد غير المُقنّنة.
+                                        </small>
                                     </div>
                                 </div>
                             </div>

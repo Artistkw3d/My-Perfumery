@@ -33,8 +33,12 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - 18 categories: cat1-cat4, cat5a-cat5d, cat6, cat7a-cat7b, cat8, cat9, cat10a-cat10b, cat11a-cat11b, cat12
 - Values: positive float = max %, 0 = prohibited, -1 = no restriction, NULL = not applicable
 - Formula ingredients calculation uses category-specific limits from `ifra_standards` table
-- Falls back to manual `ifra_limit` field in materials if no IFRA standard found by CAS
-- Per-ingredient `formula_ingredients.ifra_override` takes highest priority over both above
+- **IFRA limit lookup priority** (highest → lowest):
+  1. `formula_ingredients.ifra_override` — per-row override, always wins
+  2. `materials.ifra_limit` (> 0) — per-material manual value, overrides the CAS-based standards lookup. Use case: IFRA publishes an amendment before the local `ifra_standards` table is refreshed, or for materials not covered by IFRA standards at all. Label in materials form: "حد IFRA يدوي (%)"
+  3. IFRA standards table by CAS + category
+  4. IFRA contributions (constituents of naturals / Schiff bases)
+- (Until 2026-04-23 `materials.ifra_limit` was a fallback only — it's now a true override.)
 - Bulk reset endpoint (`action=reset_ifra` on `POST /api/formula/<fid>/ingredients`) clears all overrides for a formula
 - IFRA certificate (`/api/ifra-certificate/<fid>`): per-category computed limit is capped at 100% (anything higher becomes "No Restriction"); Composition table lists only IFRA-regulated materials (CAS hit in `ifra_standards` or manual `ifra_limit > 0`)
 - MSDS report (`/api/msds/<fid>`): Section 3 lists only ingredients with GHS data (H/P codes, pictograms, or signal word); percentages remain computed from the full formula
