@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """My Perfumery v3 - نظام إدارة التركيبات العطرية مع MSDS و IFRA"""
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, make_response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, make_response, Response
 import sqlite3
 import os
 import sys
@@ -44,6 +44,7 @@ app = Flask(
     static_folder=os.path.join(ASSET_DIR, 'static'),
 )
 app.secret_key = 'perfume_vault_2024_v3'
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB cap for uploads (MSDS PDFs, photos)
 
 DB_PATH = os.path.join(USER_DIR, 'database', 'perfume.db')
 BACKUP_DIR = os.path.join(USER_DIR, 'database', 'backups')
@@ -621,6 +622,17 @@ def init_db():
         cas_number TEXT,
         ifra_standard_id INTEGER,
         FOREIGN KEY (ifra_standard_id) REFERENCES ifra_standards(id)
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS material_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        material_id INTEGER NOT NULL,
+        filename TEXT NOT NULL,
+        mime_type TEXT,
+        size INTEGER,
+        content BLOB,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
     )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS material_msds (
@@ -2349,6 +2361,7 @@ def api_materials():
                 return jsonify({'success': False, 'message': f'مستخدمة في {used} تركيبة'})
             conn.execute("DELETE FROM material_msds WHERE material_id=?", (id,))
             conn.execute("DELETE FROM material_olfactive WHERE material_id=?", (id,))
+            conn.execute("DELETE FROM material_files WHERE material_id=?", (id,))
             conn.execute("DELETE FROM materials WHERE id=?", (id,))
             conn.commit()
             conn.close()
@@ -2368,6 +2381,7 @@ def api_materials():
                 placeholders = ','.join('?' * len(unused_ids))
                 conn.execute(f"DELETE FROM material_msds WHERE material_id IN ({placeholders})", unused_ids)
                 conn.execute(f"DELETE FROM material_olfactive WHERE material_id IN ({placeholders})", unused_ids)
+                conn.execute(f"DELETE FROM material_files WHERE material_id IN ({placeholders})", unused_ids)
                 conn.execute(f"DELETE FROM materials WHERE id IN ({placeholders})", unused_ids)
                 conn.commit()
             conn.close()
@@ -2378,6 +2392,78 @@ def api_materials():
     
     conn.close()
     return jsonify({'success': False})
+
+# ===== ملفات المواد (PDFs / صور / مستندات) =====
+@app.route('/api/materials/<int:mid>/files', methods=['GET', 'POST'])
+@login_required
+def api_material_files(mid):
+    """قائمة/رفع/حذف الملفات المرفقة بمادة معيّنة."""
+    conn = get_db()
+
+    if request.method == 'GET':
+        rows = conn.execute('''
+            SELECT id, filename, mime_type, size, uploaded_at
+            FROM material_files WHERE material_id=?
+            ORDER BY uploaded_at DESC
+        ''', (mid,)).fetchall()
+        conn.close()
+        return jsonify({'success': True, 'data': [dict(r) for r in rows]})
+
+    action = request.form.get('action', 'upload')
+
+    if action == 'upload':
+        uploaded = request.files.getlist('file')
+        if not uploaded:
+            conn.close()
+            return jsonify({'success': False, 'message': 'لم يتم اختيار أي ملف'})
+        saved = 0
+        for f in uploaded:
+            if not f or not f.filename:
+                continue
+            content = f.read()
+            if not content:
+                continue
+            conn.execute('''
+                INSERT INTO material_files (material_id, filename, mime_type, size, content)
+                VALUES (?,?,?,?,?)
+            ''', (mid, f.filename, (f.mimetype or 'application/octet-stream'), len(content), content))
+            saved += 1
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': f'تم رفع {saved} ملف', 'count': saved})
+
+    if action == 'delete':
+        fid = request.form.get('id')
+        conn.execute("DELETE FROM material_files WHERE id=? AND material_id=?", (fid, mid))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'تم الحذف'})
+
+    conn.close()
+    return jsonify({'success': False, 'message': 'إجراء غير معروف'}), 400
+
+@app.route('/api/materials/<int:mid>/files/<int:fid>')
+@login_required
+def api_material_file_serve(mid, fid):
+    """يرجع محتوى الملف للعرض / التنزيل."""
+    conn = get_db()
+    row = conn.execute('''
+        SELECT filename, mime_type, content FROM material_files
+        WHERE id=? AND material_id=?
+    ''', (fid, mid)).fetchone()
+    conn.close()
+    if not row:
+        return 'Not found', 404
+    inline = request.args.get('inline') == '1'
+    mime = row['mime_type'] or 'application/octet-stream'
+    disp = 'inline' if inline else 'attachment'
+    # ASCII-safe filename for Content-Disposition + UTF-8 fallback via filename*
+    import urllib.parse
+    safe_name = (row['filename'] or 'file').encode('ascii', 'ignore').decode('ascii') or 'file'
+    utf8_name = urllib.parse.quote(row['filename'] or 'file')
+    resp = Response(row['content'], mimetype=mime)
+    resp.headers['Content-Disposition'] = f'{disp}; filename="{safe_name}"; filename*=UTF-8\'\'{utf8_name}'
+    return resp
 
 # ===== API التصنيف العطري التلقائي =====
 @app.route('/api/olfactive/auto-classify', methods=['POST'])
@@ -3671,6 +3757,7 @@ IMPORT_FIELDS = [
     {'key': 'ifra_limit', 'label': 'IFRA Limit (%)', 'required': False},
     {'key': 'purchase_price', 'label': 'سعر الشراء', 'required': False},
     {'key': 'purchase_quantity', 'label': 'الكمية المشتراه', 'required': False},
+    {'key': 'price_per_gram', 'label': 'سعر الجرام (القرام)', 'required': False},
     {'key': 'odor_description', 'label': 'وصف الرائحة', 'required': False},
     {'key': 'notes', 'label': 'ملاحظات', 'required': False},
     {'key': 'flash_point', 'label': 'Flash Point', 'required': False},
@@ -4007,7 +4094,7 @@ def api_import_execute():
                     supplier_id = cur.lastrowid
                     suppliers[supplier_text.lower()] = supplier_id
 
-            # حساب السعر
+            # حساب السعر — احترم سعر الجرام إذا زوّده المستخدم مباشرة في الملف
             price = 0
             qty = 1
             try:
@@ -4016,7 +4103,14 @@ def api_import_execute():
             try:
                 qty = float(item.get('purchase_quantity', 1) or 1)
             except: pass
-            ppg = price / qty if qty > 0 else 0
+            ppg = 0
+            raw_ppg = (item.get('price_per_gram', '') or '').strip()
+            if raw_ppg:
+                try:
+                    ppg = float(raw_ppg)
+                except: pass
+            if ppg <= 0:
+                ppg = price / qty if qty > 0 else 0
 
             # Profile
             profile = item.get('profile', '').strip()

@@ -36,11 +36,21 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - **IFRA limit lookup priority** (highest → lowest):
   1. `formula_ingredients.ifra_override` — per-row override, always wins
   2. `materials.manual_ifra_cats[cat_key]` — per-category manual value, edited via the "IFRA يدوي" tab in the materials modal. Stored as a JSON dict on the materials row (e.g. `{"cat4": 2.5, "cat8": 0.1}`).
-  3. `materials.ifra_limit` (> 0) — blanket manual value applied to any category not listed in `manual_ifra_cats`. Edited in the same tab as "حد IFRA عام (%)"
+  3. `materials.ifra_limit` (> 0) — legacy blanket value. The UI input was removed on 2026-04-23; a hidden form field preserves existing values on round-trip but new materials won't get this set.
   4. IFRA standards table by CAS + category
   5. IFRA contributions (constituents of naturals / Schiff bases)
 - Use case for the manual layers: IFRA publishes an amendment before the local `ifra_standards.xlsx` is refreshed, or a material isn't in IFRA standards at all.
-- Form plumbing: the materials modal has a dedicated **IFRA يدوي** tab next to the read-only **IFRA** tab. It holds the blanket `ifra_limit` input + a table of 18 per-category inputs (`manual_ifra_cat1` … `manual_ifra_cat12`). Submit collects them into `manual_cats_json` on the server side.
+- Form plumbing: the materials modal has a dedicated **IFRA يدوي** tab next to the read-only **IFRA** tab with a table of 18 per-category inputs (`manual_ifra_cat1` … `manual_ifra_cat12`). Submit collects them into a JSON blob in `materials.manual_ifra_cats`.
+
+## Material file attachments
+- Every material has a **الملفات** tab in the modal (right after IFRA يدوي). Users attach PDFs, images, Word/Excel docs, etc. up to 50 MB total per request.
+- Files are stored as BLOBs in a new table `material_files (id, material_id, filename, mime_type, size, content BLOB, uploaded_at)` with `ON DELETE CASCADE` style cleanup also firing in the material delete handlers (and delete_all_unused) since we don't enable SQLite foreign-key enforcement.
+- API: `GET/POST /api/materials/<mid>/files` (list + upload/delete via `action=upload|delete`), `GET /api/materials/<mid>/files/<fid>[?inline=1]` serves the BLOB with a proper `Content-Disposition` (UTF-8 filename support for Arabic filenames).
+- The Files tab is disabled (shows a "احفظ المادة أولاً" hint) until the material has an id — new-material flow must save first to get one. Image files get a 44×44 thumbnail, non-images show a typed Bootstrap-icon glyph.
+
+## Import (materials.xlsx)
+- Auto-guess field mapping was expanded on 2026-04-23 to cover all 31 system fields — previously many columns (Synonyms, Lot, Strength Odor, Vapor Pressure, Effect, خصائص, In Stock, سعر القرام/الجرام) fell through to "تجاهل" because their headers weren't recognised.
+- New system field `price_per_gram` (سعر الجرام (القرام)) is importable directly. If the user maps a "price per gram" column, it's used verbatim; otherwise `ppg = purchase_price / purchase_quantity` as before.
 - Bulk reset endpoint (`action=reset_ifra` on `POST /api/formula/<fid>/ingredients`) clears all overrides for a formula
 - IFRA certificate (`/api/ifra-certificate/<fid>`): per-category computed limit is capped at 100% (anything higher becomes "No Restriction"); Composition table lists only IFRA-regulated materials (CAS hit in `ifra_standards` or manual `ifra_limit > 0`)
 - MSDS report (`/api/msds/<fid>`): Section 3 lists only ingredients with GHS data (H/P codes, pictograms, or signal word); percentages remain computed from the full formula
