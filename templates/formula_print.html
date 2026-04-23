@@ -142,8 +142,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
 .ifra-legend .k { color: #9a8a77; min-width: 20px; font-weight: 600; }
 
 /* Chart — fixed pixel size, no responsive (reliable in print / across DPRs) */
-.chart-wrap { width: 200px; height: 200px; margin: 0 auto; position: relative; }
-.chart-wrap canvas { width: 200px !important; height: 200px !important; }
+.chart-wrap { width: 240px; height: 240px; margin: 0 auto; position: relative; }
+.chart-wrap canvas { width: 240px !important; height: 240px !important; }
 .chart-caption { text-align: center; font-size: 7pt; color: #9a8a77; margin-top: 2px; }
 
 /* Review */
@@ -401,7 +401,7 @@ function renderIfraAndOlfactive(data) {
     const profilePanel = hasProfile ? `
         <div class="p-panel">
             <div class="p-panel-title"><i class="bi bi-bullseye"></i> البروفايل العطري</div>
-            <div class="chart-wrap"><canvas id="pChart" width="200" height="200"></canvas></div>
+            <div class="chart-wrap"><canvas id="pChart" width="240" height="240"></canvas></div>
             <div class="chart-caption">حسب متوسط المكونات، 14 محوراً</div>
         </div>` : '';
 
@@ -409,13 +409,11 @@ function renderIfraAndOlfactive(data) {
 
     if (hasProfile) {
         const canvas = document.getElementById('pChart');
-        canvas.width = 200; canvas.height = 200;
+        canvas.width = 240; canvas.height = 240;
         const values = AXES.map(a => profile[a.k] || 0);
-        // Dynamic max so low-range profiles still fill the chart visibly
-        // (matches the live formula page; hardcoding suggestedMax=10 made
-        //  typical weighted profiles render as a tiny sliver.)
+        // Use max value directly so the largest wedge reaches 100% of radius.
+        // (Previously we used ceil(max * 1.3) which left 25% dead space.)
         const maxVal = Math.max(...values, 1);
-        const dynMax = Math.ceil(maxVal * 1.3);
         new Chart(canvas.getContext('2d'), {
             type: 'polarArea',
             data: {
@@ -429,15 +427,19 @@ function renderIfraAndOlfactive(data) {
             options: {
                 responsive: false, maintainAspectRatio: true, animation: false,
                 devicePixelRatio: 2,
-                layout: { padding: 4 },
                 plugins: { legend: { display: false }, tooltip: { enabled: false } },
                 scales: {
                     r: {
-                        min: 0, max: dynMax,
+                        min: 0, max: maxVal,
                         ticks: { display: false },
                         grid:       { color: 'rgba(139,115,85,0.15)' },
                         angleLines: { color: 'rgba(139,115,85,0.15)' },
-                        pointLabels:{ font: { size: 8, family: 'Tajawal', weight: '600' }, color: '#5c4a32' }
+                        pointLabels: {
+                            display: true,
+                            font: { size: 9, family: 'Tajawal', weight: 'bold' },
+                            color: '#5c4a32',
+                            padding: 4
+                        }
                     }
                 }
             }
