@@ -767,6 +767,7 @@ def init_db():
         ('materials', 'recommended_smell_pct', 'TEXT'),
         ('materials', 'properties', 'TEXT'),
         ('materials', 'in_stock', 'REAL DEFAULT 0'),
+        ('materials', 'manual_ifra_cats', 'TEXT'),
         ('material_msds', 'ghs_classification', 'TEXT'),
         ('families', 'icon', 'TEXT'),
         ('formula_ingredients', 'diluent', 'TEXT'),
@@ -1177,7 +1178,8 @@ def materials():
     conn.close()
     return render_template('materials.html', families=families, suppliers=suppliers,
                           h_codes=GHS_H_CODES, p_codes=GHS_P_CODES, pictograms=GHS_PICTOGRAMS,
-                          classifications=GHS_CLASSIFICATIONS, signal_words=GHS_SIGNAL_WORDS)
+                          classifications=GHS_CLASSIFICATIONS, signal_words=GHS_SIGNAL_WORDS,
+                          ifra_categories=IFRA_CATEGORIES)
 
 @app.route('/formulas')
 @login_required
@@ -2211,6 +2213,11 @@ def api_materials():
             if result and msds:
                 result['msds'] = dict(msds)
             if result:
+                # Parse manual_ifra_cats JSON into an object for the client
+                try:
+                    result['manual_ifra_cats'] = json.loads(result.get('manual_ifra_cats') or '{}') or {}
+                except Exception:
+                    result['manual_ifra_cats'] = {}
                 if olfactive:
                     result['olfactive'] = {cat: dict(olfactive).get(cat, 0) or 0 for cat in OLFACTIVE_CATEGORIES}
                 else:
@@ -2237,10 +2244,26 @@ def api_materials():
                 qty = float(request.form.get('purchase_quantity') or 1)
                 ppg = price / qty if qty > 0 else 0
                 name = request.form.get('name')
-                
+
+                # Collect per-category manual IFRA values into a JSON blob.
+                # Any field whose name starts with "manual_ifra_" and has a
+                # positive value goes into the dict; empty fields are dropped
+                # so the column stores only what the user actually overrode.
+                manual_cats = {}
+                for c in IFRA_CATEGORIES:
+                    raw = request.form.get(f"manual_ifra_{c['id']}", '').strip()
+                    if raw:
+                        try:
+                            val = float(raw)
+                            if val > 0:
+                                manual_cats[c['id']] = val
+                        except ValueError:
+                            pass
+                manual_cats_json = json.dumps(manual_cats) if manual_cats else None
+
                 if id and id != '':
                     conn.execute('''UPDATE materials SET name=?, name_ar=?, cas_number=?, family_id=?,
-                        profile=?, supplier_id=?, ifra_limit=?, purchase_price=?, purchase_quantity=?,
+                        profile=?, supplier_id=?, ifra_limit=?, manual_ifra_cats=?, purchase_price=?, purchase_quantity=?,
                         price_per_gram=?, odor_description=?, notes=?, flash_point=?, specific_gravity=?,
                         color=?, physical_state=?, ph=?, melting_point=?, boiling_point=?,
                         solubility=?, vapor_density=?, appearance=?, refractive_index=?,
@@ -2249,6 +2272,7 @@ def api_materials():
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
+                         manual_cats_json,
                          price, qty, ppg, request.form.get('odor_description'), request.form.get('notes'),
                          request.form.get('flash_point'), request.form.get('specific_gravity'),
                          request.form.get('color'), request.form.get('physical_state'),
@@ -2265,14 +2289,15 @@ def api_materials():
                     msg = 'تم التحديث'
                 else:
                     cur = conn.execute('''INSERT INTO materials (name, name_ar, cas_number, family_id, profile,
-                        supplier_id, ifra_limit, purchase_price, purchase_quantity, price_per_gram,
+                        supplier_id, ifra_limit, manual_ifra_cats, purchase_price, purchase_quantity, price_per_gram,
                         odor_description, notes, flash_point, specific_gravity, color, physical_state,
                         ph, melting_point, boiling_point, solubility, vapor_density, appearance, refractive_index,
                         synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
+                         manual_cats_json,
                          price, qty, ppg, request.form.get('odor_description'), request.form.get('notes'),
                          request.form.get('flash_point'), request.form.get('specific_gravity'),
                          request.form.get('color'), request.form.get('physical_state'),
@@ -2486,7 +2511,8 @@ def api_formula_ingredients(fid):
         cat_key = formula['ifra_category'] or 'cat4' if formula else 'cat4'
 
         data = conn.execute('''
-            SELECT fi.*, m.name, m.name_ar, m.cas_number, m.ifra_limit, m.price_per_gram, m.profile
+            SELECT fi.*, m.name, m.name_ar, m.cas_number, m.ifra_limit, m.manual_ifra_cats,
+                   m.price_per_gram, m.profile
             FROM formula_ingredients fi
             JOIN materials m ON fi.material_id = m.id
             WHERE fi.formula_id = ?
@@ -2519,19 +2545,35 @@ def api_formula_ingredients(fid):
             pure_pct = (pure_weight / total_pure) if total_pure > 0 else 0  # J (كنسبة 0-1)
 
             # F - IFRA limit lookup, priority order:
-            #   1. materials.ifra_limit (manual per-material) — user-set for
-            #      IFRA-update lag or for materials not covered by standards
-            #   2. IFRA standards table by CAS + category
-            #   3. IFRA contributions (derived from constituents of naturals)
+            #   1. manual_ifra_cats[cat_key]      — per-category manual value
+            #   2. materials.ifra_limit           — blanket manual (all cats)
+            #   3. IFRA standards table by CAS + category
+            #   4. IFRA contributions (derived from constituents of naturals)
             ifra_limit = 0
             ifra_std_name = None
             ifra_std_type = None
             cas = i['cas_number'] or ''
             ifra_contrib_name = None
 
+            # Per-category manual (JSON column on materials)
+            manual_cats_raw = i['manual_ifra_cats'] if 'manual_ifra_cats' in i.keys() else None
+            manual_cat_value = None
+            if manual_cats_raw:
+                try:
+                    manual_cats = json.loads(manual_cats_raw) or {}
+                    v = manual_cats.get(cat_key)
+                    if v is not None and v != '' and float(v) > 0:
+                        manual_cat_value = float(v)
+                except Exception:
+                    pass
+
             manual_mat_ifra = (i['ifra_limit'] or 0)
-            if manual_mat_ifra > 0:
-                # Manual material IFRA overrides the standards lookup.
+            if manual_cat_value is not None:
+                ifra_limit = manual_cat_value
+                ifra_std_name = f'Manual ({cat_key})'
+                ifra_std_type = 'manual_category'
+            elif manual_mat_ifra > 0:
+                # Blanket manual IFRA (all categories) overrides the standards lookup.
                 ifra_limit = manual_mat_ifra
                 ifra_std_name = 'Manual (material)'
                 ifra_std_type = 'manual_material'

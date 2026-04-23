@@ -35,10 +35,12 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - Formula ingredients calculation uses category-specific limits from `ifra_standards` table
 - **IFRA limit lookup priority** (highest → lowest):
   1. `formula_ingredients.ifra_override` — per-row override, always wins
-  2. `materials.ifra_limit` (> 0) — per-material manual value, overrides the CAS-based standards lookup. Use case: IFRA publishes an amendment before the local `ifra_standards` table is refreshed, or for materials not covered by IFRA standards at all. Label in materials form: "حد IFRA يدوي (%)"
-  3. IFRA standards table by CAS + category
-  4. IFRA contributions (constituents of naturals / Schiff bases)
-- (Until 2026-04-23 `materials.ifra_limit` was a fallback only — it's now a true override.)
+  2. `materials.manual_ifra_cats[cat_key]` — per-category manual value, edited via the "IFRA يدوي" tab in the materials modal. Stored as a JSON dict on the materials row (e.g. `{"cat4": 2.5, "cat8": 0.1}`).
+  3. `materials.ifra_limit` (> 0) — blanket manual value applied to any category not listed in `manual_ifra_cats`. Edited in the same tab as "حد IFRA عام (%)"
+  4. IFRA standards table by CAS + category
+  5. IFRA contributions (constituents of naturals / Schiff bases)
+- Use case for the manual layers: IFRA publishes an amendment before the local `ifra_standards.xlsx` is refreshed, or a material isn't in IFRA standards at all.
+- Form plumbing: the materials modal has a dedicated **IFRA يدوي** tab next to the read-only **IFRA** tab. It holds the blanket `ifra_limit` input + a table of 18 per-category inputs (`manual_ifra_cat1` … `manual_ifra_cat12`). Submit collects them into `manual_cats_json` on the server side.
 - Bulk reset endpoint (`action=reset_ifra` on `POST /api/formula/<fid>/ingredients`) clears all overrides for a formula
 - IFRA certificate (`/api/ifra-certificate/<fid>`): per-category computed limit is capped at 100% (anything higher becomes "No Restriction"); Composition table lists only IFRA-regulated materials (CAS hit in `ifra_standards` or manual `ifra_limit > 0`)
 - MSDS report (`/api/msds/<fid>`): Section 3 lists only ingredients with GHS data (H/P codes, pictograms, or signal word); percentages remain computed from the full formula

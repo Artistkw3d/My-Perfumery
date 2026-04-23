@@ -276,8 +276,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
 
     <!-- Footer -->
     <div class="p-foot">
-        <span>{{ (company and company.name) or 'My Perfumery' }}</span>
-        <span>تم التوليد في {{ today }} بواسطة My Perfumery v3</span>
+        <span>{{ (company and company.name) or 'My Perfumery' }} &bull; <b>{{ formula.name }}</b></span>
+        <span>تم التوليد في {{ today }}</span>
     </div>
 
 </div>
