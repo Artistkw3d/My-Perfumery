@@ -410,12 +410,18 @@ function renderIfraAndOlfactive(data) {
     if (hasProfile) {
         const canvas = document.getElementById('pChart');
         canvas.width = 200; canvas.height = 200;
+        const values = AXES.map(a => profile[a.k] || 0);
+        // Dynamic max so low-range profiles still fill the chart visibly
+        // (matches the live formula page; hardcoding suggestedMax=10 made
+        //  typical weighted profiles render as a tiny sliver.)
+        const maxVal = Math.max(...values, 1);
+        const dynMax = Math.ceil(maxVal * 1.3);
         new Chart(canvas.getContext('2d'), {
             type: 'polarArea',
             data: {
                 labels: AXES.map(a => a.icon + ' ' + a.label),
                 datasets: [{
-                    data: AXES.map(a => profile[a.k] || 0),
+                    data: values,
                     backgroundColor: AXES.map(a => a.color + 'cc'),
                     borderColor: '#fff', borderWidth: 1.5
                 }]
@@ -427,7 +433,7 @@ function renderIfraAndOlfactive(data) {
                 plugins: { legend: { display: false }, tooltip: { enabled: false } },
                 scales: {
                     r: {
-                        suggestedMax: 10,
+                        min: 0, max: dynMax,
                         ticks: { display: false },
                         grid:       { color: 'rgba(139,115,85,0.15)' },
                         angleLines: { color: 'rgba(139,115,85,0.15)' },
