@@ -155,12 +155,103 @@
             <button class="btn btn-outline-secondary btn-sm" onclick="setView('table')" id="btnTable"><i class="bi bi-list"></i></button>
         </div>
         <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="بحث..." onkeyup="filterMaterials()" style="width:220px;">
+        <button class="btn btn-outline-secondary btn-sm" onclick="toggleAdvFilter()" id="advFilterToggle" title="فلتر متقدم">
+            <i class="bi bi-funnel"></i> فلتر متقدم
+            <span id="advFilterCount" class="badge bg-warning text-dark" style="display:none;margin-right:4px;">0</span>
+        </button>
         <button class="btn btn-outline-danger btn-sm" onclick="deleteAllUnusedMaterials()" title="حذف كل المواد غير المستخدمة في أي تركيبة">
             <i class="bi bi-trash"></i> حذف غير المستخدمة
         </button>
         <button class="btn btn-primary btn-sm" onclick="showMaterialModal()">
             <i class="bi bi-plus-circle"></i> إضافة مادة
         </button>
+    </div>
+</div>
+
+<!-- Advanced filter panel (collapsed by default) -->
+<div id="advFilterPanel" class="card mb-3" style="display:none;border:1px solid var(--border,#e6dfd2);background:#fdfbf7;">
+    <div class="card-body" style="padding:14px 18px;">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label" style="font-size:0.78rem;font-weight:600;color:#6b5a47;">العائلة العطرية</label>
+                <select id="advFilterFamily" class="form-select form-select-sm" multiple size="4" onchange="applyAdvFilter()">
+                    {% for f in families %}
+                    <option value="{{ f.id }}">{{ f.icon }} {{ f.name_ar }}</option>
+                    {% endfor %}
+                </select>
+                <small class="text-muted" style="font-size:0.7rem;">Ctrl+click لاختيار عدة</small>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label" style="font-size:0.78rem;font-weight:600;color:#6b5a47;">الموقع في الهرم</label>
+                <div class="d-flex flex-column gap-1">
+                    <label class="form-check form-check-sm" style="font-size:0.82rem;">
+                        <input type="checkbox" class="form-check-input adv-profile" value="Top" onchange="applyAdvFilter()"> Top
+                    </label>
+                    <label class="form-check form-check-sm" style="font-size:0.82rem;">
+                        <input type="checkbox" class="form-check-input adv-profile" value="Heart" onchange="applyAdvFilter()"> Heart
+                    </label>
+                    <label class="form-check form-check-sm" style="font-size:0.82rem;">
+                        <input type="checkbox" class="form-check-input adv-profile" value="Base" onchange="applyAdvFilter()"> Base
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label" style="font-size:0.78rem;font-weight:600;color:#6b5a47;">المورد</label>
+                <select id="advFilterSupplier" class="form-select form-select-sm" onchange="applyAdvFilter()">
+                    <option value="">— الكل —</option>
+                    {% for s in suppliers %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label" style="font-size:0.78rem;font-weight:600;color:#6b5a47;">المخزون</label>
+                <select id="advFilterStock" class="form-select form-select-sm" onchange="applyAdvFilter()">
+                    <option value="">— الكل —</option>
+                    <option value="in">متوفّر فقط</option>
+                    <option value="out">غير متوفّر فقط</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" style="font-size:0.78rem;font-weight:600;color:#6b5a47;">سعر الجرام</label>
+                <div class="d-flex gap-1">
+                    <input type="number" id="advFilterPpgMin" class="form-control form-control-sm" placeholder="من" step="0.01" min="0" oninput="applyAdvFilter()">
+                    <input type="number" id="advFilterPpgMax" class="form-control form-control-sm" placeholder="إلى" step="0.01" min="0" oninput="applyAdvFilter()">
+                </div>
+            </div>
+        </div>
+        <div class="row g-3 mt-1">
+            <div class="col-md-3">
+                <label class="form-label" style="font-size:0.78rem;font-weight:600;color:#6b5a47;">IFRA</label>
+                <select id="advFilterIfra" class="form-select form-select-sm" onchange="applyAdvFilter()">
+                    <option value="">— الكل —</option>
+                    <option value="has">مقنّنة فقط</option>
+                    <option value="none">غير مقنّنة فقط</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" style="font-size:0.78rem;font-weight:600;color:#6b5a47;">نوع المادة</label>
+                <select id="advFilterMixture" class="form-select form-select-sm" onchange="applyAdvFilter()">
+                    <option value="">— الكل —</option>
+                    <option value="mix">خلطات فقط</option>
+                    <option value="atom">مفردة فقط</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" style="font-size:0.78rem;font-weight:600;color:#6b5a47;">CAS</label>
+                <select id="advFilterCas" class="form-select form-select-sm" onchange="applyAdvFilter()">
+                    <option value="">— الكل —</option>
+                    <option value="has">برقم CAS</option>
+                    <option value="none">بدون CAS</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button class="btn btn-outline-secondary btn-sm w-100" onclick="resetAdvFilter()">
+                    <i class="bi bi-x-circle"></i> مسح كل الفلاتر
+                </button>
+            </div>
+        </div>
+        <div id="advFilterChips" class="mt-3" style="display:none;"></div>
     </div>
 </div>
 
@@ -568,6 +659,27 @@
 
                         <!-- IFRA Tab -->
                         <div class="tab-pane fade" id="ifraTab">
+                            <!-- Composition-derived per-cat IFRA limits (only when material is a mixture) -->
+                            <div id="ifraDerivedSection" style="display:none;" class="mb-3">
+                                <div class="alert py-2 mb-2" style="background:#eef6f0;border:1px solid #b9d8c2;color:#2f5a3d;font-size:0.82rem;line-height:1.6;">
+                                    <i class="bi bi-diagram-3"></i>
+                                    <b>حدود IFRA المشتقة من التركيب.</b> هذه الحدود محسوبة آلياً من مكوّنات الخلطة. هي الحد الأقصى لاستخدام هذه الخلطة في تركيبة عطر للفئة المعنية، والمكوّن «الحاكم» مذكور أمام كل فئة.
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered align-middle" style="font-size:0.78rem;">
+                                        <thead>
+                                            <tr class="table-dark text-center">
+                                                <th style="width:80px;">الفئة</th>
+                                                <th>الوصف</th>
+                                                <th style="width:120px;">الحد المشتق %</th>
+                                                <th>المكوّن الحاكم</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ifra_derived_table"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
                             <div id="ifraNoData" class="text-center text-muted py-4">
                                 <i class="bi bi-shield-exclamation" style="font-size:2rem;"></i>
                                 <p class="mt-2">لا توجد بيانات IFRA لهذه المادة<br><small>يتم البحث تلقائياً عبر رقم CAS</small></p>
@@ -930,6 +1042,9 @@ function setView(view) {
 function renderView() {
     if (currentView === 'card') renderCards();
     else renderTable();
+    // Re-apply any active filters after a re-render so refresh / view-toggle
+    // doesn't lose the user's filter state.
+    if (typeof filterMaterials === 'function') filterMaterials();
 }
 
 // ===== Card View =====
@@ -944,7 +1059,7 @@ function renderCards() {
         const mixBadge = m.composition_count > 0
             ? `<span class="badge bg-success" style="font-size:0.62rem;margin-right:4px;" title="${m.composition_count} مكوّن"><i class="bi bi-diagram-3"></i> خليط</span>`
             : '';
-        return `<div class="mat-card" ondblclick="editMaterial(${m.id})">
+        return `<div class="mat-card" data-mat-id="${m.id}" ondblclick="editMaterial(${m.id})">
             <div class="mat-card-header">
                 <div>
                     <div class="mat-card-name">${mixBadge}${m.name}</div>
@@ -993,7 +1108,7 @@ function renderCards() {
 function renderTable() {
     const tbody = document.getElementById('materialsBody');
     tbody.innerHTML = materials.map(m => `
-        <tr>
+        <tr data-mat-id="${m.id}">
             <td><canvas class="mini-canvas-tbl" data-id="${m.id}" width="50" height="50"
                 onclick="showWheelDetail(${m.id})" style="cursor:pointer;"></canvas></td>
             <td>
@@ -1022,17 +1137,147 @@ function renderTable() {
     }, 50);
 }
 
-// ===== Filter =====
+// ===== Filter (search + advanced) =====
+function _matchesAdvFilter(m) {
+    // Family multi-select
+    const famSel = document.getElementById('advFilterFamily');
+    const famVals = famSel ? Array.from(famSel.selectedOptions).map(o => parseInt(o.value, 10)) : [];
+    if (famVals.length && !famVals.includes(m.family_id)) return false;
+    // Profile multi-select (checkboxes)
+    const profVals = Array.from(document.querySelectorAll('.adv-profile:checked')).map(c => c.value);
+    if (profVals.length && !profVals.includes(m.profile || 'Heart')) return false;
+    // Supplier
+    const sup = (document.getElementById('advFilterSupplier') || {}).value;
+    if (sup && parseInt(sup, 10) !== m.supplier_id) return false;
+    // Stock
+    const stock = (document.getElementById('advFilterStock') || {}).value;
+    if (stock === 'in'  && !((m.in_stock || 0) > 0)) return false;
+    if (stock === 'out' && ((m.in_stock || 0) > 0))  return false;
+    // ppg range
+    const ppg = m.price_per_gram || 0;
+    const ppgMin = parseFloat((document.getElementById('advFilterPpgMin') || {}).value || '');
+    const ppgMax = parseFloat((document.getElementById('advFilterPpgMax') || {}).value || '');
+    if (!isNaN(ppgMin) && ppg < ppgMin) return false;
+    if (!isNaN(ppgMax) && ppg > ppgMax) return false;
+    // IFRA presence (own ifra_limit OR any manual_ifra_cats value OR has CAS lookup hits — we treat ifra_limit as the proxy for "regulated")
+    const ifra = (document.getElementById('advFilterIfra') || {}).value;
+    if (ifra) {
+        const hasOwnIfra = (m.ifra_limit && m.ifra_limit > 0) || (m.manual_ifra_cats && Object.keys(m.manual_ifra_cats || {}).length > 0);
+        // Use cas_number presence as a soft proxy too — most CAS-bearing materials match an IFRA standard.
+        const hasIfra = hasOwnIfra || !!m.cas_number;
+        if (ifra === 'has'  && !hasIfra) return false;
+        if (ifra === 'none' && hasIfra)  return false;
+    }
+    // Mixture
+    const mix = (document.getElementById('advFilterMixture') || {}).value;
+    if (mix === 'mix'  && !((m.composition_count || 0) > 0)) return false;
+    if (mix === 'atom' && ((m.composition_count || 0) > 0))  return false;
+    // CAS presence
+    const cas = (document.getElementById('advFilterCas') || {}).value;
+    if (cas === 'has'  && !m.cas_number) return false;
+    if (cas === 'none' && m.cas_number)  return false;
+
+    return true;
+}
+
+function _matchesTextSearch(m, q) {
+    if (!q) return true;
+    const hay = [m.name, m.name_ar, m.cas_number, m.synonyms, m.odor_description,
+                 m.family_name, m.supplier_name, m.profile]
+                .filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+}
+
 function filterMaterials() {
-    const q = document.getElementById('searchInput').value.toLowerCase();
-    if (currentView === 'card') {
-        document.querySelectorAll('.mat-card').forEach(card => {
-            card.style.display = card.textContent.toLowerCase().includes(q) ? '' : 'none';
+    const q = (document.getElementById('searchInput').value || '').toLowerCase();
+    // Visit each card / row and show/hide based on combined search + advanced filters.
+    materials.forEach(m => {
+        const visible = _matchesTextSearch(m, q) && _matchesAdvFilter(m);
+        // Card view
+        document.querySelectorAll(`.mat-card[data-mat-id="${m.id}"]`).forEach(c => {
+            c.style.display = visible ? '' : 'none';
         });
-    } else {
-        document.querySelectorAll('#materialsBody tr').forEach(row => {
-            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        // Table view
+        document.querySelectorAll(`#materialsBody tr[data-mat-id="${m.id}"]`).forEach(r => {
+            r.style.display = visible ? '' : 'none';
         });
+    });
+    updateAdvFilterChips();
+}
+
+function toggleAdvFilter() {
+    const panel = document.getElementById('advFilterPanel');
+    const btn   = document.getElementById('advFilterToggle');
+    const open  = panel.style.display === 'none' || panel.style.display === '';
+    panel.style.display = open ? '' : 'none';
+    if (btn) btn.classList.toggle('active', open);
+}
+
+function applyAdvFilter() {
+    filterMaterials();
+}
+
+function resetAdvFilter() {
+    const famSel = document.getElementById('advFilterFamily');
+    if (famSel) Array.from(famSel.options).forEach(o => o.selected = false);
+    document.querySelectorAll('.adv-profile').forEach(c => { c.checked = false; });
+    ['advFilterSupplier','advFilterStock','advFilterIfra','advFilterMixture','advFilterCas','advFilterPpgMin','advFilterPpgMax']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    filterMaterials();
+}
+
+function updateAdvFilterChips() {
+    const chips = [];
+    const famSel = document.getElementById('advFilterFamily');
+    if (famSel) Array.from(famSel.selectedOptions).forEach(o => {
+        chips.push({label: 'عائلة: ' + o.textContent.trim(), clear: () => { o.selected = false; }});
+    });
+    document.querySelectorAll('.adv-profile:checked').forEach(c => {
+        chips.push({label: 'هرم: ' + c.value, clear: () => { c.checked = false; }});
+    });
+    const sup = document.getElementById('advFilterSupplier');
+    if (sup && sup.value) chips.push({label: 'مورد: ' + sup.options[sup.selectedIndex].text, clear: () => { sup.value = ''; }});
+    const stock = document.getElementById('advFilterStock');
+    if (stock && stock.value) chips.push({label: stock.options[stock.selectedIndex].text, clear: () => { stock.value = ''; }});
+    const ppgMin = document.getElementById('advFilterPpgMin');
+    if (ppgMin && ppgMin.value !== '') chips.push({label: 'سعر ≥ ' + ppgMin.value, clear: () => { ppgMin.value = ''; }});
+    const ppgMax = document.getElementById('advFilterPpgMax');
+    if (ppgMax && ppgMax.value !== '') chips.push({label: 'سعر ≤ ' + ppgMax.value, clear: () => { ppgMax.value = ''; }});
+    const ifra = document.getElementById('advFilterIfra');
+    if (ifra && ifra.value) chips.push({label: 'IFRA: ' + ifra.options[ifra.selectedIndex].text, clear: () => { ifra.value = ''; }});
+    const mix = document.getElementById('advFilterMixture');
+    if (mix && mix.value) chips.push({label: mix.options[mix.selectedIndex].text, clear: () => { mix.value = ''; }});
+    const cas = document.getElementById('advFilterCas');
+    if (cas && cas.value) chips.push({label: 'CAS: ' + cas.options[cas.selectedIndex].text, clear: () => { cas.value = ''; }});
+
+    const wrap  = document.getElementById('advFilterChips');
+    const count = document.getElementById('advFilterCount');
+    if (count) {
+        count.textContent = chips.length;
+        count.style.display = chips.length ? '' : 'none';
+    }
+    if (!wrap) return;
+    if (!chips.length) {
+        wrap.style.display = 'none';
+        wrap.innerHTML = '';
+        return;
+    }
+    wrap.style.display = '';
+    wrap.innerHTML = '<small style="color:#6b5a47;margin-left:8px;">الفلاتر النشطة:</small> ' +
+        chips.map((ch, i) => `
+            <span class="badge bg-warning text-dark" style="font-size:0.72rem;margin:2px;font-weight:500;">
+                ${escapeHtml(ch.label)}
+                <a href="javascript:void(0)" onclick="_clearAdvFilterChip(${i})" style="margin-right:4px;color:#5c4a32;text-decoration:none;font-weight:bold;">×</a>
+            </span>`).join('');
+    // Stash the clear callbacks on the wrapper for delegation
+    wrap._chips = chips;
+}
+
+function _clearAdvFilterChip(idx) {
+    const wrap = document.getElementById('advFilterChips');
+    if (wrap && wrap._chips && wrap._chips[idx]) {
+        wrap._chips[idx].clear();
+        filterMaterials();
     }
 }
 
@@ -1118,6 +1363,7 @@ function showMaterialModal() {
     resetOlfactive();
     toggleFilesTab(null);
     toggleCompositionTab(null);
+    populateDerivedIfraSection(null);
     modal.show();
 }
 
@@ -1433,6 +1679,7 @@ function editMaterial(id) {
                 setOlfactiveValues(m.olfactive || {});
                 // IFRA Standards
                 populateIfraTab(m.ifra_standard || null);
+                populateDerivedIfraSection(m.derived_ifra_limits || null);
                 modal.show();
             }
         });
@@ -1458,6 +1705,65 @@ const IFRA_CAT_INFO = [
     {id:'cat11b', name:'Cat 11B', desc:'Skin contact (UV)'},
     {id:'cat12', name:'Cat 12', desc:'No direct skin contact'},
 ];
+
+function populateDerivedIfraSection(derived) {
+    // derived is {cat_key: {limit, binding_name, binding_cas, prohibited}} or null.
+    // Renders the "محسوب من التركيب" table inside the IFRA tab and populates
+    // ghost placeholders inside each IFRA يدوي input so the user sees what
+    // value would apply if they don't override.
+    const sec = document.getElementById('ifraDerivedSection');
+    const tbody = document.getElementById('ifra_derived_table');
+    // Clear any prior placeholders on manual inputs first
+    document.querySelectorAll('[id^="manual_ifra_cat"]').forEach(el => {
+        el.placeholder = '—';
+        el.style.borderColor = '';
+    });
+    if (!derived || !Object.keys(derived).length) {
+        if (sec) sec.style.display = 'none';
+        if (tbody) tbody.innerHTML = '';
+        return;
+    }
+    if (sec) sec.style.display = '';
+    // When we have derived limits, the "no IFRA data" empty state is misleading
+    // (we DO have data — it just came from composition, not from CAS). Hide it.
+    const noData = document.getElementById('ifraNoData');
+    if (noData) noData.style.display = 'none';
+    // Render derived table inside the IFRA tab
+    if (tbody) {
+        tbody.innerHTML = IFRA_CAT_INFO.map(c => {
+            const d = derived[c.id];
+            if (!d) {
+                return `<tr>
+                    <td class="text-center"><code style="background:#f5efe4;color:#5c4a32;padding:2px 6px;border-radius:4px;">${c.id}</code></td>
+                    <td style="color:#6b5a47;">${c.desc}</td>
+                    <td class="text-center text-muted">—</td>
+                    <td class="text-muted">—</td>
+                </tr>`;
+            }
+            const isProhibited = d.prohibited || d.limit === 0;
+            const limTxt = isProhibited ? 'PROHIBITED' : (d.limit > 100 ? '> 100%' : d.limit + '%');
+            const cls = isProhibited ? 'text-danger fw-bold' : 'text-success fw-bold';
+            return `<tr>
+                <td class="text-center"><code style="background:#f5efe4;color:#5c4a32;padding:2px 6px;border-radius:4px;">${c.id}</code></td>
+                <td style="color:#6b5a47;">${c.desc}</td>
+                <td class="text-center ${cls}">${limTxt}</td>
+                <td><small>${escapeHtml(d.binding_name || '')}${d.binding_cas ? ' <code style="font-size:0.7rem;color:#9a8a77;">'+escapeHtml(d.binding_cas)+'</code>' : ''}</small></td>
+            </tr>`;
+        }).join('');
+    }
+    // Populate ghost placeholders on the manual inputs so users see what
+    // they would override.
+    Object.keys(derived).forEach(catKey => {
+        const el = document.getElementById('manual_ifra_' + catKey);
+        if (!el) return;
+        const d = derived[catKey];
+        if (d.prohibited || d.limit === 0) {
+            el.placeholder = '⛔ محظور';
+        } else {
+            el.placeholder = '→ ' + d.limit + ' (مشتق)';
+        }
+    });
+}
 
 function populateIfraTab(ifra) {
     const noData = document.getElementById('ifraNoData');

@@ -2263,6 +2263,10 @@ def api_materials():
                     ''', (result['cas_number'],)).fetchone()
                     if ifra_row:
                         result['ifra_standard'] = dict(ifra_row)
+                # Composition-derived per-category IFRA limits (only if mixture)
+                derived = _derive_mixture_ifra_limits(conn, int(mid))
+                if derived:
+                    result['derived_ifra_limits'] = derived
             conn.close()
             return jsonify({'success': True, 'data': result})
     
@@ -2552,6 +2556,128 @@ def _effective_ppg(conn, mat_id, own_ppg, depth=0, max_depth=5, visited=None):
         c_ppg = _effective_ppg(conn, r['id'], r['price_per_gram'] or 0, depth + 1, max_depth, visited)
         weighted += c_ppg * p / 100.0
     return weighted
+
+
+def _resolve_material_ifra_for_cat(conn, mat_id, cat_key, depth=0, max_depth=5, visited=None):
+    """Return the IFRA limit (% in formula) for a material in a given category,
+    using the same priority chain we use at ingredient time:
+      1. manual_ifra_cats[cat_key]
+      2. blanket ifra_limit
+      3. CAS lookup in ifra_standards
+      4. composition-derived (recursive — for nested mixtures)
+    Returns one of: positive float (limit %), 0 (prohibited), -1 (no restriction),
+    or None (not applicable / unknown)."""
+    if depth >= max_depth:
+        return None
+    if visited is None:
+        visited = set()
+    if mat_id in visited:
+        return None
+    visited = visited | {mat_id}
+
+    row = conn.execute("SELECT cas_number, ifra_limit, manual_ifra_cats FROM materials WHERE id=?", (mat_id,)).fetchone()
+    if not row:
+        return None
+
+    # 1. Per-category manual override
+    raw = row['manual_ifra_cats']
+    if raw:
+        try:
+            manual = json.loads(raw) or {}
+            v = manual.get(cat_key)
+            if v is not None and v != '':
+                vf = float(v)
+                if vf > 0:
+                    return vf
+        except Exception:
+            pass
+
+    # 2. Blanket manual ifra_limit
+    if row['ifra_limit'] and row['ifra_limit'] > 0:
+        return float(row['ifra_limit'])
+
+    # 3. CAS lookup in IFRA standards
+    cas = row['cas_number'] or ''
+    if cas:
+        std = conn.execute('''
+            SELECT s.* FROM ifra_standards s
+            JOIN ifra_cas_lookup l ON l.ifra_standard_id = s.id
+            WHERE l.cas_number = ?
+        ''', (cas,)).fetchone()
+        if std and std[cat_key] is not None:
+            return std[cat_key]  # may be -1, 0, or positive
+
+    # 4. Composition-derived (recurse into the material's own composition)
+    comp_rows = conn.execute('''
+        SELECT mc.component_material_id, mc.pct
+        FROM material_composition mc
+        WHERE mc.parent_material_id = ?
+    ''', (mat_id,)).fetchall()
+    if not comp_rows:
+        return None
+
+    min_derived = None
+    for cr in comp_rows:
+        c_pct = cr['pct'] or 0
+        if c_pct <= 0:
+            continue
+        sub = _resolve_material_ifra_for_cat(conn, cr['component_material_id'], cat_key, depth + 1, max_depth, visited)
+        if sub is None or sub == -1:
+            continue
+        if sub == 0:
+            return 0  # any prohibited component prohibits the whole mixture
+        derived = sub / (c_pct / 100.0)
+        if min_derived is None or derived < min_derived:
+            min_derived = derived
+    return min_derived
+
+
+def _derive_mixture_ifra_limits(conn, mat_id, max_depth=5):
+    """Compute the per-category derived IFRA limit for a mixture material,
+    based on its composition. Returns {cat_key: {limit, binding_name, binding_cas,
+    prohibited}} for each of the 18 categories. Empty dict if no composition."""
+    comp = conn.execute('''
+        SELECT mc.component_material_id, mc.pct, m.name, m.cas_number
+        FROM material_composition mc
+        JOIN materials m ON mc.component_material_id = m.id
+        WHERE mc.parent_material_id = ?
+    ''', (mat_id,)).fetchall()
+    if not comp:
+        return {}
+
+    derived = {}
+    for cat in IFRA_CATEGORIES:
+        ck = cat['id']
+        binding_limit = None  # mixture's max % in formula for this category
+        binding_name = None
+        binding_cas = None
+        prohibited = False
+        for cr in comp:
+            c_pct = cr['pct'] or 0
+            if c_pct <= 0:
+                continue
+            comp_limit = _resolve_material_ifra_for_cat(conn, cr['component_material_id'], ck, depth=1, max_depth=max_depth)
+            if comp_limit is None or comp_limit == -1:
+                continue
+            if comp_limit == 0:
+                prohibited = True
+                binding_name = cr['name']
+                binding_cas = cr['cas_number'] or ''
+                binding_limit = 0
+                break
+            d = comp_limit / (c_pct / 100.0)
+            if binding_limit is None or d < binding_limit:
+                binding_limit = d
+                binding_name = cr['name']
+                binding_cas = cr['cas_number'] or ''
+        if binding_limit is not None:
+            derived[ck] = {
+                'limit': round(binding_limit, 4) if binding_limit > 0 else 0,
+                'binding_name': binding_name,
+                'binding_cas': binding_cas,
+                'prohibited': prohibited,
+            }
+    return derived
 
 
 def _composition_descendants(conn, parent_id, max_depth=5):
@@ -2884,6 +3010,20 @@ def api_formula_ingredients(fid):
                         ifra_limit = round(min_derived, 6)
                         ifra_std_name = f"Contrib: {ifra_contrib_name}"
                         ifra_std_type = 'contribution'
+
+            # Composition-derived fallback (mixture / base / accord without its
+            # own IFRA limit). Runs for any material with composition rows when
+            # no manual / CAS / annex source set a limit. This makes E3 shrink
+            # when a hidden component inside the mixture is restricted.
+            if ifra_limit == 0 and ifra_std_name is None:
+                derived_for_cat = _resolve_material_ifra_for_cat(
+                    conn, i['material_id'], cat_key, depth=1)
+                if derived_for_cat is not None and derived_for_cat != -1:
+                    binding = _derive_mixture_ifra_limits(conn, i['material_id']).get(cat_key)
+                    if binding:
+                        ifra_limit = derived_for_cat if derived_for_cat > 0 else 0
+                        ifra_std_name = f"Mix: {binding['binding_name']}"
+                        ifra_std_type = 'composition'
 
             # Per-ingredient IFRA override (highest priority)
             ifra_override = i['ifra_override'] if 'ifra_override' in i.keys() and i['ifra_override'] is not None else None
