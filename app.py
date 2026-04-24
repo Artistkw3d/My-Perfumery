@@ -2629,6 +2629,11 @@ def _resolve_material_ifra_for_cat(conn, mat_id, cat_key, depth=0, max_depth=5, 
         derived = sub / (c_pct / 100.0)
         if min_derived is None or derived < min_derived:
             min_derived = derived
+    # A derived limit > 100% is meaningless (you can never use more than 100%
+    # of a mixture in a formula), so collapse it to IFRA's "No Restriction"
+    # sentinel (-1) for consistent handling downstream.
+    if min_derived is not None and min_derived > 100:
+        return -1
     return min_derived
 
 
@@ -2671,11 +2676,19 @@ def _derive_mixture_ifra_limits(conn, mat_id, max_depth=5):
                 binding_name = cr['name']
                 binding_cas = cr['cas_number'] or ''
         if binding_limit is not None:
+            # A derived limit > 100% in practice means no constraint (you can
+            # never use more than 100% of a mixture in a formula). Encode it
+            # as the No-Restriction sentinel so the UI can render "غير مقيّد".
+            if binding_limit > 100 and not prohibited:
+                limit_out = -1
+            else:
+                limit_out = round(binding_limit, 4) if binding_limit > 0 else 0
             derived[ck] = {
-                'limit': round(binding_limit, 4) if binding_limit > 0 else 0,
+                'limit': limit_out,
                 'binding_name': binding_name,
                 'binding_cas': binding_cas,
                 'prohibited': prohibited,
+                'no_restriction': (limit_out == -1),
             }
     return derived
 
@@ -3018,10 +3031,14 @@ def api_formula_ingredients(fid):
             if ifra_limit == 0 and ifra_std_name is None:
                 derived_for_cat = _resolve_material_ifra_for_cat(
                     conn, i['material_id'], cat_key, depth=1)
-                if derived_for_cat is not None and derived_for_cat != -1:
+                if derived_for_cat is not None:
                     binding = _derive_mixture_ifra_limits(conn, i['material_id']).get(cat_key)
                     if binding:
-                        ifra_limit = derived_for_cat if derived_for_cat > 0 else 0
+                        if derived_for_cat == -1:
+                            # Components exist but derived limit > 100% → effectively no restriction.
+                            ifra_limit = -1
+                        else:
+                            ifra_limit = derived_for_cat if derived_for_cat > 0 else 0
                         ifra_std_name = f"Mix: {binding['binding_name']}"
                         ifra_std_type = 'composition'
 
@@ -3072,12 +3089,12 @@ def api_formula_ingredients(fid):
                 'ifra_final_calc': ifra_final_calc
             })
         
-        # N3 = MIN(N) × 0.99 (حد IFRA للتصميم)
-        ifra_design_limit = min(n_values) * 0.99 if n_values else 0
-        
-        # E3 = MIN(L) × 0.99 (حد IFRA النهائي)
-        ifra_final_limit = min(l_values) * 0.99 if l_values else 0
-        
+        # NOTE: E3/N3 (ifra_design_limit, ifra_final_limit) are computed BELOW
+        # after the contribution_map is built — we fold cumulative CAS
+        # constraints into l_values/n_values first so the headline shrinks
+        # when the same regulated molecule shows up across multiple mixtures
+        # or naturals.
+
         # الآن نحدد التجاوز ونبني النتيجة النهائية
         result = []
         for t in temp_results:
@@ -3226,6 +3243,24 @@ def api_formula_ingredients(fid):
                         if cdata['total_pct'] > cat_val:
                             cdata['exceeded'] = True
 
+            # Fold cumulative CAS constraints into l_values/n_values so the
+            # headline E3/N3 reflects cross-ingredient exposure. Without this
+            # step, the formula could show a "green" E3 while iso-e-super (or
+            # any regulated molecule) is violated in aggregate across several
+            # mixtures / naturals — the per-ingredient L alone can't see the
+            # sum.
+            total = cdata['total_pct']
+            lim  = cdata.get('ifra_limit')
+            if total and total > 0:
+                if lim == 0:
+                    # Any presence of a prohibited constituent → forbid the formula.
+                    l_values.append(0)
+                    n_values.append(0)
+                elif lim is not None and lim > 0:
+                    cum_L = lim / (total / 100.0)
+                    l_values.append(cum_L)
+                    n_values.append(cum_L)
+
             if cdata['exceeded']:
                 if cdata['ifra_limit'] == 0:
                     contribution_warnings.append(f"⛔ {cdata['constituent_name']}: PROHIBITED in {cat_key}")
@@ -3233,6 +3268,12 @@ def api_formula_ingredients(fid):
                     contribution_warnings.append(f"⚠️ {cdata['constituent_name']}: {cdata['total_pct']:.4f}% exceeds IFRA limit {cdata['ifra_limit']}%")
 
             contribution_results.append(cdata)
+
+        # Compute headline E3 / N3 AFTER cumulative-contribution constraints
+        # have been folded into l_values / n_values. This is the last step
+        # so every path (per-row, composition-derived, cumulative) feeds in.
+        ifra_design_limit = min(n_values) * 0.99 if n_values else 0
+        ifra_final_limit  = min(l_values) * 0.99 if l_values else 0
 
         # Calculate combined olfactive profile
         olf_cats = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal']
