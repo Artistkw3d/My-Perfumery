@@ -635,6 +635,21 @@ def init_db():
         FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
     )''')
 
+    # Mixture composition: a material that is itself a blend lists its
+    # sub-components here. component_material_id points back into materials,
+    # so we reuse the component's CAS, IFRA, ppg, olfactive, etc. without
+    # duplication. pct is weight-percent inside the parent (sum may be < 100,
+    # the remainder is treated as unspecified carrier).
+    c.execute('''CREATE TABLE IF NOT EXISTS material_composition (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_material_id INTEGER NOT NULL,
+        component_material_id INTEGER NOT NULL,
+        pct REAL DEFAULT 0,
+        note TEXT DEFAULT '',
+        FOREIGN KEY (parent_material_id) REFERENCES materials(id) ON DELETE CASCADE,
+        FOREIGN KEY (component_material_id) REFERENCES materials(id)
+    )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS material_msds (
         id INTEGER PRIMARY KEY, material_id INTEGER UNIQUE,
         h_codes TEXT, p_codes TEXT, pictograms TEXT, signal_word TEXT, ghs_classification TEXT,
@@ -2209,10 +2224,15 @@ def api_materials():
             # جلب البروفايل العطري لكل مادة
             olfactive_data = conn.execute("SELECT * FROM material_olfactive").fetchall()
             olf_map = {row['material_id']: {cat: row[cat] or 0 for cat in OLFACTIVE_CATEGORIES} for row in olfactive_data}
+            # عدد مكوّنات كل خلطة (لإظهار شارة "خليط")
+            comp_counts = {r['parent_material_id']: r['n'] for r in conn.execute(
+                "SELECT parent_material_id, COUNT(*) as n FROM material_composition GROUP BY parent_material_id"
+            ).fetchall()}
             result = []
             for d in data:
                 item = dict(d)
                 item['olfactive'] = olf_map.get(item['id'], None)
+                item['composition_count'] = comp_counts.get(item['id'], 0)
                 result.append(item)
             conn.close()
             return jsonify({'success': True, 'data': result})
@@ -2347,7 +2367,7 @@ def api_materials():
 
                 conn.commit()
                 conn.close()
-                return jsonify({'success': True, 'message': msg})
+                return jsonify({'success': True, 'message': msg, 'id': mat_id})
             except Exception as e:
                 log(f"[ERROR] {e}")
                 conn.close()
@@ -2362,6 +2382,7 @@ def api_materials():
             conn.execute("DELETE FROM material_msds WHERE material_id=?", (id,))
             conn.execute("DELETE FROM material_olfactive WHERE material_id=?", (id,))
             conn.execute("DELETE FROM material_files WHERE material_id=?", (id,))
+            conn.execute("DELETE FROM material_composition WHERE parent_material_id=? OR component_material_id=?", (id, id))
             conn.execute("DELETE FROM materials WHERE id=?", (id,))
             conn.commit()
             conn.close()
@@ -2382,6 +2403,7 @@ def api_materials():
                 conn.execute(f"DELETE FROM material_msds WHERE material_id IN ({placeholders})", unused_ids)
                 conn.execute(f"DELETE FROM material_olfactive WHERE material_id IN ({placeholders})", unused_ids)
                 conn.execute(f"DELETE FROM material_files WHERE material_id IN ({placeholders})", unused_ids)
+                conn.execute(f"DELETE FROM material_composition WHERE parent_material_id IN ({placeholders}) OR component_material_id IN ({placeholders})", unused_ids + unused_ids)
                 conn.execute(f"DELETE FROM materials WHERE id IN ({placeholders})", unused_ids)
                 conn.commit()
             conn.close()
@@ -2464,6 +2486,162 @@ def api_material_file_serve(mid, fid):
     resp = Response(row['content'], mimetype=mime)
     resp.headers['Content-Disposition'] = f'{disp}; filename="{safe_name}"; filename*=UTF-8\'\'{utf8_name}'
     return resp
+
+# ===== تركيب المواد (الخلطات / الميكسجر) =====
+def _expand_mixture_components(conn, mat_id, accumulated_pct, depth=0, max_depth=5, visited=None):
+    """Walk the composition tree of a mixture material, yielding each
+    direct/indirect component along with its effective percentage of the
+    *outer* context (caller-supplied accumulated_pct is in the same unit as
+    the value yielded — pass weight_pct_in_formula as a percentage like 5.0).
+
+    Stops at max_depth (default 5) and at cycles (visited tracking)."""
+    if depth >= max_depth or accumulated_pct <= 0:
+        return
+    if visited is None:
+        visited = set()
+    if mat_id in visited:
+        return
+    visited = visited | {mat_id}
+    rows = conn.execute('''
+        SELECT mc.component_material_id, mc.pct, m.cas_number, m.name
+        FROM material_composition mc
+        JOIN materials m ON mc.component_material_id = m.id
+        WHERE mc.parent_material_id = ?
+    ''', (mat_id,)).fetchall()
+    for r in rows:
+        pct_in_parent = r['pct'] or 0
+        if pct_in_parent <= 0:
+            continue
+        effective = accumulated_pct * pct_in_parent / 100.0
+        yield {
+            'mat_id': r['component_material_id'],
+            'cas': r['cas_number'] or '',
+            'name': r['name'] or '',
+            'effective_pct': effective,
+            'pct_in_parent': pct_in_parent,
+        }
+        for sub in _expand_mixture_components(conn, r['component_material_id'], effective, depth + 1, max_depth, visited):
+            yield sub
+
+
+def _effective_ppg(conn, mat_id, own_ppg, depth=0, max_depth=5, visited=None):
+    """Compute the effective price-per-gram for a mixture material.
+    Returns own_ppg if it's > 0; otherwise weighted-average of component ppg
+    from material_composition (recursive). Unspecified remainder is ignored
+    (treated as zero-cost carrier)."""
+    if own_ppg and own_ppg > 0:
+        return own_ppg
+    if depth >= max_depth:
+        return 0
+    if visited is None:
+        visited = set()
+    if mat_id in visited:
+        return 0
+    visited = visited | {mat_id}
+    rows = conn.execute('''
+        SELECT mc.pct, m.id, m.price_per_gram
+        FROM material_composition mc
+        JOIN materials m ON mc.component_material_id = m.id
+        WHERE mc.parent_material_id = ?
+    ''', (mat_id,)).fetchall()
+    weighted = 0.0
+    for r in rows:
+        p = r['pct'] or 0
+        if p <= 0:
+            continue
+        c_ppg = _effective_ppg(conn, r['id'], r['price_per_gram'] or 0, depth + 1, max_depth, visited)
+        weighted += c_ppg * p / 100.0
+    return weighted
+
+
+def _composition_descendants(conn, parent_id, max_depth=5):
+    """Return the set of material ids reachable as components of parent_id
+    (transitively, capped at max_depth). Used for cycle detection."""
+    seen = set()
+    frontier = {parent_id}
+    for _ in range(max_depth):
+        if not frontier:
+            break
+        placeholders = ','.join('?' * len(frontier))
+        rows = conn.execute(
+            f"SELECT DISTINCT component_material_id FROM material_composition "
+            f"WHERE parent_material_id IN ({placeholders})",
+            list(frontier)
+        ).fetchall()
+        next_frontier = {r[0] for r in rows} - seen
+        seen |= next_frontier
+        frontier = next_frontier
+    return seen
+
+@app.route('/api/materials/<int:mid>/composition', methods=['GET', 'POST'])
+@login_required
+def api_material_composition(mid):
+    """GET: list components of a mixture material (joined with name/CAS/ifra/ppg).
+    POST action=save: replace the full component list (array of {component_id, pct, note})."""
+    conn = get_db()
+
+    if request.method == 'GET':
+        rows = conn.execute('''
+            SELECT mc.id, mc.component_material_id, mc.pct, mc.note,
+                   m.name, m.name_ar, m.cas_number, m.ifra_limit,
+                   m.price_per_gram, m.manual_ifra_cats
+            FROM material_composition mc
+            JOIN materials m ON mc.component_material_id = m.id
+            WHERE mc.parent_material_id = ?
+            ORDER BY mc.id
+        ''', (mid,)).fetchall()
+        conn.close()
+        return jsonify({'success': True, 'data': [dict(r) for r in rows]})
+
+    action = request.form.get('action', 'save')
+    if action == 'save':
+        try:
+            payload = request.form.get('components', '[]')
+            items = json.loads(payload) or []
+            # Normalise + validate each row
+            clean = []
+            for it in items:
+                cid = int(it.get('component_id') or 0)
+                if cid <= 0 or cid == mid:
+                    continue  # skip self-reference and invalid rows
+                try:
+                    pct = float(it.get('pct') or 0)
+                except (TypeError, ValueError):
+                    pct = 0
+                if pct < 0:
+                    pct = 0
+                if pct > 100:
+                    pct = 100
+                clean.append({'cid': cid, 'pct': pct, 'note': (it.get('note') or '')[:500]})
+
+            # Cycle check: none of the proposed components can have `mid` in
+            # their own descendant set. We test by running descendants() from
+            # each candidate and looking for `mid`.
+            for row in clean:
+                desc = _composition_descendants(conn, row['cid'])
+                if mid in desc:
+                    conn.close()
+                    return jsonify({
+                        'success': False,
+                        'message': f'دائرة في التركيب: المكوّن (ID {row["cid"]}) يحتوي هذه المادة بشكل غير مباشر'
+                    }), 400
+
+            conn.execute("DELETE FROM material_composition WHERE parent_material_id=?", (mid,))
+            for row in clean:
+                conn.execute('''INSERT INTO material_composition
+                    (parent_material_id, component_material_id, pct, note)
+                    VALUES (?,?,?,?)''',
+                    (mid, row['cid'], row['pct'], row['note']))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': f'تم حفظ التركيب ({len(clean)} مكوّن)'})
+        except Exception as e:
+            log(f"[ERROR composition save] {e}")
+            conn.close()
+            return jsonify({'success': False, 'message': str(e)}), 500
+
+    conn.close()
+    return jsonify({'success': False, 'message': 'إجراء غير معروف'}), 400
 
 # ===== API التصنيف العطري التلقائي =====
 @app.route('/api/olfactive/auto-classify', methods=['POST'])
@@ -2775,6 +2953,9 @@ def api_formula_ingredients(fid):
             if t['ifra_limit'] is not None and t['ifra_limit'] > 0:
                 ifra_final_exceeded = (t['pure_pct'] * 100) > t['ifra_limit']
             
+            # Roll up price_per_gram from composition when the mixture itself
+            # has no own ppg set (common for in-house bases / accords).
+            eff_ppg = _effective_ppg(conn, i['material_id'], i['price_per_gram'] or 0)
             result.append({
                 **dict(i),
                 'concentration': t['conc'],
@@ -2789,7 +2970,8 @@ def api_formula_ingredients(fid):
                 'ifra_final_calc': t['ifra_final_calc'],  # L
                 'ifra_final_exceeded': ifra_final_exceeded,  # K
                 'constituents': t.get('constituents', []),
-                'cost': i['weight'] * (i['price_per_gram'] or 0)
+                'effective_ppg': eff_ppg,
+                'cost': i['weight'] * eff_ppg
             })
         
         # === IFRA Contributions from other sources ===
@@ -2824,6 +3006,41 @@ def api_formula_ingredients(fid):
                     'ncs_name': c['ncs_name'],
                     'source_type': c['source_type'],
                     'concentration_in_ncs': c['concentration_pct'],
+                    'material_pct_in_formula': round(weight_pct_100, 4),
+                    'contributed_pct': round(contributed_pct, 6),
+                })
+                contribution_map[c_cas]['total_pct'] += contributed_pct
+
+        # === Mixture composition contributions (user-defined per material) ===
+        # Walk the composition tree of every ingredient that's a blend, and
+        # add each component's effective formula-% to the same contribution_map.
+        # The downstream limit-check loop then enforces IFRA against the merged
+        # totals — direct usage + naturals contributions + mixture components.
+        for t in temp_results:
+            mat_id = t['data']['material_id']
+            weight_pct_100 = t['weight_pct'] * 100
+            if weight_pct_100 <= 0:
+                continue
+            for sub in _expand_mixture_components(conn, mat_id, weight_pct_100):
+                c_cas = sub['cas']
+                if not c_cas:
+                    continue  # only IFRA-relevant if we can match by CAS
+                contributed_pct = sub['effective_pct']
+                if c_cas not in contribution_map:
+                    contribution_map[c_cas] = {
+                        'constituent_name': sub['name'],
+                        'constituent_cas': c_cas,
+                        'sources': [],
+                        'total_pct': 0,
+                        'ifra_limit': None,
+                        'exceeded': False,
+                        'no_restriction': False,
+                    }
+                contribution_map[c_cas]['sources'].append({
+                    'material_name': t['data']['name'],
+                    'ncs_name': sub['name'],
+                    'source_type': 'mixture',
+                    'concentration_in_ncs': sub['pct_in_parent'],
                     'material_pct_in_formula': round(weight_pct_100, 4),
                     'contributed_pct': round(contributed_pct, 6),
                 })

@@ -42,6 +42,15 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - Use case for the manual layers: IFRA publishes an amendment before the local `ifra_standards.xlsx` is refreshed, or a material isn't in IFRA standards at all.
 - Form plumbing: the materials modal has a dedicated **IFRA يدوي** tab next to the read-only **IFRA** tab with a table of 18 per-category inputs (`manual_ifra_cat1` … `manual_ifra_cat12`). Submit collects them into a JSON blob in `materials.manual_ifra_cats`.
 
+## Material composition (mixtures / blends)
+- Some materials are themselves blends (a pre-made base, an in-house accord, a commercial captive). They get a **التركيب** tab in the material modal between "IFRA يدوي" and "الملفات" where you list sub-components by picking other materials and assigning each a weight-percent inside the parent. Sum can be < 100% — the remainder is treated as unspecified carrier and not weighted into rollups.
+- Stored in a new table `material_composition (id, parent_material_id, component_material_id, pct, note)` with cascade delete on parent removal (also fired in the material delete handler and `delete_all_unused`).
+- API: `GET /api/materials/<mid>/composition` returns the rows joined with the component's name/CAS/ifra/ppg; `POST /api/materials/<mid>/composition` with `action=save` accepts `components=<JSON array of {component_id, pct, note}>` and **fully replaces** the list. Self-references are silently dropped; cycles (A → B → A direct or transitive) are rejected with a 400 + Arabic message.
+- **Effects in the formula calc** (`api_formula_ingredients`):
+  - **IFRA contributions** — `_expand_mixture_components()` walks the composition tree (capped at 5 levels, cycle-protected) and adds each component's effective formula-% into the same `contribution_map` used by the natural-source contributions, tagged `source_type='mixture'`. Downstream limit checks then enforce IFRA against the merged total (direct usage + naturals + mixture components).
+  - **Cost roll-up** — `_effective_ppg()` returns the material's own `price_per_gram` if > 0, otherwise the weighted average of component ppg from composition (recursive). The ingredient `cost` line uses this effective ppg instead of the raw column. Result row carries `effective_ppg` for diagnostic display.
+- UI surface: a small green "خليط" badge appears next to the material name in both the card view and the table view of the materials page when `composition_count > 0`. List endpoint adds `composition_count` per row.
+
 ## Material file attachments
 - Every material has a **الملفات** tab in the modal (right after IFRA يدوي). Users attach PDFs, images, Word/Excel docs, etc. up to 50 MB total per request.
 - Files are stored as BLOBs in a new table `material_files (id, material_id, filename, mime_type, size, content BLOB, uploaded_at)` with `ON DELETE CASCADE` style cleanup also firing in the material delete handlers (and delete_all_unused) since we don't enable SQLite foreign-key enforcement.
