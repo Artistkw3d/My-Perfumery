@@ -229,6 +229,11 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" data-bs-toggle="tab" href="#compositionTab">
+                                <i class="bi bi-diagram-3"></i> التركيب
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" data-bs-toggle="tab" href="#filesTab">
                                 <i class="bi bi-paperclip"></i> الملفات
                             </a>
@@ -672,6 +677,55 @@
                                 </table>
                             </div>
                         </div>
+
+                        <!-- Composition (Mixture) Tab -->
+                        <div class="tab-pane fade" id="compositionTab">
+                            <div id="compositionNoMaterial" class="text-center text-muted py-4" style="display:none;">
+                                <i class="bi bi-diagram-3" style="font-size:2rem;"></i>
+                                <p class="mt-2">احفظ المادة أولاً، ثم أضف مكوّنات الخلطة.</p>
+                            </div>
+                            <div id="compositionPanel">
+                                <div class="alert py-2 mb-3" style="background:#eef6f0;border:1px solid #b9d8c2;color:#2f5a3d;font-size:0.82rem;line-height:1.6;">
+                                    <i class="bi bi-info-circle"></i>
+                                    <b>تركيب الخلطة (Mixture).</b> إذا كانت هذه المادة عبارة عن خليط جاهز (Base / Accord / مادة تجارية مركّبة) سجّل مكوّناتها هنا — كل مكوّن يُختار من قائمة المواد ونسبته بالوزن داخل الخلطة.
+                                    <br>
+                                    <span style="font-size:0.76rem;">
+                                        مساهمات IFRA لكل مكوّن تُحسب تلقائياً داخل التركيبات التي تستخدم هذه الخلطة. مجموع النسب يمكن أن يكون أقل من 100% (الباقي محمل/غير معروف).
+                                    </span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCompositionRow()">
+                                        <i class="bi bi-plus-circle"></i> إضافة مكوّن
+                                    </button>
+                                    <div style="font-size:0.85rem;">
+                                        <span style="color:#6b5a47;">الإجمالي: </span>
+                                        <b id="compositionTotal" style="color:var(--gold,#b8956a);">0%</b>
+                                        <span style="color:#9a8a77;font-size:0.75rem;margin-right:6px;">
+                                            (<span id="compositionRemainder">100%</span> محمل)
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered align-middle" style="font-size:0.85rem;">
+                                        <thead>
+                                            <tr class="table-dark text-center">
+                                                <th>المكوّن</th>
+                                                <th style="width:120px;">النسبة %</th>
+                                                <th style="width:200px;">ملاحظة</th>
+                                                <th style="width:60px;"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="compositionBody">
+                                            <tr id="compositionEmpty">
+                                                <td colspan="4" class="text-center text-muted py-3" style="font-size:0.82rem;">
+                                                    لا مكوّنات بعد — اضغط «إضافة مكوّن».
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -887,10 +941,13 @@ function renderCards() {
             .sort((a, b) => m.olfactive[b] - m.olfactive[a])
             .slice(0, 4) : [];
 
+        const mixBadge = m.composition_count > 0
+            ? `<span class="badge bg-success" style="font-size:0.62rem;margin-right:4px;" title="${m.composition_count} مكوّن"><i class="bi bi-diagram-3"></i> خليط</span>`
+            : '';
         return `<div class="mat-card" ondblclick="editMaterial(${m.id})">
             <div class="mat-card-header">
                 <div>
-                    <div class="mat-card-name">${m.name}</div>
+                    <div class="mat-card-name">${mixBadge}${m.name}</div>
                     ${m.name_ar ? `<small class="text-muted">${m.name_ar}</small>` : ''}
                     <div class="mat-card-cas">${m.cas_number || ''}</div>
                 </div>
@@ -941,6 +998,7 @@ function renderTable() {
                 onclick="showWheelDetail(${m.id})" style="cursor:pointer;"></canvas></td>
             <td>
                 <strong>${m.name}</strong>
+                ${m.composition_count > 0 ? ` <span class="badge bg-success" style="font-size:0.62rem;" title="${m.composition_count} مكوّن"><i class="bi bi-diagram-3"></i> خليط</span>` : ''}
                 ${m.name_ar ? `<br><small class="text-muted">${m.name_ar}</small>` : ''}
             </td>
             <td><code>${m.cas_number || '-'}</code></td>
@@ -1059,6 +1117,7 @@ function showMaterialModal() {
     $('#mat_ghs_class').val([]).trigger('change');
     resetOlfactive();
     toggleFilesTab(null);
+    toggleCompositionTab(null);
     modal.show();
 }
 
@@ -1160,6 +1219,149 @@ function deleteMaterialFile(matId, fileId) {
         .then(() => loadMaterialFiles(matId));
 }
 
+// ===== Mixture composition (sub-components of a blend material) =====
+let _compRowSeq = 0;
+let _compDirty = false;
+
+function toggleCompositionTab(matId) {
+    const panel = document.getElementById('compositionPanel');
+    const warn  = document.getElementById('compositionNoMaterial');
+    const body  = document.getElementById('compositionBody');
+    _compDirty = false;
+    if (!matId) {
+        panel.style.display = 'none';
+        warn.style.display  = '';
+        body.innerHTML = '<tr id="compositionEmpty"><td colspan="4" class="text-center text-muted py-3" style="font-size:0.82rem;">لا مكوّنات بعد — اضغط «إضافة مكوّن».</td></tr>';
+        updateCompositionTotal();
+    } else {
+        panel.style.display = '';
+        warn.style.display  = 'none';
+        loadComposition(matId);
+    }
+}
+
+function _componentOptionsHtml(currentMatId, selectedId) {
+    const opts = ['<option value="">— اختر مكوّن —</option>'];
+    materials.forEach(m => {
+        if (m.id === currentMatId) return;  // can't add self as component
+        const sel = String(m.id) === String(selectedId) ? ' selected' : '';
+        const label = m.name + (m.cas_number ? ` (${m.cas_number})` : '');
+        opts.push(`<option value="${m.id}"${sel}>${escapeHtml(label)}</option>`);
+    });
+    return opts.join('');
+}
+
+function _addCompositionRowDom(currentMatId, row) {
+    const body = document.getElementById('compositionBody');
+    const empty = document.getElementById('compositionEmpty');
+    if (empty) empty.remove();
+    const rowId = 'comp_row_' + (++_compRowSeq);
+    const tr = document.createElement('tr');
+    tr.id = rowId;
+    tr.dataset.componentId = row.component_material_id || '';
+    tr.innerHTML = `
+        <td>
+            <select class="form-select form-select-sm comp-component" onchange="onCompositionChange()">
+                ${_componentOptionsHtml(currentMatId, row.component_material_id)}
+            </select>
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm comp-pct text-center"
+                step="0.01" min="0" max="100" value="${row.pct != null ? row.pct : ''}"
+                placeholder="—" oninput="onCompositionChange()">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm comp-note"
+                value="${row.note ? escapeHtml(row.note) : ''}"
+                placeholder="اختياري" oninput="onCompositionChange()">
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-outline-danger"
+                onclick="removeCompositionRow('${rowId}')" title="حذف">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    body.appendChild(tr);
+}
+
+function addCompositionRow() {
+    const matId = parseInt(document.getElementById('mat_id').value || '0', 10);
+    if (!matId) { alert('احفظ المادة أولاً'); return; }
+    _addCompositionRowDom(matId, {});
+    onCompositionChange();
+}
+
+function removeCompositionRow(rowId) {
+    const row = document.getElementById(rowId);
+    if (row) row.remove();
+    onCompositionChange();
+    if (!document.querySelectorAll('#compositionBody tr').length) {
+        document.getElementById('compositionBody').innerHTML =
+            '<tr id="compositionEmpty"><td colspan="4" class="text-center text-muted py-3" style="font-size:0.82rem;">لا مكوّنات بعد — اضغط «إضافة مكوّن».</td></tr>';
+        updateCompositionTotal();
+    }
+}
+
+function onCompositionChange() {
+    _compDirty = true;
+    updateCompositionTotal();
+}
+
+function updateCompositionTotal() {
+    let total = 0;
+    document.querySelectorAll('#compositionBody .comp-pct').forEach(el => {
+        const v = parseFloat(el.value || '0');
+        if (!isNaN(v)) total += v;
+    });
+    const el = document.getElementById('compositionTotal');
+    const rem = document.getElementById('compositionRemainder');
+    if (el) {
+        el.textContent = total.toFixed(2) + '%';
+        el.style.color = total > 100 ? '#c0392b' : 'var(--gold,#b8956a)';
+    }
+    if (rem) rem.textContent = Math.max(0, 100 - total).toFixed(2) + '%';
+}
+
+function loadComposition(matId) {
+    fetch(`/api/materials/${matId}/composition`)
+        .then(r => r.json())
+        .then(data => {
+            const body = document.getElementById('compositionBody');
+            body.innerHTML = '';
+            _compRowSeq = 0;
+            if (data.success && data.data && data.data.length) {
+                data.data.forEach(row => _addCompositionRowDom(matId, row));
+            } else {
+                body.innerHTML = '<tr id="compositionEmpty"><td colspan="4" class="text-center text-muted py-3" style="font-size:0.82rem;">لا مكوّنات بعد — اضغط «إضافة مكوّن».</td></tr>';
+            }
+            _compDirty = false;
+            updateCompositionTotal();
+        });
+}
+
+function saveComposition(matId) {
+    // Only POST if the user actually touched the composition tab.
+    if (!_compDirty) return Promise.resolve({ success: true, skipped: true });
+    const items = [];
+    document.querySelectorAll('#compositionBody tr').forEach(tr => {
+        const sel  = tr.querySelector('.comp-component');
+        const pct  = tr.querySelector('.comp-pct');
+        const note = tr.querySelector('.comp-note');
+        if (!sel || !sel.value) return;  // skip rows without a chosen component
+        items.push({
+            component_id: parseInt(sel.value, 10),
+            pct:  parseFloat(pct.value || '0') || 0,
+            note: (note.value || '').trim()
+        });
+    });
+    const fd = new FormData();
+    fd.append('action', 'save');
+    fd.append('components', JSON.stringify(items));
+    return fetch(`/api/materials/${matId}/composition`, { method: 'POST', body: fd })
+        .then(r => r.json());
+}
+
 function escapeHtml(s) {
     return String(s == null ? '' : s)
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1188,6 +1390,7 @@ function editMaterial(id) {
                     if (el) el.value = manualCats[k];
                 });
                 toggleFilesTab(m.id);
+                toggleCompositionTab(m.id);
                 document.getElementById('mat_price').value = m.purchase_price || '';
                 document.getElementById('mat_qty').value = m.purchase_quantity || 1;
                 document.getElementById('mat_odor').value = m.odor_description || '';
@@ -1607,13 +1810,21 @@ function saveMaterial() {
     fetch('/api/materials', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(data => {
-        if (data.success) {
+        if (!data.success) {
+            showAlert(data.message || 'خطأ', 'danger');
+            return;
+        }
+        const matId = data.id || parseInt(document.getElementById('mat_id').value || '0', 10);
+        const persistComp = matId ? saveComposition(matId) : Promise.resolve({ success: true });
+        persistComp.then(cres => {
+            if (cres && cres.success === false) {
+                showAlert(cres.message || 'فشل حفظ التركيب', 'danger');
+                return;
+            }
             modal.hide();
             loadMaterials();
             showAlert(data.message);
-        } else {
-            showAlert(data.message || 'خطأ', 'danger');
-        }
+        });
     });
 }
 
