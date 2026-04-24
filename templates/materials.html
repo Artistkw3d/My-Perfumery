@@ -1741,8 +1741,15 @@ function populateDerivedIfraSection(derived) {
                 </tr>`;
             }
             const isProhibited = d.prohibited || d.limit === 0;
-            const limTxt = isProhibited ? 'PROHIBITED' : (d.limit > 100 ? '> 100%' : d.limit + '%');
-            const cls = isProhibited ? 'text-danger fw-bold' : 'text-success fw-bold';
+            const isNoRestriction = d.no_restriction || d.limit === -1;
+            let limTxt, cls;
+            if (isProhibited) {
+                limTxt = 'PROHIBITED'; cls = 'text-danger fw-bold';
+            } else if (isNoRestriction) {
+                limTxt = 'غير مقيّد'; cls = 'text-success fw-bold';
+            } else {
+                limTxt = d.limit + '%'; cls = 'text-success fw-bold';
+            }
             return `<tr>
                 <td class="text-center"><code style="background:#f5efe4;color:#5c4a32;padding:2px 6px;border-radius:4px;">${c.id}</code></td>
                 <td style="color:#6b5a47;">${c.desc}</td>
@@ -1759,6 +1766,8 @@ function populateDerivedIfraSection(derived) {
         const d = derived[catKey];
         if (d.prohibited || d.limit === 0) {
             el.placeholder = '⛔ محظور';
+        } else if (d.no_restriction || d.limit === -1) {
+            el.placeholder = '→ غير مقيّد';
         } else {
             el.placeholder = '→ ' + d.limit + ' (مشتق)';
         }

@@ -1146,6 +1146,14 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
 
         let lDisplay = '-';
         if (i.ifra_final_calc !== null && i.ifra_final_calc !== undefined) lDisplay = i.ifra_final_calc.toFixed(3);
+        // When the per-row IFRA limit came from composition (mixture), show a
+        // tiny hint with the binding component so users can see WHY the L is
+        // what it is without opening the warnings card.
+        let lSubtitle = '';
+        if (i.ifra_std_type === 'composition' && i.ifra_std_name) {
+            const safeName = String(i.ifra_std_name).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            lSubtitle = `<br><small style="font-size:0.66rem;color:var(--text-light,#9a8a77);font-weight:500;" title="المكوّن الحاكم داخل الخليط"><i class="bi bi-diagram-3"></i> ${safeName}</small>`;
+        }
 
         let kDisplay = '-';
         if (hasIfraLimit) {
@@ -1190,7 +1198,7 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
             <td class="adv-col">${mDisplay}</td>
             <td>${i.pure_weight?.toFixed(4) || '-'}</td>
             <td class="adv-col">${i.percentage?.toFixed(2) || '-'}%</td>
-            <td>${lDisplay}</td>
+            <td>${lDisplay}${lSubtitle}</td>
             <td class="adv-col">${kDisplay}</td>
             <td>${(i.cost || 0).toFixed(2)}</td>
             <td><button class="e-del" onclick="deleteIngredient(${i.id})"><i class="bi bi-trash"></i></button></td>
