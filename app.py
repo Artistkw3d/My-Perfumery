@@ -1240,20 +1240,6 @@ def formula_print(id):
     conn.close()
     cat_key = formula['ifra_category'] or 'cat4'
     cat = next((c for c in IFRA_CATEGORIES if c['id'] == cat_key), None)
-
-    # Optional scaling: target_weight=<grams> overrides the formula's natural
-    # total. The template multiplies G/I/cost by the resulting factor on the
-    # client; IFRA percentages are unaffected (they are ratios, not weights).
-    target_weight = None
-    raw = (request.args.get('target_weight') or '').strip()
-    if raw:
-        try:
-            tw = float(raw)
-            if tw > 0:
-                target_weight = tw
-        except ValueError:
-            pass
-
     return render_template(
         'formula_print.html',
         formula=formula,
@@ -1261,8 +1247,7 @@ def formula_print(id):
         company=company,
         category_name=(cat['name'] if cat else ''),
         category_desc=(cat['desc'] if cat else ''),
-        today=datetime.now().strftime('%Y-%m-%d'),
-        target_weight=target_weight
+        today=datetime.now().strftime('%Y-%m-%d')
     )
 
 @app.route('/production')

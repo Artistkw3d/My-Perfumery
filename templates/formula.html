@@ -518,9 +518,6 @@
         <a href="/formula/{{ formula.id }}/print" class="fh-btn" target="_blank" title="فتح صفحة طباعة A4 (احفظ كـ PDF من مربع الحوار)">
             <i class="bi bi-printer-fill"></i> طباعة PDF
         </a>
-        <button class="fh-btn" onclick="promptScaledPrint()" title="طباعة PDF بوزن إجمالي مُحدد (مثل 1000g) — يُضاعف كل المكوّنات تلقائياً">
-            <i class="bi bi-printer"></i> طباعة بكمية محددة
-        </button>
         <a href="/formula/{{ formula.id }}/card" class="fh-btn"><i class="bi bi-card-heading"></i> بطاقة</a>
     </div>
 </div>
@@ -1456,54 +1453,83 @@ function calculateScaleMulti() {
             }
             const items = data.data;
             const typeName = useH ? 'نسبة الزيت (H) - تصميم' : 'نسبة الصافي (J) - إنتاج';
-            let html = `
-                <div class="scale-info">
-                    <strong>نوع الحساب:</strong> ${typeName}<br>
-                    <strong>المعادلة:</strong> ${useH ? 'H × الكمية' : 'J × الكمية'}<br>
-                    <span style="font-size:0.82rem;color:#5c4a32;"><i class="bi bi-info-circle"></i> زر الطابعة في رأس كل عمود يفتح PDF بكامل التركيبة مُكبَّرة لهذا الوزن الإجمالي (يُضرب كل صف بنفس المعامل).</span>
-                </div>
-                <div class="table-responsive">
+            let tableHtml = `
                 <table class="e-table">
                     <thead><tr>
                         <th>#</th><th>المادة</th><th>${useH ? 'H%' : 'J%'}</th>`;
-            quantities.forEach(q => {
-                html += `<th style="white-space:nowrap;">${q}g
-                    <button type="button" class="btn btn-sm btn-outline-primary" style="padding:0 6px;font-size:0.72rem;margin-right:4px;" title="طباعة PDF بوزن ${q}g" onclick="printScaledFormula(${q})">
-                        <i class="bi bi-printer-fill"></i>
-                    </button>
-                </th>`;
-            });
-            html += `</tr></thead><tbody>`;
+            quantities.forEach(q => { tableHtml += `<th>${q}g</th>`; });
+            tableHtml += `</tr></thead><tbody>`;
             let totals = quantities.map(() => 0);
             items.forEach((item, idx) => {
                 const pct = useH ? (item.weight_percentage / 100) : (item.percentage / 100);
-                html += `<tr><td>${idx + 1}</td><td class="mat-cell"><strong>${item.name}</strong></td><td>${(pct * 100).toFixed(2)}%</td>`;
+                tableHtml += `<tr><td>${idx + 1}</td><td class="mat-cell"><strong>${item.name}</strong></td><td>${(pct * 100).toFixed(2)}%</td>`;
                 quantities.forEach((q, qIdx) => {
                     const amount = pct * q;
                     totals[qIdx] += amount;
-                    html += `<td>${amount.toFixed(4)}</td>`;
+                    tableHtml += `<td>${amount.toFixed(4)}</td>`;
                 });
-                html += `</tr>`;
+                tableHtml += `</tr>`;
             });
-            html += `<tr class="fw-bold">`;
-            html += `<td></td><td style="text-align:right;">المجموع</td><td>100%</td>`;
-            quantities.forEach((q, qIdx) => { html += `<td>${totals[qIdx].toFixed(2)}</td>`; });
-            html += `</tr></tbody></table></div>`;
+            tableHtml += `<tr class="fw-bold">`;
+            tableHtml += `<td></td><td style="text-align:right;">المجموع</td><td>100%</td>`;
+            quantities.forEach((q, qIdx) => { tableHtml += `<td>${totals[qIdx].toFixed(2)}</td>`; });
+            tableHtml += `</tr></tbody></table>`;
+
+            const html = `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="scale-info" style="margin:0;flex:1;">
+                        <strong>نوع الحساب:</strong> ${typeName} &nbsp;•&nbsp;
+                        <strong>المعادلة:</strong> ${useH ? 'H × الكمية' : 'J × الكمية'}
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="printScaleResults()" title="طباعة جدول النتائج">
+                        <i class="bi bi-printer-fill"></i> طباعة النتائج
+                    </button>
+                </div>
+                <div class="table-responsive" id="scaleResultTable">${tableHtml}</div>`;
             document.getElementById('scaleResult').innerHTML = html;
         });
 }
 
-function printScaledFormula(targetWeight) {
-    if (!(targetWeight > 0)) { showAlert('وزن غير صالح', 'warning'); return; }
-    window.open(`/formula/${formulaId}/print?target_weight=${encodeURIComponent(targetWeight)}`, '_blank');
-}
+function printScaleResults() {
+    const tableWrap = document.getElementById('scaleResultTable');
+    if (!tableWrap) return;
+    const formulaName = {{ formula.name|tojson }};
+    const today = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
+    const scaleType = document.querySelector('input[name="scaleType"]:checked').value;
+    const typeName = scaleType === 'design' ? 'نسبة الزيت (H) - تصميم' : 'نسبة الصافي (J) - إنتاج';
 
-function promptScaledPrint() {
-    const raw = prompt('أدخل الوزن الإجمالي المطلوب بالجرام (مثلاً 1000):');
-    if (raw === null) return;
-    const v = parseFloat(raw);
-    if (!(v > 0)) { showAlert('أدخل رقماً موجباً', 'warning'); return; }
-    printScaledFormula(v);
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) { showAlert('متصفحك يمنع النوافذ المنبثقة — فعّل الـ popups', 'warning'); return; }
+    w.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+<title>Scale — ${formulaName}</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+@page { size: A4; margin: 12mm; }
+body { font-family: 'Tajawal', sans-serif; color: #222; margin: 0; padding: 18px; }
+.bar { background:#fff3cd; border:1px solid #e4c97a; padding:8px 14px; margin-bottom:14px;
+       border-radius:6px; display:flex; gap:10px; justify-content:center; align-items:center; }
+.bar button { background:#5c4a32; color:#fff; border:0; border-radius:5px; padding:5px 12px; cursor:pointer; font-family:inherit; }
+h1 { font-size: 1.2rem; margin: 0 0 4px; color:#3d2e1e; }
+.meta { color:#6b5a47; font-size: 0.85rem; margin-bottom: 12px; }
+.meta strong { color:#3d2e1e; }
+table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+th, td { border:1px solid #d4c7a8; padding:5px 7px; text-align:right; }
+th { background:#f5efe4; color:#3d2e1e; font-weight:700; }
+td.mat-cell { font-weight:600; }
+tr.fw-bold td { background:#fdfbf7; font-weight:800; border-top:1.5px solid #5c4a32; }
+@media print { .bar { display:none; } body { padding: 0; } }
+</style></head><body>
+<div class="bar">
+  <button onclick="window.print()">🖨️ طباعة</button>
+  <span style="font-size:0.85rem;color:#7a5e1b;">استخدم مربع حوار الطباعة لحفظ الملف كـ PDF</span>
+</div>
+<h1>${formulaName} — جدول كميات Scale</h1>
+<div class="meta"><strong>نوع الحساب:</strong> ${typeName} &nbsp;•&nbsp; <strong>التاريخ:</strong> ${today}</div>
+${tableWrap.innerHTML}
+<script>setTimeout(()=>window.print(), 300);<\/script>
+</body></html>`);
+    w.document.close();
 }
 
 function calculateScale() { calculateScaleMulti(); }

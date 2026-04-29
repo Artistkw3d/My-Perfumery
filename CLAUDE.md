@@ -62,12 +62,9 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 - **Why this is the right model (not a per-row dilution)**: the diluted form is a stable inventory item that the perfumer weighs out as-is. The formula-row `dilution` field stays at `1` (the material *is* the diluted form). All IFRA derivation flows through composition: derived per-cat limit, "Mix: Vanillin" subtitle on the L cell, cumulative-CAS protection across multiple mixture rows, weighted cost roll-up. Ghost placeholders in the manual-IFRA tab show the derived value before override.
 - Auto-generated name format: `{ParentName} {pct}% in {SolventName}` (English) and Arabic equivalent.
 
-## Scaled formula print
-- Print page `/formula/<id>/print` accepts an optional `?target_weight=<grams>` query param. When set, the client-side renderer multiplies each row's `weight`, `pure_weight`, and `cost` by `target_weight / total_weight`, and updates the totals accordingly. **IFRA percentages (F, L, E3, N3), dilution, J%, H% are NOT scaled** — they're ratios and remain valid under uniform scaling.
-- Header gets a yellow "⚙️ مُضاعف لـ Xg" pill next to the title to make it obvious the printout is scaled.
-- Two entry points on the formula page:
-  - **"طباعة بكمية محددة"** button in the formula header (next to the regular "طباعة PDF") — prompts for target weight via `prompt()`, then opens the scaled print page.
-  - **🖨️ icon** in each column header inside the Scale modal results table (next to "1000g", "100g", etc.). Same action: opens the print page with `?target_weight=q`. Scale-modal mode (J vs H) is informational; the print is always uniform-scaled to total weight = q. The modal's instruction text now says so explicitly.
+## Scale modal print
+- The Scale modal (`showScaleModal()` on formula.html) renders a multi-column table of ingredient amounts at user-chosen quantities (1000g/100g/50g/20g/5g by default), in either J% (production) or H% (design) mode.
+- A **"طباعة النتائج"** button next to the type/equation line at the top of the results pops a small new window containing just the rendered table + a header (formula name, calc type, today's date), with auto-print on load. Pure client-side — opens via `window.open('', '_blank')` and writes a self-contained HTML document with print-ready CSS. The original `/formula/<id>/print` A4 page is unchanged and unrelated.
 
 ## Materials advanced filter
 - Materials page has a collapsible "فلتر متقدم" panel (toggle button next to the search box; badge shows active-filter count). Filters: family multi-select, profile (Top/Heart/Base) multi-select, supplier, stock (in/out), price-per-gram min/max, IFRA presence (has/none), mixture vs atomic, CAS presence. Active-filter chips render above with × to remove individual filters and a "مسح الكل" button.
