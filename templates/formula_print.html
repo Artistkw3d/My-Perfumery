@@ -207,7 +207,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
     <!-- Header -->
     <div class="p-head">
         <div class="title-group">
-            <h1>{{ formula.name }}</h1>
+            <h1>{{ formula.name }}{% if target_weight %} <span style="font-size:11pt;color:#7a5e1b;background:#fbf0da;border:1px solid #e6ce90;border-radius:6px;padding:1px 8px;font-weight:700;">⚙️ مُضاعف لـ {{ '%g' % target_weight }}g</span>{% endif %}</h1>
             <div class="sub">
                 <span class="status-pill sp-{{ formula.status or 'draft' }}">
                     {{ 'نهائي' if formula.status == 'final' else 'تجريب' if formula.status == 'testing' else 'مسودة' }}
@@ -284,6 +284,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
 
 <script>
 const FORMULA_ID = {{ formula.id }};
+const TARGET_WEIGHT = {{ ('%.6f' % target_weight) if target_weight else 'null' }};
 const AXES = [
     { k:'citrus',    label:'حمضي',     icon:'🍋', color:'#f4c542' },
     { k:'aldehydic', label:'ألدهيدي',  icon:'✨', color:'#dde3e8' },
@@ -452,10 +453,29 @@ function escapeHtml(s) {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function applyScale(data) {
+    // Multiply weight-based fields by the factor implied by TARGET_WEIGHT.
+    // IFRA % values, dilution, and L are ratios — they stay unchanged.
+    if (!TARGET_WEIGHT || !data || !Array.isArray(data.data)) return data;
+    const baseTotal = Number(data.total_weight || 0);
+    if (!(baseTotal > 0)) return data;
+    const factor = TARGET_WEIGHT / baseTotal;
+    if (!isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 1e-9) return data;
+    data.data.forEach(r => {
+        if (typeof r.weight === 'number')      r.weight      *= factor;
+        if (typeof r.pure_weight === 'number') r.pure_weight *= factor;
+        if (typeof r.cost === 'number')        r.cost        *= factor;
+    });
+    if (typeof data.total_weight === 'number') data.total_weight *= factor;
+    if (typeof data.total_pure   === 'number') data.total_pure   *= factor;
+    return data;
+}
+
 fetch(`/api/formula/${FORMULA_ID}/ingredients`)
     .then(r => r.json())
     .then(data => {
         if (!data.success) throw new Error('failed');
+        applyScale(data);
         renderIngredients(data);
         renderIfraAndOlfactive(data);
         setTimeout(() => {

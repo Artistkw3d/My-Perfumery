@@ -1240,6 +1240,20 @@ def formula_print(id):
     conn.close()
     cat_key = formula['ifra_category'] or 'cat4'
     cat = next((c for c in IFRA_CATEGORIES if c['id'] == cat_key), None)
+
+    # Optional scaling: target_weight=<grams> overrides the formula's natural
+    # total. The template multiplies G/I/cost by the resulting factor on the
+    # client; IFRA percentages are unaffected (they are ratios, not weights).
+    target_weight = None
+    raw = (request.args.get('target_weight') or '').strip()
+    if raw:
+        try:
+            tw = float(raw)
+            if tw > 0:
+                target_weight = tw
+        except ValueError:
+            pass
+
     return render_template(
         'formula_print.html',
         formula=formula,
@@ -1247,7 +1261,8 @@ def formula_print(id):
         company=company,
         category_name=(cat['name'] if cat else ''),
         category_desc=(cat['desc'] if cat else ''),
-        today=datetime.now().strftime('%Y-%m-%d')
+        today=datetime.now().strftime('%Y-%m-%d'),
+        target_weight=target_weight
     )
 
 @app.route('/production')
@@ -2781,6 +2796,130 @@ def api_material_composition(mid):
 
     conn.close()
     return jsonify({'success': False, 'message': 'إجراء غير معروف'}), 400
+
+
+@app.route('/api/materials/quick-dilute', methods=['POST'])
+@login_required
+def api_material_quick_dilute():
+    """Create a new "pre-diluted" material from a parent (typically a crystalline
+    raw material) + a solvent. The new material's IFRA derives automatically
+    from its composition rows, so the rest of the app treats it like any other
+    mixture."""
+    try:
+        parent_id = int(request.form.get('parent_id') or 0)
+        solvent_id_raw = request.form.get('solvent_id') or ''
+        concentration = float(request.form.get('concentration') or 0)
+        custom_name = (request.form.get('name') or '').strip()
+        custom_name_ar = (request.form.get('name_ar') or '').strip()
+        note = (request.form.get('note') or '').strip()[:500]
+    except (TypeError, ValueError) as e:
+        return jsonify({'success': False, 'message': f'مدخلات غير صحيحة: {e}'}), 400
+
+    if parent_id <= 0:
+        return jsonify({'success': False, 'message': 'يجب اختيار المادة الأصلية'}), 400
+    if not (0 < concentration < 100):
+        return jsonify({'success': False, 'message': 'النسبة يجب أن تكون بين 0 و 100'}), 400
+
+    solvent_id = None
+    if solvent_id_raw:
+        try:
+            solvent_id = int(solvent_id_raw)
+            if solvent_id <= 0 or solvent_id == parent_id:
+                solvent_id = None
+        except (TypeError, ValueError):
+            solvent_id = None
+
+    conn = get_db()
+    parent = conn.execute(
+        "SELECT id, name, name_ar, family_id, profile, supplier_id, odor_description FROM materials WHERE id=?",
+        (parent_id,)
+    ).fetchone()
+    if not parent:
+        conn.close()
+        return jsonify({'success': False, 'message': 'المادة الأصلية غير موجودة'}), 404
+
+    solvent_row = None
+    solvent_label = ''
+    if solvent_id:
+        solvent_row = conn.execute(
+            "SELECT id, name, name_ar FROM materials WHERE id=?", (solvent_id,)
+        ).fetchone()
+        if solvent_row:
+            solvent_label = solvent_row['name'] or solvent_row['name_ar'] or ''
+
+    # Auto-generate name if user didn't provide one
+    pct_str = (f"{concentration:g}").rstrip('.') + '%'
+    if not custom_name:
+        base = parent['name'] or parent['name_ar'] or f"Material {parent_id}"
+        custom_name = f"{base} {pct_str}"
+        if solvent_label:
+            custom_name += f" in {solvent_label}"
+    if not custom_name_ar:
+        base_ar = parent['name_ar'] or parent['name'] or ''
+        custom_name_ar = f"{base_ar} {pct_str}".strip()
+        if solvent_row and (solvent_row['name_ar'] or solvent_row['name']):
+            custom_name_ar += f" في {solvent_row['name_ar'] or solvent_row['name']}"
+
+    # Inherit lightweight metadata from the parent so the diluted form lands in
+    # the same family / pyramid bucket. Olfactive profile is also copied.
+    notes_text = note or f"تخفيف سريع: {pct_str} من «{parent['name'] or ''}»"
+    if solvent_label:
+        notes_text += f" في «{solvent_label}»"
+
+    try:
+        cur = conn.execute('''INSERT INTO materials
+            (name, name_ar, family_id, profile, supplier_id,
+             purchase_price, purchase_quantity, price_per_gram,
+             odor_description, notes, in_stock)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
+            (custom_name, custom_name_ar,
+             parent['family_id'], parent['profile'] or 'Heart', parent['supplier_id'],
+             0, 1, 0,
+             parent['odor_description'], notes_text, 0))
+        new_id = cur.lastrowid
+
+        # Copy olfactive profile from the parent (a 10% solution of citrus
+        # smells citrus, just weaker — the relative axis ratios still apply).
+        olf = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (parent_id,)).fetchone()
+        if olf:
+            conn.execute('''INSERT OR REPLACE INTO material_olfactive
+                (material_id, citrus, aldehydic, aromatic, green, marine, floral, fruity,
+                 spicy, balsamic, woody, ambery, musky, leathery, animal)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (new_id,
+                 olf['citrus'] or 0, olf['aldehydic'] or 0, olf['aromatic'] or 0,
+                 olf['green'] or 0, olf['marine'] or 0, olf['floral'] or 0, olf['fruity'] or 0,
+                 olf['spicy'] or 0, olf['balsamic'] or 0, olf['woody'] or 0,
+                 olf['ambery'] or 0, olf['musky'] or 0, olf['leathery'] or 0, olf['animal'] or 0))
+
+        # Composition rows: parent at <concentration>%, solvent at the remainder
+        # (only if a solvent was actually picked — otherwise the remainder stays
+        # "unspecified carrier" exactly as the composition system already supports).
+        comp_note = f"تخفيف {pct_str}"
+        conn.execute('''INSERT INTO material_composition
+            (parent_material_id, component_material_id, pct, note)
+            VALUES (?,?,?,?)''',
+            (new_id, parent_id, concentration, comp_note))
+        if solvent_id:
+            remainder = 100 - concentration
+            conn.execute('''INSERT INTO material_composition
+                (parent_material_id, component_material_id, pct, note)
+                VALUES (?,?,?,?)''',
+                (new_id, solvent_id, remainder, 'مذيب'))
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'success': True,
+            'id': new_id,
+            'name': custom_name,
+            'message': f'تم إنشاء «{custom_name}» (ID: {new_id})'
+        })
+    except Exception as e:
+        log(f"[ERROR quick-dilute] {e}")
+        conn.close()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 # ===== API التصنيف العطري التلقائي =====
 @app.route('/api/olfactive/auto-classify', methods=['POST'])

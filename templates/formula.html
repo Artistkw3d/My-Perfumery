@@ -518,6 +518,9 @@
         <a href="/formula/{{ formula.id }}/print" class="fh-btn" target="_blank" title="فتح صفحة طباعة A4 (احفظ كـ PDF من مربع الحوار)">
             <i class="bi bi-printer-fill"></i> طباعة PDF
         </a>
+        <button class="fh-btn" onclick="promptScaledPrint()" title="طباعة PDF بوزن إجمالي مُحدد (مثل 1000g) — يُضاعف كل المكوّنات تلقائياً">
+            <i class="bi bi-printer"></i> طباعة بكمية محددة
+        </button>
         <a href="/formula/{{ formula.id }}/card" class="fh-btn"><i class="bi bi-card-heading"></i> بطاقة</a>
     </div>
 </div>
@@ -1456,13 +1459,20 @@ function calculateScaleMulti() {
             let html = `
                 <div class="scale-info">
                     <strong>نوع الحساب:</strong> ${typeName}<br>
-                    <strong>المعادلة:</strong> ${useH ? 'H × الكمية' : 'J × الكمية'}
+                    <strong>المعادلة:</strong> ${useH ? 'H × الكمية' : 'J × الكمية'}<br>
+                    <span style="font-size:0.82rem;color:#5c4a32;"><i class="bi bi-info-circle"></i> زر الطابعة في رأس كل عمود يفتح PDF بكامل التركيبة مُكبَّرة لهذا الوزن الإجمالي (يُضرب كل صف بنفس المعامل).</span>
                 </div>
                 <div class="table-responsive">
                 <table class="e-table">
                     <thead><tr>
                         <th>#</th><th>المادة</th><th>${useH ? 'H%' : 'J%'}</th>`;
-            quantities.forEach(q => { html += `<th>${q}g</th>`; });
+            quantities.forEach(q => {
+                html += `<th style="white-space:nowrap;">${q}g
+                    <button type="button" class="btn btn-sm btn-outline-primary" style="padding:0 6px;font-size:0.72rem;margin-right:4px;" title="طباعة PDF بوزن ${q}g" onclick="printScaledFormula(${q})">
+                        <i class="bi bi-printer-fill"></i>
+                    </button>
+                </th>`;
+            });
             html += `</tr></thead><tbody>`;
             let totals = quantities.map(() => 0);
             items.forEach((item, idx) => {
@@ -1481,6 +1491,19 @@ function calculateScaleMulti() {
             html += `</tr></tbody></table></div>`;
             document.getElementById('scaleResult').innerHTML = html;
         });
+}
+
+function printScaledFormula(targetWeight) {
+    if (!(targetWeight > 0)) { showAlert('وزن غير صالح', 'warning'); return; }
+    window.open(`/formula/${formulaId}/print?target_weight=${encodeURIComponent(targetWeight)}`, '_blank');
+}
+
+function promptScaledPrint() {
+    const raw = prompt('أدخل الوزن الإجمالي المطلوب بالجرام (مثلاً 1000):');
+    if (raw === null) return;
+    const v = parseFloat(raw);
+    if (!(v > 0)) { showAlert('أدخل رقماً موجباً', 'warning'); return; }
+    printScaledFormula(v);
 }
 
 function calculateScale() { calculateScaleMulti(); }

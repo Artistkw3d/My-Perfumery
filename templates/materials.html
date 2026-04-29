@@ -162,6 +162,9 @@
         <button class="btn btn-outline-danger btn-sm" onclick="deleteAllUnusedMaterials()" title="حذف كل المواد غير المستخدمة في أي تركيبة">
             <i class="bi bi-trash"></i> حذف غير المستخدمة
         </button>
+        <button class="btn btn-outline-success btn-sm" onclick="showQuickDiluteModal()" title="إنشاء مادة مخفّفة جاهزة (مثل Vanillin 10% في DPG) — IFRA يُحسب تلقائياً من التركيب">
+            <i class="bi bi-droplet-half"></i> تخفيف سريع
+        </button>
         <button class="btn btn-primary btn-sm" onclick="showMaterialModal()">
             <i class="bi bi-plus-circle"></i> إضافة مادة
         </button>
@@ -851,6 +854,67 @@
     </div>
 </div>
 
+<!-- Quick-Dilute Modal: create a pre-diluted material (parent + solvent) in one shot -->
+<div class="modal fade" id="quickDiluteModal" tabindex="-1">
+    <div class="modal-dialog modal-md">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-droplet-half text-success"></i> تخفيف سريع — إنشاء مادة مخفّفة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert py-2 mb-3" style="background:#eef6f0;border:1px solid #b9d8c2;color:#2f5a3d;font-size:0.82rem;line-height:1.6;">
+                    <i class="bi bi-info-circle"></i>
+                    <b>للمواد الكريستالية والمواد القوية الأثر</b> — أنشئ هنا «نسخة مُخفَّفة» جاهزة كمادة مستقلة. النظام يبني التركيب تلقائياً (المادة الأصلية بالنسبة المختارة + المذيب)، فيستنبط حد IFRA لكل فئة من التركيب وينطبق التراكم على CAS عبر الخلطات. التخفيف لا يدخل في حسابات صفوف التركيبة — يُستخدم وزن المادة المُخفَّفة كما هو.
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold" style="font-size:0.85rem;">المادة الأصلية <span class="text-danger">*</span></label>
+                    <select id="qd_parent" class="form-select form-select-sm" required>
+                        <option value="">— اختر مادة —</option>
+                    </select>
+                    <small class="text-muted">عادةً مادة كريستالية أو ذات أثر قوي (Vanillin، Aldehyde C-12، …)</small>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-5">
+                        <label class="form-label fw-bold" style="font-size:0.85rem;">النسبة % <span class="text-danger">*</span></label>
+                        <input type="number" id="qd_concentration" class="form-control form-control-sm" min="0.01" max="99.99" step="0.1" value="10" oninput="qdRefreshNamePreview()">
+                        <small class="text-muted">مثال: 10 = 10% مادة أصلية + 90% مذيب</small>
+                    </div>
+                    <div class="col-7">
+                        <label class="form-label fw-bold" style="font-size:0.85rem;">المذيب</label>
+                        <select id="qd_solvent" class="form-select form-select-sm" onchange="qdRefreshNamePreview()">
+                            <option value="">— بدون مذيب محدّد (الباقي محمل غير معروف) —</option>
+                        </select>
+                        <small class="text-muted">DPG / IPM / Ethanol …</small>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold" style="font-size:0.85rem;">الاسم (English) — اتركه فارغاً للتوليد التلقائي</label>
+                    <input type="text" id="qd_name_en" class="form-control form-control-sm" placeholder="سيُولَّد تلقائياً">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold" style="font-size:0.85rem;">الاسم (عربي)</label>
+                    <input type="text" id="qd_name_ar" class="form-control form-control-sm" placeholder="سيُولَّد تلقائياً">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-bold" style="font-size:0.85rem;">ملاحظة (اختياري)</label>
+                    <input type="text" id="qd_note" class="form-control form-control-sm" placeholder="مثلاً: محضّرة بتاريخ ...">
+                </div>
+                <div class="alert alert-light py-2 mb-0" style="border:1px dashed #d4c7a8;font-size:0.78rem;color:#6b5a47;">
+                    <i class="bi bi-magic"></i>
+                    سيتم إنشاء مادة جديدة باسم: <b id="qdNamePreview" style="color:#3d2e1e;">—</b>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-success btn-sm" onclick="saveQuickDilute()">
+                    <i class="bi bi-check-circle"></i> إنشاء المادة المخفَّفة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Detail Wheel Modal (click on mini wheel) -->
 <div class="modal fade" id="wheelDetailModal" tabindex="-1">
     <div class="modal-dialog modal-md">
@@ -914,6 +978,7 @@ let modalChart = null;
 let detailChart = null;
 const modal = new bootstrap.Modal(document.getElementById('materialModal'));
 const wheelModal = new bootstrap.Modal(document.getElementById('wheelDetailModal'));
+const quickDiluteModal = new bootstrap.Modal(document.getElementById('quickDiluteModal'));
 
 // ===== Polar Area Chart Helper =====
 function createPolarChart(canvas, data, size='large') {
@@ -2159,6 +2224,109 @@ function deleteMaterial(id, name) {
             }
         });
     }
+}
+
+// ===== Quick-Dilute (create a pre-diluted material in one shot) =====
+function showQuickDiluteModal() {
+    if (!Array.isArray(materials) || !materials.length) {
+        showAlert('أضف مواد أولاً قبل استخدام التخفيف السريع', 'warning');
+        return;
+    }
+    const parentSel  = document.getElementById('qd_parent');
+    const solventSel = document.getElementById('qd_solvent');
+    const opts = materials
+        .slice()
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .map(m => {
+            const label = (m.name || m.name_ar || `#${m.id}`) +
+                          (m.cas_number ? ` — ${m.cas_number}` : '');
+            return `<option value="${m.id}">${escapeHtml(label)}</option>`;
+        })
+        .join('');
+    parentSel.innerHTML  = '<option value="">— اختر مادة —</option>' + opts;
+    solventSel.innerHTML = '<option value="">— بدون مذيب محدّد (الباقي محمل غير معروف) —</option>' + opts;
+
+    // Try to default the solvent to a common one if it exists
+    const lower = s => (s || '').toLowerCase();
+    const preferredSolvent = materials.find(m => {
+        const n = lower(m.name) + ' ' + lower(m.name_ar);
+        return /\bdpg\b|dipropylene\s*glycol|بروبيلين/.test(n);
+    }) || materials.find(m => /\bipm\b|isopropyl\s*myristate|ميريستات/.test(lower(m.name) + ' ' + lower(m.name_ar)))
+       || materials.find(m => /ethanol|كحول/.test(lower(m.name) + ' ' + lower(m.name_ar)));
+    if (preferredSolvent) solventSel.value = preferredSolvent.id;
+
+    document.getElementById('qd_concentration').value = '10';
+    document.getElementById('qd_name_en').value = '';
+    document.getElementById('qd_name_ar').value = '';
+    document.getElementById('qd_note').value = '';
+    parentSel.value = '';
+
+    parentSel.onchange = qdRefreshNamePreview;
+    qdRefreshNamePreview();
+    quickDiluteModal.show();
+}
+
+function qdRefreshNamePreview() {
+    const customName = document.getElementById('qd_name_en').value.trim();
+    if (customName) {
+        document.getElementById('qdNamePreview').textContent = customName;
+        return;
+    }
+    const parentId = parseInt(document.getElementById('qd_parent').value) || 0;
+    const solventId = parseInt(document.getElementById('qd_solvent').value) || 0;
+    const conc = parseFloat(document.getElementById('qd_concentration').value) || 0;
+    if (!parentId || !conc) {
+        document.getElementById('qdNamePreview').textContent = '—';
+        return;
+    }
+    const p = materials.find(m => m.id === parentId);
+    const s = solventId ? materials.find(m => m.id === solventId) : null;
+    const pName = p ? (p.name || p.name_ar || `#${parentId}`) : '?';
+    let preview = `${pName} ${conc}%`;
+    if (s) preview += ` in ${s.name || s.name_ar}`;
+    document.getElementById('qdNamePreview').textContent = preview;
+}
+
+document.addEventListener('input', e => {
+    if (e.target && (e.target.id === 'qd_name_en' || e.target.id === 'qd_concentration')) {
+        qdRefreshNamePreview();
+    }
+});
+
+function saveQuickDilute() {
+    const parentId = parseInt(document.getElementById('qd_parent').value) || 0;
+    const solventId = parseInt(document.getElementById('qd_solvent').value) || 0;
+    const conc = parseFloat(document.getElementById('qd_concentration').value) || 0;
+    const nameEn = document.getElementById('qd_name_en').value.trim();
+    const nameAr = document.getElementById('qd_name_ar').value.trim();
+    const note   = document.getElementById('qd_note').value.trim();
+
+    if (!parentId)             { showAlert('اختر المادة الأصلية', 'warning'); return; }
+    if (!(conc > 0 && conc < 100)) { showAlert('النسبة يجب أن تكون بين 0 و 100', 'warning'); return; }
+
+    const fd = new FormData();
+    fd.append('parent_id', parentId);
+    if (solventId) fd.append('solvent_id', solventId);
+    fd.append('concentration', conc);
+    if (nameEn) fd.append('name', nameEn);
+    if (nameAr) fd.append('name_ar', nameAr);
+    if (note)   fd.append('note', note);
+
+    fetch('/api/materials/quick-dilute', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            quickDiluteModal.hide();
+            showAlert(data.message || 'تم إنشاء المادة المخفَّفة');
+            loadMaterials();
+        } else {
+            showAlert(data.message || 'فشل الإنشاء', 'danger');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        showAlert('خطأ في الشبكة', 'danger');
+    });
 }
 
 function deleteAllUnusedMaterials() {
