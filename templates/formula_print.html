@@ -419,7 +419,7 @@ function renderIfraAndOlfactive(data) {
         <div class="p-panel">
             <div class="p-panel-title"><i class="bi bi-bullseye"></i> البروفايل العطري</div>
             <div class="chart-wrap"><canvas id="pChart" width="280" height="280"></canvas></div>
-            <div class="chart-caption">حسب متوسط المكونات، 14 محوراً (الأرقام تمثّل القيمة الفعلية)</div>
+            <div class="chart-caption">حسب متوسط المكونات، 14 محوراً</div>
         </div>` : '';
 
     wrap.innerHTML = `<div class="p-row-2 ${hasIfra && hasProfile ? '' : 'single'}">${ifraPanel}${profilePanel}</div>`;
@@ -428,47 +428,18 @@ function renderIfraAndOlfactive(data) {
         const canvas = document.getElementById('pChart');
         canvas.width = 280; canvas.height = 280;
         const rawValues = AXES.map(a => profile[a.k] || 0);
-        // Square-root compression: a 1-vs-10 spread becomes 1-vs-3.16 visually,
-        // so weak axes stay legible while dominant ones are still visibly larger.
-        // Raw numeric values are still printed inside each wedge by the plugin
-        // below, so no precision is lost.
-        const visualValues = rawValues.map(v => Math.sqrt(Math.max(0, v)));
-        const visualMax    = Math.max(...visualValues, 1);
-
-        // Plugin: render the raw value inside each wedge with a white halo
-        // so it remains readable across both pale and dark wedge colors.
-        const wedgeValuesPlugin = {
-            id: 'wedgeValues',
-            afterDatasetsDraw(chart) {
-                const meta = chart.getDatasetMeta(0);
-                const ctx = chart.ctx;
-                ctx.save();
-                ctx.font = 'bold 9pt Tajawal, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.lineWidth = 3;
-                meta.data.forEach((wedge, i) => {
-                    const v = rawValues[i] || 0;
-                    if (v <= 0) return;
-                    const r0 = wedge.innerRadius || 0;
-                    const r1 = wedge.outerRadius || 0;
-                    if (r1 - r0 < 12) return;  // wedge too thin → skip label
-                    const r = r0 + (r1 - r0) * 0.62;
-                    // wedge's start/end angles are centered on each axis
-                    const ang = (wedge.startAngle + wedge.endAngle) / 2;
-                    const x = wedge.x + r * Math.cos(ang);
-                    const y = wedge.y + r * Math.sin(ang);
-                    const label = (Math.abs(v - Math.round(v)) < 0.05)
-                        ? String(Math.round(v))
-                        : v.toFixed(1);
-                    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-                    ctx.strokeText(label, x, y);
-                    ctx.fillStyle = '#3d2e1e';
-                    ctx.fillText(label, x, y);
-                });
-                ctx.restore();
-            }
-        };
+        const maxRaw = Math.max(...rawValues, 1);
+        // Two-step transform so weak axes remain visible:
+        //   1) sqrt-normalise to [0..1] — compresses a 1-vs-10 ratio to 1-vs-3.16
+        //   2) Floor: any value > 0 occupies at least FLOOR_RATIO of the radius
+        // The largest axis still maps to 1.0, so the dominance is preserved
+        // but never visually erases a smaller (but real) axis.
+        const FLOOR_RATIO = 0.40;  // 40% of max radius for any nonzero value
+        const visualValues = rawValues.map(v => {
+            if (v <= 0) return 0;
+            const norm = Math.sqrt(v) / Math.sqrt(maxRaw);  // 0..1
+            return FLOOR_RATIO + (1 - FLOOR_RATIO) * norm;
+        });
 
         new Chart(canvas.getContext('2d'), {
             type: 'polarArea',
@@ -477,7 +448,7 @@ function renderIfraAndOlfactive(data) {
                 datasets: [{
                     data: visualValues,
                     backgroundColor: AXES.map(a => a.color + 'cc'),
-                    borderColor: '#fff', borderWidth: 1.5
+                    borderColor: '#fff', borderWidth: 2
                 }]
             },
             options: {
@@ -486,7 +457,7 @@ function renderIfraAndOlfactive(data) {
                 plugins: { legend: { display: false }, tooltip: { enabled: false } },
                 scales: {
                     r: {
-                        min: 0, max: visualMax,
+                        min: 0, max: 1,
                         ticks: { display: false },
                         grid:       { color: 'rgba(139,115,85,0.15)' },
                         angleLines: { color: 'rgba(139,115,85,0.15)' },
@@ -498,8 +469,7 @@ function renderIfraAndOlfactive(data) {
                         }
                     }
                 }
-            },
-            plugins: [wedgeValuesPlugin]
+            }
         });
     }
 }
