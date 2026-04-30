@@ -64,7 +64,8 @@ My Perfumery v3 - Flask web application for managing perfume formulations, mater
 
 ## Scale modal print
 - The Scale modal (`showScaleModal()` on formula.html) renders a multi-column table of ingredient amounts at user-chosen quantities (1000g/100g/50g/20g/5g by default), in either J% (production) or H% (design) mode.
-- A **"طباعة النتائج"** button next to the type/equation line at the top of the results pops a small new window containing just the rendered table + a header (formula name, calc type, today's date), with auto-print on load. Pure client-side — opens via `window.open('', '_blank')` and writes a self-contained HTML document with print-ready CSS. The original `/formula/<id>/print` A4 page is unchanged and unrelated.
+- A **"طباعة النتائج"** button next to the type/equation line at the top of the results prints the rendered table.
+- **Implementation: hidden iframe, not `window.open`.** pywebview/WebView2 (the desktop `.exe` shell) blocks `window.open` as a popup. The print path writes a self-contained HTML doc into an off-screen iframe (`#scalePrintFrame`), then calls `iframe.contentWindow.print()`. Works identically in browsers and in the desktop build, no popup-blocker prompts. The print doc is RTL Arabic, A4, with formula name + calc type (J/H) + today's date as a header above the table. The original `/formula/<id>/print` A4 page is unchanged and unrelated.
 
 ## Materials advanced filter
 - Materials page has a collapsible "فلتر متقدم" panel (toggle button next to the search box; badge shows active-filter count). Filters: family multi-select, profile (Top/Heart/Base) multi-select, supplier, stock (in/out), price-per-gram min/max, IFRA presence (has/none), mixture vs atomic, CAS presence. Active-filter chips render above with × to remove individual filters and a "مسح الكل" button.
