@@ -304,6 +304,23 @@ const AXES = [
 function fmt(n, d) { return n === null || n === undefined ? '—' : Number(n).toFixed(d); }
 function fmtPct(n, d) { return n === null || n === undefined ? '—' : Number(n).toFixed(d) + '%'; }
 
+const MARKERS = {
+    star:     { ch: '★', color: '#d4a853' },
+    flag:     { ch: '⚑', color: '#c17a6f' },
+    heart:    { ch: '❤', color: '#c9847b' },
+    check:    { ch: '✓', color: '#7d9c7b' },
+    bookmark: { ch: '🔖', color: '#8b7355' },
+    square:   { ch: '◼', color: '#3d2e1e' }
+};
+function renderMarkersInline(raw) {
+    if (!raw) return '';
+    const keys = String(raw).split(',').map(s => s.trim()).filter(k => MARKERS[k]);
+    if (!keys.length) return '';
+    return ' ' + keys.map(k =>
+        `<span style="color:${MARKERS[k].color};font-size:9pt;line-height:1;">${MARKERS[k].ch}</span>`
+    ).join('');
+}
+
 function renderIngredients(data) {
     const ings = data.data || [];
     const sec = document.getElementById('ingredientsSection');
@@ -325,7 +342,7 @@ function renderIngredients(data) {
                         : fmt(r.dilution, 2);
         const matName = r.name_ar || r.name || '';
         return `<tr>
-            <td class="num">${i + 1}</td>
+            <td class="num">${i + 1}${renderMarkersInline(r.markers)}</td>
             <td class="mat">${escapeHtml(matName)}${r.cas_number ? `<span class="cas">CAS ${escapeHtml(r.cas_number)}</span>` : ''}</td>
             <td class="num">${escapeHtml(r.diluent || '—')}</td>
             <td class="num">${dilCell}</td>

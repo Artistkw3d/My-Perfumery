@@ -330,6 +330,37 @@
     /* Scale modal */
     .scale-info { background: var(--cream); border: 1px solid var(--sand); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 0.85rem; }
 
+    /* Per-ingredient markers (next to row number) */
+    .row-num-cell { white-space: nowrap; }
+    .mk-chips { display: inline-flex; gap: 2px; margin-right: 4px; vertical-align: middle; }
+    .mk-chip {
+        display: inline-block; font-size: 0.95rem; line-height: 1;
+        text-shadow: 0 0 1px rgba(0,0,0,0.05);
+    }
+    .mk-add {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 16px; height: 16px; border: 1px dashed #c8b896; border-radius: 3px;
+        color: #b8956a; font-size: 0.7rem; cursor: pointer; background: transparent;
+        margin-right: 3px; padding: 0; vertical-align: middle;
+        opacity: 0.55; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .mk-add:hover { opacity: 1; border-color: var(--gold); color: var(--primary); }
+    .mk-popover {
+        position: absolute; z-index: 1080;
+        background: #fff; border: 1px solid var(--border, #e6dfd2);
+        border-radius: 8px; box-shadow: 0 4px 14px rgba(60,40,20,0.12);
+        padding: 6px; display: flex; gap: 4px;
+    }
+    .mk-popover button {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 30px; height: 30px; border: 1px solid transparent;
+        background: #faf7f1; border-radius: 6px; cursor: pointer;
+        font-size: 1.05rem; line-height: 1; padding: 0;
+        transition: background 0.12s, border-color 0.12s, transform 0.08s;
+    }
+    .mk-popover button:hover { background: #f0e9d8; }
+    .mk-popover button.active { background: #fbf0da; border-color: #e6ce90; }
+
     /* Draft system */
     .draft-bar {
         display: flex;
@@ -1065,6 +1096,94 @@ function updateFormulaWheel(profile) {
     });
 }
 
+// ===== Per-ingredient markers (multi-select, prints on PDF) =====
+const MARKERS = {
+    star:     { ch: '★', color: '#d4a853', label: 'نجمة' },
+    flag:     { ch: '⚑', color: '#c17a6f', label: 'علم' },
+    heart:    { ch: '❤', color: '#c9847b', label: 'قلب' },
+    check:    { ch: '✓', color: '#7d9c7b', label: 'صحيح' },
+    bookmark: { ch: '🔖', color: '#8b7355', label: 'إشارة' },
+    square:   { ch: '◼', color: '#3d2e1e', label: 'مربع' }
+};
+const MARKER_KEYS = Object.keys(MARKERS);
+
+function parseMarkers(raw) {
+    if (!raw) return [];
+    return String(raw).split(',').map(s => s.trim()).filter(k => MARKERS[k]);
+}
+
+function renderMarkers(raw) {
+    const keys = parseMarkers(raw);
+    if (!keys.length) return '';
+    return keys.map(k =>
+        `<span class="mk-chip" style="color:${MARKERS[k].color};" title="${MARKERS[k].label}">${MARKERS[k].ch}</span>`
+    ).join('');
+}
+
+function closeMarkerMenu() {
+    const old = document.getElementById('mkPopover');
+    if (old) old.remove();
+    document.removeEventListener('click', onMarkerOutsideClick, true);
+}
+
+function onMarkerOutsideClick(ev) {
+    const pop = document.getElementById('mkPopover');
+    if (!pop) { document.removeEventListener('click', onMarkerOutsideClick, true); return; }
+    if (!pop.contains(ev.target)) closeMarkerMenu();
+}
+
+function openMarkerMenu(ev, ingId) {
+    ev.stopPropagation();
+    closeMarkerMenu();
+    const btn = ev.currentTarget;
+    const tr  = btn.closest('tr');
+    const currentRaw = tr ? (tr.dataset.markers || '') : '';
+    const active = new Set(parseMarkers(currentRaw));
+
+    const pop = document.createElement('div');
+    pop.id = 'mkPopover';
+    pop.className = 'mk-popover';
+    pop.innerHTML = MARKER_KEYS.map(k =>
+        `<button type="button" data-key="${k}" class="${active.has(k) ? 'active' : ''}" title="${MARKERS[k].label}" style="color:${MARKERS[k].color};">${MARKERS[k].ch}</button>`
+    ).join('');
+
+    document.body.appendChild(pop);
+    const rect = btn.getBoundingClientRect();
+    pop.style.top  = (rect.bottom + window.scrollY + 4) + 'px';
+    // Anchor to the right edge of the button so the popover opens to the right in RTL
+    pop.style.left = (rect.left + window.scrollX) + 'px';
+
+    pop.querySelectorAll('button').forEach(b => {
+        b.addEventListener('click', e => {
+            e.stopPropagation();
+            const key = b.dataset.key;
+            if (active.has(key)) active.delete(key); else active.add(key);
+            b.classList.toggle('active', active.has(key));
+            saveMarkers(ingId, Array.from(active), tr);
+        });
+    });
+
+    setTimeout(() => document.addEventListener('click', onMarkerOutsideClick, true), 0);
+}
+
+function saveMarkers(ingId, keys, tr) {
+    const fd = new FormData();
+    fd.append('action', 'set_markers');
+    fd.append('ing_id', ingId);
+    fd.append('markers', keys.join(','));
+    fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { showAlert('فشل حفظ العلامات', 'danger'); return; }
+            // Update the row in-place without re-rendering everything
+            if (tr) {
+                tr.dataset.markers = data.markers || '';
+                const chips = tr.querySelector('.mk-chips');
+                if (chips) chips.innerHTML = renderMarkers(data.markers);
+            }
+        });
+}
+
 function loadIngredients() {
     fetch(`/api/formula/${formulaId}/ingredients`)
         .then(r => r.json())
@@ -1163,8 +1282,8 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
         }
 
         return `
-        <tr class="${rowClass}">
-            <td>${rowNum}</td>
+        <tr class="${rowClass}" data-markers="${i.markers || ''}">
+            <td class="row-num-cell">${rowNum}<span class="mk-chips">${renderMarkers(i.markers)}</span><button type="button" class="mk-add" title="إضافة علامة" onclick="openMarkerMenu(event, ${i.id})">+</button></td>
             <td class="mat-cell">
                 <strong>${i.name}</strong>
                 ${i.cas_number ? `<br><span class="cas-t">${i.cas_number}</span>` : ''}

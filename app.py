@@ -799,6 +799,7 @@ def init_db():
         ('families', 'icon', 'TEXT'),
         ('formula_ingredients', 'diluent', 'TEXT'),
         ('formula_ingredients', 'diluent_other', 'TEXT'),
+        ('formula_ingredients', 'markers', 'TEXT'),
         ('formulas', 'active_ratio', 'REAL'),
         ('formulas', 'ifra_design_limit', 'REAL'),
         ('formulas', 'ifra_final_limit', 'REAL'),
@@ -3474,6 +3475,22 @@ def api_formula_ingredients(fid):
             conn.commit()
             conn.close()
             return jsonify({'success': True, 'message': f'تم حذف {affected} مادة', 'affected': affected})
+
+        elif action == 'set_markers':
+            # Save multi-select markers for a single ingredient row.
+            # `markers` is a comma-separated list of marker keys (e.g. "star,flag").
+            # Empty string clears all markers for that row.
+            ing_id = request.form.get('ing_id')
+            allowed = {'star', 'flag', 'heart', 'check', 'bookmark', 'square'}
+            raw = (request.form.get('markers') or '').strip()
+            keys = [k.strip() for k in raw.split(',') if k.strip() in allowed]
+            value = ','.join(sorted(set(keys))) if keys else None
+            conn.execute(
+                "UPDATE formula_ingredients SET markers=? WHERE id=? AND formula_id=?",
+                (value, ing_id, fid))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'markers': value or ''})
 
         elif action == 'reset_ifra':
             # Clear all manual ifra_override values for this formula, reverting to standard IFRA limits
