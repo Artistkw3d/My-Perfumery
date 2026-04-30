@@ -434,7 +434,7 @@ function renderIfraAndOlfactive(data) {
         //   2) Floor: any value > 0 occupies at least FLOOR_RATIO of the radius
         // The largest axis still maps to 1.0, so the dominance is preserved
         // but never visually erases a smaller (but real) axis.
-        const FLOOR_RATIO = 0.40;  // 40% of max radius for any nonzero value
+        const FLOOR_RATIO = 0.30;  // 30% of max radius for any nonzero value
         const visualValues = rawValues.map(v => {
             if (v <= 0) return 0;
             const norm = Math.sqrt(v) / Math.sqrt(maxRaw);  // 0..1
