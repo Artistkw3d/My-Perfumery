@@ -1948,9 +1948,7 @@ def api_ifra_contributions_calc(fid):
         if not cas:
             continue
 
-        contribs = conn.execute(
-            'SELECT * FROM ifra_contributions WHERE ncs_cas = ?', (cas,)
-        ).fetchall()
+        contribs = _resolve_ifra_contributions(conn, cas, i['name'])
 
         if not contribs:
             continue
@@ -2117,9 +2115,7 @@ def api_ifra_formula_check(fid):
         weight_pct = (i['weight'] / total_weight * 100) if total_weight > 0 else 0
 
         # Look up contributions where this material's CAS matches ncs_cas
-        contribs = conn.execute('''
-            SELECT * FROM ifra_contributions WHERE ncs_cas = ?
-        ''', (cas,)).fetchall()
+        contribs = _resolve_ifra_contributions(conn, cas, i['name'])
 
         for c in contribs:
             c_cas = c['constituent_cas']
@@ -2491,6 +2487,136 @@ def api_material_file_serve(mid, fid):
     resp = Response(row['content'], mimetype=mime)
     resp.headers['Content-Disposition'] = f'{disp}; filename="{safe_name}"; filename*=UTF-8\'\'{utf8_name}'
     return resp
+
+# ===== Smart NCS-variant matching for ifra_contributions =====
+# Some CAS numbers in the IFRA Annex source data correspond to multiple
+# graded variants of the same natural (e.g. CAS 8006-81-3 → "Ylang ylang
+# oil I", "Ylang ylang oil II", "Ylang ylang oil III", "extra", "complete").
+# A naive `WHERE ncs_cas = ?` lookup pulls all variants and returns the
+# same constituent multiple times. The helpers below pick the variant
+# whose name best matches the material name; if no good match is found,
+# they fall back to deduplicating by constituent_cas with averaged
+# concentration so downstream code doesn't double-count.
+
+_NCS_GENERIC_TOKENS = {
+    'OIL', 'OILS', 'EXTRACT', 'EXTRACTS', 'ABSOLUTE', 'CO2', 'CONCRETE',
+    'RESINOID', 'TINCTURE', 'OLEORESIN', 'EO', 'ESSENTIAL', 'NATURAL',
+    'ORGANIC', 'PURE', 'BIO', 'ULTRA', 'BASE', 'PREMIUM',
+    'A', 'AN', 'THE', 'AND', 'OF', 'IN', 'YL',
+}
+
+
+def _ncs_tokenize(text):
+    """Return a set of uppercase tokens from text. Roman numerals stay as
+    their own tokens because they're the primary grade discriminator."""
+    if not text:
+        return set()
+    out = set()
+    for m in re.findall(r'[A-Za-z]+|[0-9]+', str(text)):
+        if m:
+            out.add(m.upper())
+    return out
+
+
+def _best_ncs_variant_match(material_name, variant_names):
+    """Pick the NCS variant whose name shares the most non-generic tokens
+    with material_name. Returns None if the match is ambiguous (no shared
+    discriminating token, or a tie at the top score)."""
+    if not material_name or not variant_names:
+        return None
+    if len(variant_names) == 1:
+        return variant_names[0]
+
+    mat_tokens = _ncs_tokenize(material_name)
+    if not mat_tokens:
+        return None
+
+    scored = []
+    for vn in variant_names:
+        v_tokens = _ncs_tokenize(vn)
+        shared = (mat_tokens & v_tokens) - _NCS_GENERIC_TOKENS
+        scored.append((vn, len(shared)))
+
+    max_score = max(s for _, s in scored)
+    if max_score == 0:
+        return None  # no discriminating overlap with any variant
+    winners = [vn for vn, s in scored if s == max_score]
+    if len(winners) > 1:
+        return None  # ambiguous tie → caller should fall back to dedup
+    return winners[0]
+
+
+def _resolve_ifra_contributions(conn, ncs_cas, material_name=None):
+    """Return constituents for a parent NCS CAS as a list of dicts.
+
+    When the CAS resolves to multiple NCS variants (e.g. ylang ylang
+    grades I/II/III), narrow to the variant whose name best matches
+    material_name. If no match is decisive, deduplicate by
+    constituent_cas with averaged concentration so each constituent is
+    only counted once.
+
+    Each result dict has keys: ncs_name, constituent_cas,
+    constituent_name, concentration_pct, source_type, _aggregated.
+    """
+    rows = conn.execute(
+        '''SELECT ncs_name, constituent_cas, constituent_name,
+                  concentration_pct, source_type
+           FROM ifra_contributions WHERE ncs_cas = ?''',
+        (ncs_cas,)
+    ).fetchall()
+    if not rows:
+        return []
+
+    by_variant = {}
+    for r in rows:
+        key = (r['ncs_name'] or '').strip()
+        by_variant.setdefault(key, []).append(r)
+
+    if len(by_variant) <= 1:
+        return [{
+            'ncs_name': r['ncs_name'],
+            'constituent_cas': r['constituent_cas'],
+            'constituent_name': r['constituent_name'],
+            'concentration_pct': r['concentration_pct'],
+            'source_type': r['source_type'],
+            '_aggregated': False,
+        } for r in rows]
+
+    chosen = _best_ncs_variant_match(material_name, list(by_variant.keys()))
+    if chosen is not None:
+        return [{
+            'ncs_name': r['ncs_name'],
+            'constituent_cas': r['constituent_cas'],
+            'constituent_name': r['constituent_name'],
+            'concentration_pct': r['concentration_pct'],
+            'source_type': r['source_type'],
+            '_aggregated': False,
+        } for r in by_variant[chosen]]
+
+    # Ambiguous → average concentrations across grades, dedup by constituent
+    merged = {}
+    n_variants = len(by_variant)
+    for r in rows:
+        c_cas = r['constituent_cas']
+        if c_cas not in merged:
+            merged[c_cas] = {
+                'ncs_name': f'({n_variants} variants — averaged)',
+                'constituent_cas': c_cas,
+                'constituent_name': r['constituent_name'],
+                'source_type': r['source_type'],
+                '_concentrations': [],
+                '_aggregated': True,
+            }
+        merged[c_cas]['_concentrations'].append(r['concentration_pct'])
+    return [{
+        'ncs_name': v['ncs_name'],
+        'constituent_cas': v['constituent_cas'],
+        'constituent_name': v['constituent_name'],
+        'concentration_pct': sum(v['_concentrations']) / len(v['_concentrations']),
+        'source_type': v['source_type'],
+        '_aggregated': True,
+    } for v in merged.values()]
+
 
 # ===== تركيب المواد (الخلطات / الميكسجر) =====
 def _expand_mixture_components(conn, mat_id, accumulated_pct, depth=0, max_depth=5, visited=None):
@@ -3124,9 +3250,7 @@ def api_formula_ingredients(fid):
                             ifra_limit = cat_val
                 # No direct IFRA standard — derive from contributions (constituents inside naturals/Schiff bases)
                 if ifra_limit == 0 and ifra_std_name is None:
-                    contribs = conn.execute(
-                        'SELECT * FROM ifra_contributions WHERE ncs_cas = ?', (cas,)
-                    ).fetchall()
+                    contribs = _resolve_ifra_contributions(conn, cas, i['name'])
                     min_derived = None
                     for c in contribs:
                         c_row = conn.execute('''
@@ -3187,13 +3311,11 @@ def api_formula_ingredients(fid):
             if ifra_final_calc is not None:
                 l_values.append(ifra_final_calc)
 
-            # Get constituents for this material
+            # Get constituents for this material (variant-aware: filters out
+            # the I/II/III/extra duplication when a CAS has multiple grades)
             constituents = []
             if cas:
-                const_rows = conn.execute(
-                    'SELECT constituent_name, constituent_cas, concentration_pct FROM ifra_contributions WHERE ncs_cas = ?', (cas,)
-                ).fetchall()
-                for cr in const_rows:
+                for cr in _resolve_ifra_contributions(conn, cas, i['name']):
                     constituents.append({
                         'name': cr['constituent_name'],
                         'cas': cr['constituent_cas'],
@@ -3264,9 +3386,7 @@ def api_formula_ingredients(fid):
                 continue
             weight_pct_100 = t['weight_pct'] * 100  # H as percentage
 
-            contribs = conn.execute(
-                'SELECT * FROM ifra_contributions WHERE ncs_cas = ?', (cas,)
-            ).fetchall()
+            contribs = _resolve_ifra_contributions(conn, cas, t['data']['name'])
 
             for c in contribs:
                 c_cas = c['constituent_cas']
