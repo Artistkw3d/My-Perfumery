@@ -142,8 +142,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 700; }
 .ifra-legend .k { color: #9a8a77; min-width: 20px; font-weight: 600; }
 
 /* Chart — fixed pixel size, no responsive (reliable in print / across DPRs) */
-.chart-wrap { width: 240px; height: 240px; margin: 0 auto; position: relative; }
-.chart-wrap canvas { width: 240px !important; height: 240px !important; }
+.chart-wrap { width: 280px; height: 280px; margin: 0 auto; position: relative; }
+.chart-wrap canvas { width: 280px !important; height: 280px !important; }
 .chart-caption { text-align: center; font-size: 7pt; color: #9a8a77; margin-top: 2px; }
 
 /* Review */
@@ -418,25 +418,64 @@ function renderIfraAndOlfactive(data) {
     const profilePanel = hasProfile ? `
         <div class="p-panel">
             <div class="p-panel-title"><i class="bi bi-bullseye"></i> البروفايل العطري</div>
-            <div class="chart-wrap"><canvas id="pChart" width="240" height="240"></canvas></div>
-            <div class="chart-caption">حسب متوسط المكونات، 14 محوراً</div>
+            <div class="chart-wrap"><canvas id="pChart" width="280" height="280"></canvas></div>
+            <div class="chart-caption">حسب متوسط المكونات، 14 محوراً (الأرقام تمثّل القيمة الفعلية)</div>
         </div>` : '';
 
     wrap.innerHTML = `<div class="p-row-2 ${hasIfra && hasProfile ? '' : 'single'}">${ifraPanel}${profilePanel}</div>`;
 
     if (hasProfile) {
         const canvas = document.getElementById('pChart');
-        canvas.width = 240; canvas.height = 240;
-        const values = AXES.map(a => profile[a.k] || 0);
-        // Use max value directly so the largest wedge reaches 100% of radius.
-        // (Previously we used ceil(max * 1.3) which left 25% dead space.)
-        const maxVal = Math.max(...values, 1);
+        canvas.width = 280; canvas.height = 280;
+        const rawValues = AXES.map(a => profile[a.k] || 0);
+        // Square-root compression: a 1-vs-10 spread becomes 1-vs-3.16 visually,
+        // so weak axes stay legible while dominant ones are still visibly larger.
+        // Raw numeric values are still printed inside each wedge by the plugin
+        // below, so no precision is lost.
+        const visualValues = rawValues.map(v => Math.sqrt(Math.max(0, v)));
+        const visualMax    = Math.max(...visualValues, 1);
+
+        // Plugin: render the raw value inside each wedge with a white halo
+        // so it remains readable across both pale and dark wedge colors.
+        const wedgeValuesPlugin = {
+            id: 'wedgeValues',
+            afterDatasetsDraw(chart) {
+                const meta = chart.getDatasetMeta(0);
+                const ctx = chart.ctx;
+                ctx.save();
+                ctx.font = 'bold 9pt Tajawal, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.lineWidth = 3;
+                meta.data.forEach((wedge, i) => {
+                    const v = rawValues[i] || 0;
+                    if (v <= 0) return;
+                    const r0 = wedge.innerRadius || 0;
+                    const r1 = wedge.outerRadius || 0;
+                    if (r1 - r0 < 12) return;  // wedge too thin → skip label
+                    const r = r0 + (r1 - r0) * 0.62;
+                    // wedge's start/end angles are centered on each axis
+                    const ang = (wedge.startAngle + wedge.endAngle) / 2;
+                    const x = wedge.x + r * Math.cos(ang);
+                    const y = wedge.y + r * Math.sin(ang);
+                    const label = (Math.abs(v - Math.round(v)) < 0.05)
+                        ? String(Math.round(v))
+                        : v.toFixed(1);
+                    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+                    ctx.strokeText(label, x, y);
+                    ctx.fillStyle = '#3d2e1e';
+                    ctx.fillText(label, x, y);
+                });
+                ctx.restore();
+            }
+        };
+
         new Chart(canvas.getContext('2d'), {
             type: 'polarArea',
             data: {
                 labels: AXES.map(a => a.icon + ' ' + a.label),
                 datasets: [{
-                    data: values,
+                    data: visualValues,
                     backgroundColor: AXES.map(a => a.color + 'cc'),
                     borderColor: '#fff', borderWidth: 1.5
                 }]
@@ -447,7 +486,7 @@ function renderIfraAndOlfactive(data) {
                 plugins: { legend: { display: false }, tooltip: { enabled: false } },
                 scales: {
                     r: {
-                        min: 0, max: maxVal,
+                        min: 0, max: visualMax,
                         ticks: { display: false },
                         grid:       { color: 'rgba(139,115,85,0.15)' },
                         angleLines: { color: 'rgba(139,115,85,0.15)' },
@@ -459,7 +498,8 @@ function renderIfraAndOlfactive(data) {
                         }
                     }
                 }
-            }
+            },
+            plugins: [wedgeValuesPlugin]
         });
     }
 }
