@@ -11,6 +11,9 @@ dist/
 # Local data (per-user SQLite DB + backups)
 database/
 
+# Per-install Flask session secret (auto-generated)
+secret.key
+
 # IDE / editor
 .vscode/
 .idea/

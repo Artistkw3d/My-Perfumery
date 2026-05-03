@@ -40,6 +40,8 @@
     }
     .backup-actions .btn-restore { color: var(--green); }
     .backup-actions .btn-restore:hover { background: rgba(125,156,123,0.15); border-color: var(--green); }
+    .backup-actions .btn-download { color: var(--gold); }
+    .backup-actions .btn-download:hover { background: rgba(184,151,83,0.12); border-color: var(--gold); }
     .backup-actions .btn-delete { color: var(--red); }
     .backup-actions .btn-delete:hover { background: rgba(184,92,92,0.1); border-color: var(--red); }
     .backup-empty {
@@ -148,9 +150,15 @@
 <div class="card mt-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-cloud-arrow-down"></i> النسخ الاحتياطية</span>
-        <button class="btn-backup" onclick="createBackup()">
-            <i class="bi bi-plus-circle"></i> نسخة احتياطية الآن
-        </button>
+        <div style="display:flex; gap:8px;">
+            <button class="btn-backup" onclick="document.getElementById('backupUploadInput').click()" style="background:var(--gold);">
+                <i class="bi bi-upload"></i> رفع نسخة احتياطية
+            </button>
+            <button class="btn-backup" onclick="createBackup()">
+                <i class="bi bi-plus-circle"></i> نسخة احتياطية الآن
+            </button>
+        </div>
+        <input type="file" id="backupUploadInput" accept=".db" style="display:none;" onchange="uploadBackup(this)">
     </div>
     <div class="card-body">
         <div style="font-size:0.82rem;color:var(--text-mid);margin-bottom:16px;">
@@ -185,12 +193,14 @@ const reasonLabels = {
     login: 'تسجيل دخول',
     manual: 'يدوي',
     pre_restore: 'قبل الاستعادة',
-    auto: 'تلقائي'
+    auto: 'تلقائي',
+    uploaded: 'تم رفعها'
 };
 const reasonClasses = {
     login: 'reason-login',
     manual: 'reason-manual',
-    pre_restore: 'reason-pre_restore'
+    pre_restore: 'reason-pre_restore',
+    uploaded: 'reason-manual'
 };
 
 function loadBackups() {
@@ -214,6 +224,9 @@ function loadBackups() {
                     </div>
                 </div>
                 <div class="backup-actions">
+                    <button class="btn-download" onclick="downloadBackup('${b.filename}')" title="تنزيل">
+                        <i class="bi bi-download"></i> تحميل
+                    </button>
                     <button class="btn-restore" onclick="restoreBackup('${b.filename}', '${b.date}')">
                         <i class="bi bi-arrow-counterclockwise"></i> استعادة
                     </button>
@@ -237,6 +250,32 @@ function createBackup() {
     });
 }
 
+function uploadBackup(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const sizeMb = file.size / 1024 / 1024;
+    if (sizeMb > 50) {
+        showAlert('حجم الملف يتجاوز 50 ميجابايت', 'danger');
+        input.value = '';
+        return;
+    }
+    const fd = new FormData();
+    fd.append('action', 'upload_backup');
+    fd.append('file', file);
+    showAlert('جاري رفع النسخة الاحتياطية...', 'info');
+    fetch('/api/settings', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        showAlert(data.message, data.success ? 'success' : 'danger');
+        input.value = '';
+        if (data.success) loadBackups();
+    })
+    .catch(err => {
+        showAlert('فشل الرفع: ' + err, 'danger');
+        input.value = '';
+    });
+}
+
 function restoreBackup(filename, date) {
     if (!confirm('هل تريد استعادة النسخة الاحتياطية من ' + date + '؟\n\nسيتم إنشاء نسخة احتياطية من الحالة الحالية قبل الاستعادة.\nبيانات الدخول (اسم المستخدم وكلمة المرور) لن تتغير.')) return;
     const fd = new FormData();
@@ -250,6 +289,12 @@ function restoreBackup(filename, date) {
             setTimeout(() => location.reload(), 1500);
         }
     });
+}
+
+function downloadBackup(filename) {
+    // Same-origin navigation triggers the browser's save dialog.
+    // Works inside the pywebview/WebView2 desktop shell too.
+    window.location.href = '/api/settings/backup/' + encodeURIComponent(filename);
 }
 
 function deleteBackup(filename) {

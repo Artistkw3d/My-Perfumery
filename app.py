@@ -38,12 +38,36 @@ def _user_data_dir():
 ASSET_DIR = _asset_dir()
 USER_DIR = _user_data_dir()
 
+def _load_or_create_secret_key():
+    """Per-install random secret_key persisted under USER_DIR.
+
+    First run generates 64 random bytes and writes them to secret.key.
+    Subsequent runs reload the same bytes so existing sessions survive.
+    Falls back to an in-memory key if the file can't be written (read-only
+    filesystem, locked file, etc.) — sessions still work for the current
+    process. Old hardcoded key 'perfume_vault_2024_v3' is no longer used."""
+    key_path = os.path.join(USER_DIR, 'secret.key')
+    try:
+        if os.path.exists(key_path):
+            with open(key_path, 'rb') as fh:
+                data = fh.read()
+            if len(data) >= 32:
+                return data
+        os.makedirs(USER_DIR, exist_ok=True)
+        data = os.urandom(64)
+        with open(key_path, 'wb') as fh:
+            fh.write(data)
+        return data
+    except Exception as e:
+        print(f"[SECRET] Falling back to in-memory key: {e}", file=sys.stdout, flush=True)
+        return os.urandom(64)
+
 app = Flask(
     __name__,
     template_folder=os.path.join(ASSET_DIR, 'templates'),
     static_folder=os.path.join(ASSET_DIR, 'static'),
 )
-app.secret_key = 'perfume_vault_2024_v3'
+app.secret_key = _load_or_create_secret_key()
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB cap for uploads (MSDS PDFs, photos)
 
 DB_PATH = os.path.join(USER_DIR, 'database', 'perfume.db')
@@ -4169,6 +4193,52 @@ def api_settings():
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
 
+    elif action == 'upload_backup':
+        conn.close()
+        f = request.files.get('file')
+        if not f or not f.filename:
+            return jsonify({'success': False, 'message': 'لم يتم اختيار ملف'})
+        # Read into memory (capped by MAX_CONTENT_LENGTH = 50 MB)
+        content = f.read()
+        if len(content) < 100:
+            return jsonify({'success': False, 'message': 'الملف صغير جداً ولا يبدو ملف قاعدة بيانات'})
+        # SQLite magic header: bytes 0..15 = "SQLite format 3\x00"
+        if content[:16] != b'SQLite format 3\x00':
+            return jsonify({'success': False, 'message': 'الملف ليس ملف قاعدة بيانات SQLite صالح'})
+        # Write to a temp path under BACKUP_DIR, run integrity_check, then rename.
+        # Using BACKUP_DIR (not %TEMP%) keeps the file on the same volume so the
+        # final rename is atomic, and integrity_check never touches the live DB.
+        tmp_name = f'.upload_{uuid.uuid4().hex}.db'
+        tmp_path = os.path.join(BACKUP_DIR, tmp_name)
+        try:
+            with open(tmp_path, 'wb') as fh:
+                fh.write(content)
+            check = sqlite3.connect(tmp_path)
+            try:
+                row = check.execute('PRAGMA integrity_check').fetchone()
+            finally:
+                check.close()
+            if not row or (row[0] or '').lower() != 'ok':
+                os.remove(tmp_path)
+                return jsonify({'success': False, 'message': 'فشل فحص سلامة قاعدة البيانات (integrity_check)'})
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            final_name = f'backup_{timestamp}_uploaded.db'
+            final_path = os.path.join(BACKUP_DIR, final_name)
+            os.replace(tmp_path, final_path)
+            log(f"[BACKUP] Uploaded: {final_name} (from {f.filename}, {len(content)} bytes)")
+            return jsonify({
+                'success': True,
+                'message': f'تم رفع النسخة: {final_name}. اضغط "استعادة" لتطبيقها.',
+                'filename': final_name
+            })
+        except Exception as e:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            return jsonify({'success': False, 'message': f'فشل الرفع: {e}'})
+
     elif action == 'list_backups':
         conn.close()
         return jsonify({'success': True, 'data': list_backups()})
@@ -4176,7 +4246,7 @@ def api_settings():
     elif action == 'restore_backup':
         conn.close()
         filename = request.form.get('filename', '')
-        if not filename or '..' in filename or '/' in filename:
+        if not _is_safe_backup_filename(filename):
             return jsonify({'success': False, 'message': 'Invalid filename'})
         ok, msg = restore_backup(filename)
         return jsonify({'success': ok, 'message': msg})
@@ -4184,7 +4254,7 @@ def api_settings():
     elif action == 'delete_backup':
         conn.close()
         filename = request.form.get('filename', '')
-        if not filename or '..' in filename or '/' in filename:
+        if not _is_safe_backup_filename(filename):
             return jsonify({'success': False, 'message': 'Invalid filename'})
         path = os.path.join(BACKUP_DIR, filename)
         if os.path.exists(path):
@@ -4194,6 +4264,33 @@ def api_settings():
 
     conn.close()
     return jsonify({'success': False})
+
+
+_BACKUP_NAME_RE = re.compile(r'^backup_\d{8}_\d{6}_[a-z_]+\.db$')
+
+def _is_safe_backup_filename(filename):
+    """Strict whitelist: must match the create_backup() naming pattern exactly.
+    Rejects path separators, traversal, and any name we didn't generate."""
+    if not filename or '..' in filename or '/' in filename or '\\' in filename:
+        return False
+    return bool(_BACKUP_NAME_RE.match(filename))
+
+
+@app.route('/api/settings/backup/<path:filename>')
+@login_required
+def api_settings_backup_download(filename):
+    """Stream a backup .db file to the browser as an attachment."""
+    if not _is_safe_backup_filename(filename):
+        return 'Invalid filename', 400
+    path = os.path.join(BACKUP_DIR, filename)
+    if not os.path.exists(path):
+        return 'Not found', 404
+    with open(path, 'rb') as fh:
+        data = fh.read()
+    resp = Response(data, mimetype='application/octet-stream')
+    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    return resp
 
 # ===== API بيانات GHS =====
 @app.route('/api/ghs-data')
