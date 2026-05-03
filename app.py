@@ -3,6 +3,7 @@
 """My Perfumery v3 - نظام إدارة التركيبات العطرية مع MSDS و IFRA"""
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, make_response, Response
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
 import sys
@@ -147,6 +148,51 @@ def restore_backup(filename):
 
 def log(msg):
     print(msg, file=sys.stdout, flush=True)
+
+# ===== Password hashing =====
+# werkzeug's generate_password_hash() emits values prefixed by the method name,
+# e.g. "scrypt:32768:8:1$..." or "pbkdf2:sha256:600000$...". A plaintext
+# password from the legacy seed ("admin123") will never match these prefixes,
+# so the prefix check is a safe oracle for "needs migration?".
+_HASH_PREFIXES = ('scrypt:', 'pbkdf2:', 'argon2')
+
+def _is_hashed_password(value):
+    if not value:
+        return False
+    return value.startswith(_HASH_PREFIXES)
+
+def _hash_password(plaintext):
+    return generate_password_hash(plaintext or '')
+
+def _migrate_plaintext_passwords():
+    """Find any users.password rows still in plaintext and hash them in place.
+
+    Idempotent — safe to run on every startup. Detection uses the werkzeug
+    hash prefix oracle above; any row that doesn't match is hashed. A
+    one-time pre_hash_migration backup is created right before the first
+    rewrite so the user can roll back to the plaintext era if they ever
+    need to."""
+    if not os.path.exists(DB_PATH):
+        return
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT id, password FROM users").fetchall()
+    plaintext = [r for r in rows if not _is_hashed_password(r['password'])]
+    if not plaintext:
+        conn.close()
+        return
+    conn.close()
+    # Safety snapshot before we touch anything
+    try:
+        create_backup('pre_hash_migration')
+    except Exception as e:
+        log(f"[AUTH] pre_hash_migration backup failed: {e}")
+    conn = sqlite3.connect(DB_PATH)
+    for r in plaintext:
+        conn.execute("UPDATE users SET password=? WHERE id=?", (_hash_password(r['password']), r['id']))
+    conn.commit()
+    conn.close()
+    log(f"[AUTH] Hashed {len(plaintext)} plaintext password row(s)")
 
 # ===== IFRA Categories من القالب =====
 IFRA_CATEGORIES = [
@@ -1186,11 +1232,27 @@ def login_required(f):
 def login():
     error = None
     if request.method == 'POST':
+        username = request.form.get('username', '')
+        submitted = request.form.get('password', '')
         conn = get_db()
-        user = conn.execute("SELECT * FROM users WHERE username=? AND password=?",
-                           (request.form['username'], request.form['password'])).fetchone()
-        conn.close()
+        user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        ok = False
         if user:
+            stored = user['password'] or ''
+            if _is_hashed_password(stored):
+                ok = check_password_hash(stored, submitted)
+            else:
+                # Belt-and-suspenders: if migration somehow hasn't run yet,
+                # fall back to a constant-time plaintext compare and hash on
+                # successful login.
+                import hmac
+                ok = hmac.compare_digest(stored, submitted)
+                if ok:
+                    conn.execute("UPDATE users SET password=? WHERE id=?",
+                                 (_hash_password(submitted), user['id']))
+                    conn.commit()
+        conn.close()
+        if ok and user:
             session['user_id'] = user['id']
             session['user_name'] = user['name']
             # Auto-backup on login
@@ -4979,6 +5041,7 @@ def bootstrap():
     """One-shot init used by both the dev entrypoint and the desktop launcher."""
     log("Starting My Perfumery v3...")
     init_db()
+    _migrate_plaintext_passwords()
     import_ifra_standards()
     import_ifra_contributions()
 
