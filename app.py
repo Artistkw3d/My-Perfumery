@@ -73,8 +73,10 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB cap for uploads (MS
 
 DB_PATH = os.path.join(USER_DIR, 'database', 'perfume.db')
 BACKUP_DIR = os.path.join(USER_DIR, 'database', 'backups')
+ATTACHMENTS_DIR = os.path.join(USER_DIR, 'attachments')
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
+os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 
 MAX_BACKUPS = 20  # Keep last 20 backups
 
@@ -163,6 +165,78 @@ def _is_hashed_password(value):
 
 def _hash_password(plaintext):
     return generate_password_hash(plaintext or '')
+
+# ===== Attachment storage (file_attachments on disk, not in BLOB) =====
+# Files are stored at ATTACHMENTS_DIR/<file_id>.bin. The .bin extension is
+# deliberately generic — the real filename and mime type live in the DB row,
+# we never need to discover them from the filesystem. Storing under the
+# numeric file id removes any path-traversal surface from user-supplied
+# filenames and guarantees uniqueness.
+def _attachment_path(file_id):
+    return os.path.join(ATTACHMENTS_DIR, f'{int(file_id)}.bin')
+
+def _read_attachment_bytes(file_id, blob_fallback):
+    """Return the file's bytes. Disk wins; BLOB is the legacy fallback used
+    only after restoring an old pre-migration backup or during the migration
+    window itself."""
+    p = _attachment_path(file_id)
+    if os.path.exists(p):
+        try:
+            with open(p, 'rb') as fh:
+                return fh.read()
+        except Exception as e:
+            log(f"[ATTACH] read failed for id={file_id}: {e}")
+    return blob_fallback
+
+def _migrate_attachments_to_disk():
+    """Move existing material_files.content BLOBs to disk.
+
+    Crash-safe: writes the disk file first, then nulls the BLOB. If a row
+    already has a disk file we still null its BLOB (covers a half-completed
+    previous run). Auto-creates a pre_attachment_migration backup once if
+    there is anything to move."""
+    if not os.path.exists(DB_PATH):
+        return
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute(
+            "SELECT id, content FROM material_files "
+            "WHERE content IS NOT NULL AND length(content) > 0"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # Table doesn't exist yet on a brand-new DB; nothing to migrate.
+        conn.close()
+        return
+    if not rows:
+        conn.close()
+        return
+    conn.close()
+    try:
+        create_backup('pre_attachment_migration')
+    except Exception as e:
+        log(f"[ATTACH] pre_attachment_migration backup failed: {e}")
+    conn = sqlite3.connect(DB_PATH)
+    moved = 0
+    failed = 0
+    for fid, content in rows:
+        path = _attachment_path(fid)
+        try:
+            if not os.path.exists(path):
+                with open(path, 'wb') as fh:
+                    fh.write(content)
+            conn.execute("UPDATE material_files SET content=NULL WHERE id=?", (fid,))
+            moved += 1
+        except Exception as e:
+            failed += 1
+            log(f"[ATTACH] migrate id={fid} failed: {e}")
+    conn.commit()
+    # Reclaim the freed BLOB pages so the live DB shrinks immediately
+    try:
+        conn.execute("VACUUM")
+    except Exception as e:
+        log(f"[ATTACH] VACUUM after migration failed (non-fatal): {e}")
+    conn.close()
+    log(f"[ATTACH] Moved {moved} attachment(s) to disk ({failed} failed)")
 
 def _migrate_plaintext_passwords():
     """Find any users.password rows still in plaintext and hash them in place.
@@ -2532,11 +2606,21 @@ def api_material_files(mid):
             content = f.read()
             if not content:
                 continue
-            conn.execute('''
+            # Insert metadata first to mint an id, then write bytes to disk under that id.
+            # If the disk write fails, roll back the row so we never leave an orphan
+            # DB row pointing at a nonexistent file.
+            cur = conn.execute('''
                 INSERT INTO material_files (material_id, filename, mime_type, size, content)
-                VALUES (?,?,?,?,?)
-            ''', (mid, f.filename, (f.mimetype or 'application/octet-stream'), len(content), content))
-            saved += 1
+                VALUES (?,?,?,?,NULL)
+            ''', (mid, f.filename, (f.mimetype or 'application/octet-stream'), len(content)))
+            fid = cur.lastrowid
+            try:
+                with open(_attachment_path(fid), 'wb') as fh:
+                    fh.write(content)
+                saved += 1
+            except Exception as e:
+                conn.execute("DELETE FROM material_files WHERE id=?", (fid,))
+                log(f"[ATTACH] upload write failed (rolled back row {fid}): {e}")
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'message': f'تم رفع {saved} ملف', 'count': saved})
@@ -2572,6 +2656,11 @@ def api_material_file_serve(mid, fid):
     conn.close()
     if not row:
         return 'Not found', 404
+    # Disk is source of truth; legacy BLOB is the fallback used only when an
+    # older backup that still carries content has been restored.
+    data = _read_attachment_bytes(fid, row['content'])
+    if not data:
+        return 'Not found', 404
     inline_requested = request.args.get('inline') == '1'
     mime = (row['mime_type'] or 'application/octet-stream').lower()
     # Only honor inline for whitelisted types; force download for anything else.
@@ -2581,7 +2670,7 @@ def api_material_file_serve(mid, fid):
     import urllib.parse
     safe_name = (row['filename'] or 'file').encode('ascii', 'ignore').decode('ascii') or 'file'
     utf8_name = urllib.parse.quote(row['filename'] or 'file')
-    resp = Response(row['content'], mimetype=mime)
+    resp = Response(data, mimetype=mime)
     resp.headers['Content-Disposition'] = f'{disp}; filename="{safe_name}"; filename*=UTF-8\'\'{utf8_name}'
     resp.headers['X-Content-Type-Options'] = 'nosniff'
     return resp
@@ -5054,6 +5143,7 @@ def bootstrap():
     log("Starting My Perfumery v3...")
     init_db()
     _migrate_plaintext_passwords()
+    _migrate_attachments_to_disk()
     import_ifra_standards()
     import_ifra_contributions()
 

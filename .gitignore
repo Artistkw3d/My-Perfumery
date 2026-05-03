@@ -11,6 +11,9 @@ dist/
 # Local data (per-user SQLite DB + backups)
 database/
 
+# File attachments (PDFs / images / docs uploaded per material)
+attachments/
+
 # Per-install Flask session secret (auto-generated)
 secret.key
 
