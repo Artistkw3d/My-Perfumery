@@ -2551,6 +2551,15 @@ def api_material_files(mid):
     conn.close()
     return jsonify({'success': False, 'message': 'إجراء غير معروف'}), 400
 
+# Mime types that are safe to render inline in the browser. Anything outside
+# this set (HTML, SVG, JS, CSS, ...) is forced to download because user-uploaded
+# active content would otherwise execute as same-origin and could read the
+# session cookie or call the API on the user's behalf.
+_SAFE_INLINE_MIMES = {
+    'image/png', 'image/jpeg', 'image/jpg', 'image/gif',
+    'image/webp', 'image/bmp', 'application/pdf', 'text/plain',
+}
+
 @app.route('/api/materials/<int:mid>/files/<int:fid>')
 @login_required
 def api_material_file_serve(mid, fid):
@@ -2563,8 +2572,10 @@ def api_material_file_serve(mid, fid):
     conn.close()
     if not row:
         return 'Not found', 404
-    inline = request.args.get('inline') == '1'
-    mime = row['mime_type'] or 'application/octet-stream'
+    inline_requested = request.args.get('inline') == '1'
+    mime = (row['mime_type'] or 'application/octet-stream').lower()
+    # Only honor inline for whitelisted types; force download for anything else.
+    inline = inline_requested and mime in _SAFE_INLINE_MIMES
     disp = 'inline' if inline else 'attachment'
     # ASCII-safe filename for Content-Disposition + UTF-8 fallback via filename*
     import urllib.parse
@@ -2572,6 +2583,7 @@ def api_material_file_serve(mid, fid):
     utf8_name = urllib.parse.quote(row['filename'] or 'file')
     resp = Response(row['content'], mimetype=mime)
     resp.headers['Content-Disposition'] = f'{disp}; filename="{safe_name}"; filename*=UTF-8\'\'{utf8_name}'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
     return resp
 
 # ===== Smart NCS-variant matching for ifra_contributions =====
@@ -5048,6 +5060,10 @@ def bootstrap():
 if __name__ == '__main__':
     bootstrap()
     port = int(os.environ.get('MYPERFUMERY_PORT', '8000'))
-    host = os.environ.get('MYPERFUMERY_HOST', '0.0.0.0')
+    # Default: loopback only. Inside Docker (detected via /app, same heuristic
+    # as _user_data_dir()) we still need 0.0.0.0 so the container's published
+    # port reaches the app. MYPERFUMERY_HOST env var overrides either way.
+    default_host = '0.0.0.0' if os.path.exists('/app') else '127.0.0.1'
+    host = os.environ.get('MYPERFUMERY_HOST', default_host)
     debug = os.environ.get('MYPERFUMERY_DEBUG', '0' if IS_FROZEN else '1') == '1'
     app.run(host=host, port=port, debug=debug, use_reloader=debug)
