@@ -1557,7 +1557,7 @@ def settings():
     conn = get_db()
     company = conn.execute("SELECT * FROM company_info WHERE id=1").fetchone()
     conn.close()
-    return render_template('settings.html', company=company)
+    return render_template('settings.html', company=company, backup_dir=BACKUP_DIR)
 
 # ===== Scentree Data Lookup =====
 @app.route('/api/scentree-lookup', methods=['GET'])
@@ -4510,7 +4510,17 @@ def api_settings():
         conn.close()
         try:
             name = create_backup('manual')
-            return jsonify({'success': True, 'message': f'تم إنشاء النسخة: {name}'})
+            return jsonify({'success': True, 'message': f'تم إنشاء النسخة: {name}', 'path': os.path.join(BACKUP_DIR, name)})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+
+    elif action == 'open_backup_folder':
+        conn.close()
+        if sys.platform != 'win32':
+            return jsonify({'success': False, 'message': 'هذا الزر متاح فقط على ويندوز'})
+        try:
+            os.startfile(BACKUP_DIR)
+            return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'message': str(e)})
 

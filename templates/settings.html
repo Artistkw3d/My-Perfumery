@@ -161,10 +161,16 @@
         <input type="file" id="backupUploadInput" accept=".db" style="display:none;" onchange="uploadBackup(this)">
     </div>
     <div class="card-body">
-        <div style="font-size:0.82rem;color:var(--text-mid);margin-bottom:16px;">
+        <div style="font-size:0.82rem;color:var(--text-mid);margin-bottom:12px;">
             <i class="bi bi-info-circle"></i>
             يتم إنشاء نسخة احتياطية تلقائياً عند كل تسجيل دخول. النسخة تشمل جميع البيانات ماعدا بيانات الدخول.
             يتم الاحتفاظ بآخر 20 نسخة.
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fdfbf7;border:1px solid var(--border,#e6dfd2);border-radius:8px;padding:8px 12px;margin-bottom:16px;">
+            <span style="font-size:0.78rem;color:var(--text-light,#9a8a77);white-space:nowrap;"><i class="bi bi-folder2-open"></i> مسار النسخ الاحتياطية:</span>
+            <code id="backupDirPath" style="font-size:0.78rem;flex:1;min-width:200px;word-break:break-all;">{{ backup_dir }}</code>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyBackupDir()" title="نسخ المسار"><i class="bi bi-clipboard"></i> نسخ</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openBackupFolder()" title="فتح المجلد بمستكشف الملفات"><i class="bi bi-folder2-open"></i> فتح المجلد</button>
         </div>
         <div id="backupList">
             <div class="backup-empty"><i class="bi bi-hourglass"></i> جاري التحميل...</div>
@@ -245,9 +251,28 @@ function createBackup() {
     fetch('/api/settings', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
-        showAlert(data.message, data.success ? 'success' : 'danger');
-        if (data.success) loadBackups();
+        if (data.success) {
+            showAlert((data.message || '') + ' — المسار: ' + data.path, 'success');
+            loadBackups();
+        } else {
+            showAlert(data.message, 'danger');
+        }
     });
+}
+
+function copyBackupDir() {
+    const path = document.getElementById('backupDirPath').textContent;
+    navigator.clipboard.writeText(path)
+        .then(() => showAlert('تم نسخ المسار'))
+        .catch(() => showAlert('تعذر النسخ', 'danger'));
+}
+
+function openBackupFolder() {
+    const fd = new FormData();
+    fd.append('action', 'open_backup_folder');
+    fetch('/api/settings', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => { if (!data.success) showAlert(data.message || 'تعذر فتح المجلد', 'danger'); });
 }
 
 function uploadBackup(input) {
