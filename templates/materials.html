@@ -98,7 +98,23 @@
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
+        gap: 10px;
         margin-bottom: 10px;
+    }
+    .mat-card-headinfo { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+    .mat-photo {
+        width: 88px; height: 88px; border-radius: 10px; flex-shrink: 0; object-fit: cover;
+        border: 1px solid rgba(139,115,85,0.25); background: #fff; cursor: pointer; display: block;
+    }
+    .mat-photo-placeholder {
+        width: 88px; height: 88px; border-radius: 10px; flex-shrink: 0; cursor: pointer;
+        border: 1.5px dashed #b8a894; background: #ebe4d9; color: #a3927a;
+        display: flex; align-items: center; justify-content: center; font-size: 1.8rem;
+    }
+    .tbl-photo { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; border: 1px solid rgba(139,115,85,0.25); cursor: pointer; display: block; }
+    .tbl-photo-placeholder {
+        width: 64px; height: 64px; border-radius: 8px; border: 1.5px dashed #b8a894; background: #ebe4d9;
+        color: #a3927a; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.3rem;
     }
     .mat-card-name { font-weight: 700; font-size: 0.95rem; color: #2d2418; }
     .mat-card-cas { font-size: 0.78rem; color: #7a6b57; font-family: monospace; }
@@ -295,6 +311,7 @@
             <table class="table table-hover" id="materialsTable">
                 <thead>
                     <tr>
+                        <th style="width:70px;">الصورة</th>
                         <th style="width:50px;">العجلة</th>
                         <th>الاسم</th>
                         <th>CAS</th>
@@ -364,6 +381,23 @@
                     <div class="tab-content">
                         <!-- Basic Tab -->
                         <div class="tab-pane fade show active" id="basicTab">
+                            <div class="row">
+                                <div class="col-12">
+                                    <div class="mb-3 d-flex align-items-center gap-3">
+                                        <img id="matPhotoPreviewImg" class="mat-photo" style="display:none;" onclick="event.stopPropagation();document.getElementById('matPhotoSearchBtn').click();">
+                                        <div id="matPhotoPreviewPh" class="mat-photo-placeholder" onclick="document.getElementById('matPhotoSearchBtn').click();"><i class="bi bi-image"></i></div>
+                                        <div>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" id="matPhotoSearchBtn" onclick="openPhotoSearchModal()">
+                                                <i class="bi bi-search"></i> بحث عن صورة (Fraterworks)
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" id="matPhotoClearBtn" style="display:none;" onclick="clearMaterialPhoto()">
+                                                <i class="bi bi-x-circle"></i> إزالة الصورة
+                                            </button>
+                                            <div id="matPhotoNoMaterial" class="text-muted" style="font-size:0.8rem;">احفظ المادة أولاً لإضافة صورة</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="mb-3">
@@ -881,6 +915,22 @@
     </div>
 </div>
 
+<!-- Photo Search Modal: find/confirm a material photo from Fraterworks -->
+<div class="modal fade" id="photoSearchModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-image"></i> بحث عن صورة — Fraterworks</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center" id="photoSearchBody">
+                <div class="spinner-border text-secondary" role="status"></div>
+                <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري البحث...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Quick-Dilute Modal: create a pre-diluted material (parent + solvent) in one shot -->
 <div class="modal fade" id="quickDiluteModal" tabindex="-1">
     <div class="modal-dialog modal-md">
@@ -1006,6 +1056,7 @@ let detailChart = null;
 const modal = new bootstrap.Modal(document.getElementById('materialModal'));
 const wheelModal = new bootstrap.Modal(document.getElementById('wheelDetailModal'));
 const quickDiluteModal = new bootstrap.Modal(document.getElementById('quickDiluteModal'));
+const photoSearchModal = new bootstrap.Modal(document.getElementById('photoSearchModal'));
 
 // ===== Polar Area Chart Helper =====
 function createPolarChart(canvas, data, size='large') {
@@ -1140,6 +1191,16 @@ function renderView() {
 }
 
 // ===== Card View =====
+// Fixed-size photo thumbnail (or placeholder icon) — sizes/crop match the
+// approved mockup so an uploaded photo of any aspect ratio never breaks the
+// card/table layout.
+function matPhotoHtml(m, sizeClass, phClass) {
+    if (m.photo_file_id) {
+        return `<img src="/api/materials/${m.id}/files/${m.photo_file_id}?inline=1" class="${sizeClass}" title="${escapeHtml(m.name)}" onclick="event.stopPropagation();editMaterial(${m.id})">`;
+    }
+    return `<div class="${phClass}" title="لا توجد صورة" onclick="event.stopPropagation();editMaterial(${m.id})"><i class="bi bi-image"></i></div>`;
+}
+
 function renderCards() {
     const container = document.getElementById('cardView');
     container.innerHTML = materials.map(m => {
@@ -1153,10 +1214,13 @@ function renderCards() {
             : '';
         return `<div class="mat-card" data-mat-id="${m.id}" ondblclick="editMaterial(${m.id})">
             <div class="mat-card-header">
-                <div>
-                    <div class="mat-card-name">${mixBadge}${m.name}</div>
-                    ${m.name_ar ? `<small class="text-muted">${m.name_ar}</small>` : ''}
-                    <div class="mat-card-cas">${m.cas_number || ''}</div>
+                <div class="mat-card-headinfo">
+                    ${matPhotoHtml(m, 'mat-photo', 'mat-photo-placeholder')}
+                    <div>
+                        <div class="mat-card-name">${mixBadge}${m.name}</div>
+                        ${m.name_ar ? `<small class="text-muted">${m.name_ar}</small>` : ''}
+                        <div class="mat-card-cas">${m.cas_number || ''}</div>
+                    </div>
                 </div>
                 <span class="badge badge-profile badge-${(m.profile||'heart').toLowerCase()}">${m.profile||'Heart'}</span>
             </div>
@@ -1201,6 +1265,7 @@ function renderTable() {
     const tbody = document.getElementById('materialsBody');
     tbody.innerHTML = materials.map(m => `
         <tr data-mat-id="${m.id}">
+            <td>${matPhotoHtml(m, 'tbl-photo', 'tbl-photo-placeholder')}</td>
             <td><canvas class="mini-canvas-tbl" data-id="${m.id}" width="50" height="50"
                 onclick="showWheelDetail(${m.id})" style="cursor:pointer;"></canvas></td>
             <td>
@@ -1455,6 +1520,7 @@ function showMaterialModal() {
     resetOlfactive();
     toggleFilesTab(null);
     toggleCompositionTab(null);
+    togglePhotoBox(null, null);
     populateDerivedIfraSection(null);
     modal.show();
 }
@@ -1513,6 +1579,7 @@ function loadMaterialFiles(matId) {
                         <div style="font-weight:600;color:#3d2e1e;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(f.filename)}</div>
                         <div style="font-size:0.72rem;color:var(--text-light,#9a8a77);">${prettyBytes(f.size)} &bull; ${f.uploaded_at || ''}</div>
                     </div>
+                    ${isImg ? `<button type="button" class="btn btn-sm btn-outline-success" onclick="setExistingFilePhoto(${matId}, ${f.id})" title="تعيين كصورة رئيسية"><i class="bi bi-image"></i></button>` : ''}
                     <a class="btn btn-sm btn-outline-secondary" href="/api/materials/${matId}/files/${f.id}?inline=1" target="_blank" title="عرض"><i class="bi bi-eye"></i></a>
                     <a class="btn btn-sm btn-outline-primary" href="/api/materials/${matId}/files/${f.id}" title="تنزيل"><i class="bi bi-download"></i></a>
                     <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteMaterialFile(${matId}, ${f.id})" title="حذف"><i class="bi bi-trash"></i></button>
@@ -1555,6 +1622,152 @@ function deleteMaterialFile(matId, fileId) {
     fetch(`/api/materials/${matId}/files`, { method: 'POST', body: fd })
         .then(r => r.json())
         .then(() => loadMaterialFiles(matId));
+}
+
+// ===== Material photo (primary image — fetched from Fraterworks or reused from an uploaded file) =====
+let _photoMatId = null;
+
+function togglePhotoBox(matId, photoFileId) {
+    _photoMatId = matId;
+    const img = document.getElementById('matPhotoPreviewImg');
+    const ph = document.getElementById('matPhotoPreviewPh');
+    const searchBtn = document.getElementById('matPhotoSearchBtn');
+    const clearBtn = document.getElementById('matPhotoClearBtn');
+    const noMat = document.getElementById('matPhotoNoMaterial');
+
+    if (!matId) {
+        img.style.display = 'none';
+        ph.style.display = 'flex';
+        searchBtn.style.display = 'none';
+        clearBtn.style.display = 'none';
+        noMat.style.display = '';
+        return;
+    }
+    searchBtn.style.display = '';
+    noMat.style.display = 'none';
+    if (photoFileId) {
+        img.src = `/api/materials/${matId}/files/${photoFileId}?inline=1`;
+        img.style.display = '';
+        ph.style.display = 'none';
+        clearBtn.style.display = '';
+    } else {
+        img.style.display = 'none';
+        ph.style.display = 'flex';
+        clearBtn.style.display = 'none';
+    }
+}
+
+function openPhotoSearchModal() {
+    if (!_photoMatId) { alert('احفظ المادة أولاً'); return; }
+    const q = (document.getElementById('mat_cas').value || document.getElementById('mat_name').value || '').trim();
+    if (!q) { alert('أدخل اسم المادة أو رقم CAS أولاً'); return; }
+    photoSearchModal.show();
+    const body = document.getElementById('photoSearchBody');
+    body.innerHTML = `<div class="spinner-border text-secondary" role="status"></div><div class="mt-2 text-muted" style="font-size:0.85rem;">جاري البحث عن "${escapeHtml(q)}"...</div>`;
+    fetch(`/api/materials/photo-search?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) renderPhotoCandidate(data.data);
+            else renderPhotoNotFound(data.message, data.search_url);
+        })
+        .catch(() => { body.innerHTML = '<div class="text-danger">خطأ في الاتصال</div>'; });
+}
+
+function renderPhotoCandidate(d) {
+    const body = document.getElementById('photoSearchBody');
+    body.innerHTML = `
+        <img src="${d.image_url}" style="max-height:220px;max-width:100%;border-radius:10px;border:1px solid rgba(139,115,85,0.25);">
+        <div class="mt-2" style="font-size:0.9rem;font-weight:600;">${escapeHtml(d.title)}</div>
+        <div class="mt-3 d-flex justify-content-center gap-2">
+            <button class="btn btn-primary btn-sm" onclick="useFetchedPhoto(this)" data-image-url="${escapeHtml(d.image_url)}"><i class="bi bi-check-circle"></i> استخدام هذه الصورة</button>
+            <a class="btn btn-outline-secondary btn-sm" href="${d.product_url}" target="_blank"><i class="bi bi-box-arrow-up-left"></i> فتح صفحة المنتج</a>
+        </div>`;
+}
+
+function renderPhotoNotFound(message, searchUrl) {
+    const body = document.getElementById('photoSearchBody');
+    body.innerHTML = `
+        <div class="text-muted mb-3"><i class="bi bi-search fs-2 d-block mb-2"></i>${escapeHtml(message || 'لم يتم إيجاد تطابق تلقائي')}</div>
+        ${searchUrl ? `<a class="btn btn-outline-primary btn-sm mb-3" href="${searchUrl}" target="_blank"><i class="bi bi-box-arrow-up-left"></i> افتح بحث Fraterworks بالمتصفح</a>` : ''}
+        <div class="text-start" style="font-size:0.82rem;">
+            <label class="form-label">أو الصق رابط منتج Fraterworks هنا:</label>
+            <div class="input-group input-group-sm">
+                <input type="text" id="photoProductUrlInput" class="form-control" placeholder="https://fraterworks.com/products/...">
+                <button class="btn btn-outline-success" onclick="resolveMaterialPhotoUrl()"><i class="bi bi-download"></i> جلب</button>
+            </div>
+        </div>`;
+}
+
+function resolveMaterialPhotoUrl() {
+    const input = document.getElementById('photoProductUrlInput');
+    const url = (input.value || '').trim();
+    if (!url) return;
+    const body = document.getElementById('photoSearchBody');
+    body.innerHTML = '<div class="spinner-border text-secondary" role="status"></div>';
+    const fd = new FormData();
+    fd.append('product_url', url);
+    fetch('/api/materials/photo-search/resolve', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) renderPhotoCandidate(data.data);
+            else renderPhotoNotFound(data.message, null);
+        })
+        .catch(() => { body.innerHTML = '<div class="text-danger">خطأ في الاتصال</div>'; });
+}
+
+function useFetchedPhoto(btn) {
+    if (!_photoMatId) return;
+    const imageUrl = btn.dataset.imageUrl;
+    const body = document.getElementById('photoSearchBody');
+    body.innerHTML = '<div class="spinner-border text-secondary" role="status"></div><div class="mt-2 text-muted" style="font-size:0.85rem;">جاري الحفظ...</div>';
+    const fd = new FormData();
+    fd.append('action', 'fetch_url');
+    fd.append('image_url', imageUrl);
+    fetch(`/api/materials/${_photoMatId}/photo`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            photoSearchModal.hide();
+            if (data.success) {
+                togglePhotoBox(_photoMatId, data.file_id);
+                showAlert('تم تعيين صورة المادة');
+                loadMaterials();
+            } else {
+                showAlert(data.message || 'فشل حفظ الصورة', 'danger');
+            }
+        })
+        .catch(() => { showAlert('خطأ في الاتصال', 'danger'); });
+}
+
+function setExistingFilePhoto(matId, fileId) {
+    const fd = new FormData();
+    fd.append('action', 'set_existing');
+    fd.append('file_id', fileId);
+    fetch(`/api/materials/${matId}/photo`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                togglePhotoBox(matId, fileId);
+                showAlert('تم تعيين الصورة الرئيسية');
+                loadMaterials();
+            } else {
+                showAlert(data.message || 'فشل التعيين', 'danger');
+            }
+        });
+}
+
+function clearMaterialPhoto() {
+    if (!_photoMatId) return;
+    const fd = new FormData();
+    fd.append('action', 'clear');
+    fetch(`/api/materials/${_photoMatId}/photo`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                togglePhotoBox(_photoMatId, null);
+                showAlert('تم إزالة الصورة');
+                loadMaterials();
+            }
+        });
 }
 
 // ===== Mixture composition (sub-components of a blend material) =====
@@ -1729,6 +1942,7 @@ function editMaterial(id) {
                 });
                 toggleFilesTab(m.id);
                 toggleCompositionTab(m.id);
+                togglePhotoBox(m.id, m.photo_file_id);
                 document.getElementById('mat_price').value = m.purchase_price || '';
                 document.getElementById('mat_qty').value = m.purchase_quantity || 1;
                 document.getElementById('mat_odor').value = m.odor_description || '';

@@ -188,6 +188,25 @@ def _read_attachment_bytes(file_id, blob_fallback):
             log(f"[ATTACH] read failed for id={file_id}: {e}")
     return blob_fallback
 
+def _save_material_file(conn, mid, filename, mime_type, content_bytes):
+    """Insert a material_files metadata row and write its bytes to disk.
+    Shared by manual uploads and server-side fetches (e.g. Fraterworks photos)
+    so there is exactly one place that writes attachment bytes. Returns the
+    new file id, or None if the disk write failed (row is rolled back)."""
+    cur = conn.execute('''
+        INSERT INTO material_files (material_id, filename, mime_type, size, content)
+        VALUES (?,?,?,?,NULL)
+    ''', (mid, filename, (mime_type or 'application/octet-stream'), len(content_bytes)))
+    fid = cur.lastrowid
+    try:
+        with open(_attachment_path(fid), 'wb') as fh:
+            fh.write(content_bytes)
+        return fid
+    except Exception as e:
+        conn.execute("DELETE FROM material_files WHERE id=?", (fid,))
+        log(f"[ATTACH] save write failed (rolled back row {fid}): {e}")
+        return None
+
 def _migrate_attachments_to_disk():
     """Move existing material_files.content BLOBs to disk.
 
@@ -939,6 +958,7 @@ def init_db():
         ('materials', 'properties', 'TEXT'),
         ('materials', 'in_stock', 'REAL DEFAULT 0'),
         ('materials', 'manual_ifra_cats', 'TEXT'),
+        ('materials', 'photo_file_id', 'INTEGER'),
         ('material_msds', 'ghs_classification', 'TEXT'),
         ('families', 'icon', 'TEXT'),
         ('formula_ingredients', 'diluent', 'TEXT'),
@@ -2606,21 +2626,9 @@ def api_material_files(mid):
             content = f.read()
             if not content:
                 continue
-            # Insert metadata first to mint an id, then write bytes to disk under that id.
-            # If the disk write fails, roll back the row so we never leave an orphan
-            # DB row pointing at a nonexistent file.
-            cur = conn.execute('''
-                INSERT INTO material_files (material_id, filename, mime_type, size, content)
-                VALUES (?,?,?,?,NULL)
-            ''', (mid, f.filename, (f.mimetype or 'application/octet-stream'), len(content)))
-            fid = cur.lastrowid
-            try:
-                with open(_attachment_path(fid), 'wb') as fh:
-                    fh.write(content)
+            fid = _save_material_file(conn, mid, f.filename, f.mimetype, content)
+            if fid is not None:
                 saved += 1
-            except Exception as e:
-                conn.execute("DELETE FROM material_files WHERE id=?", (fid,))
-                log(f"[ATTACH] upload write failed (rolled back row {fid}): {e}")
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'message': f'تم رفع {saved} ملف', 'count': saved})
@@ -2674,6 +2682,156 @@ def api_material_file_serve(mid, fid):
     resp.headers['Content-Disposition'] = f'{disp}; filename="{safe_name}"; filename*=UTF-8\'\'{utf8_name}'
     resp.headers['X-Content-Type-Options'] = 'nosniff'
     return resp
+
+# ===== Material photo lookup (Fraterworks) =====
+# fraterworks.com/robots.txt disallows /search for crawlers, so we never hit
+# that path from server code. Instead: (1) guess the product handle is the
+# slugified material name and try /products/<slug>.json directly (allowed,
+# and returns clean JSON with title/images/CAS), or (2) let the user search
+# fraterworks.com themselves in their own browser (a human click, not
+# automation) and paste the product URL, which we then resolve the same way.
+_FRATERWORKS_HOSTS = ('fraterworks.com', 'www.fraterworks.com')
+
+def _slugify_for_fraterworks(text):
+    text = (text or '').strip().lower()
+    text = re.sub(r'[^a-z0-9]+', '-', text)
+    return text.strip('-')
+
+def _fetch_fraterworks_product_json(url):
+    """Fetch a Fraterworks /products/<handle>.json URL and return
+    {'title','image_url','product_url'} or None if not found/invalid."""
+    import urllib.request
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        payload = json.loads(resp.read().decode('utf-8', 'ignore'))
+    product = payload.get('product') or {}
+    images = product.get('images') or []
+    if not product.get('title') or not images:
+        return None
+    image_url = images[0].get('src')
+    if not image_url:
+        return None
+    if image_url.startswith('//'):
+        image_url = 'https:' + image_url
+    handle = product.get('handle') or ''
+    return {
+        'title': product['title'],
+        'image_url': image_url,
+        'product_url': f'https://fraterworks.com/products/{handle}' if handle else url.rsplit('.json', 1)[0],
+    }
+
+@app.route('/api/materials/photo-search')
+@login_required
+def api_material_photo_search():
+    """يحاول إيجاد صورة المادة من Fraterworks بمطابقة اسم المنتج (slug) تلقائياً."""
+    import urllib.parse
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'success': False, 'message': 'الاسم أو رقم CAS مطلوب'})
+    slug = _slugify_for_fraterworks(q)
+    if not slug:
+        return jsonify({'success': False, 'message': 'الاسم أو رقم CAS مطلوب'})
+    url = f'https://fraterworks.com/products/{slug}.json'
+    try:
+        result = _fetch_fraterworks_product_json(url)
+        if not result:
+            raise ValueError('empty')
+        return jsonify({'success': True, 'data': result})
+    except Exception:
+        return jsonify({
+            'success': False,
+            'message': f'لم يتم إيجاد تطابق تلقائي لـ "{q}" في Fraterworks',
+            'search_url': f'https://fraterworks.com/search?q={urllib.parse.quote(q)}',
+        })
+
+@app.route('/api/materials/photo-search/resolve', methods=['POST'])
+@login_required
+def api_material_photo_search_resolve():
+    """يجلب صورة من رابط منتج Fraterworks لصقه المستخدم يدوياً."""
+    import urllib.parse
+    product_url = (request.form.get('product_url') or '').strip()
+    try:
+        parsed = urllib.parse.urlparse(product_url)
+    except Exception:
+        parsed = None
+    if not parsed or parsed.hostname not in _FRATERWORKS_HOSTS or not parsed.path.startswith('/products/'):
+        return jsonify({'success': False, 'message': 'الرابط لازم يكون رابط منتج من fraterworks.com'})
+    base = f'https://{parsed.hostname}{parsed.path.rstrip("/")}'
+    json_url = base if base.endswith('.json') else base + '.json'
+    try:
+        result = _fetch_fraterworks_product_json(json_url)
+        if not result:
+            raise ValueError('empty')
+        return jsonify({'success': True, 'data': result})
+    except Exception:
+        return jsonify({'success': False, 'message': 'تعذر جلب بيانات المنتج من هذا الرابط'})
+
+_PHOTO_MAX_BYTES = 8 * 1024 * 1024  # 8 MB cap for fetched photos
+
+@app.route('/api/materials/<int:mid>/photo', methods=['POST'])
+@login_required
+def api_material_photo(mid):
+    """تعيين/إزالة الصورة الرئيسية للمادة."""
+    import urllib.parse
+    conn = get_db()
+    action = request.form.get('action', 'fetch_url')
+
+    if action == 'fetch_url':
+        image_url = (request.form.get('image_url') or '').strip()
+        try:
+            parsed = urllib.parse.urlparse(image_url)
+        except Exception:
+            parsed = None
+        allowed_hosts = _FRATERWORKS_HOSTS + ('cdn.shopify.com',)
+        if not parsed or parsed.scheme != 'https' or parsed.hostname not in allowed_hosts:
+            conn.close()
+            return jsonify({'success': False, 'message': 'رابط الصورة غير مسموح به'})
+        import urllib.request
+        try:
+            req = urllib.request.Request(image_url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                mime = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+                if not mime.startswith('image/'):
+                    conn.close()
+                    return jsonify({'success': False, 'message': 'الرابط لا يشير إلى صورة'})
+                content = resp.read(_PHOTO_MAX_BYTES + 1)
+                if len(content) > _PHOTO_MAX_BYTES:
+                    conn.close()
+                    return jsonify({'success': False, 'message': 'حجم الصورة كبير جداً'})
+        except Exception as e:
+            conn.close()
+            return jsonify({'success': False, 'message': f'تعذر تحميل الصورة: {e}'})
+        filename = request.form.get('filename') or (parsed.path.rsplit('/', 1)[-1] or 'photo.jpg')
+        fid = _save_material_file(conn, mid, filename, mime, content)
+        if fid is None:
+            conn.close()
+            return jsonify({'success': False, 'message': 'فشل حفظ الصورة'})
+        conn.execute("UPDATE materials SET photo_file_id=? WHERE id=?", (fid, mid))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'تم تعيين الصورة', 'file_id': fid})
+
+    if action == 'set_existing':
+        fid = request.form.get('file_id')
+        row = conn.execute(
+            "SELECT id, mime_type FROM material_files WHERE id=? AND material_id=?", (fid, mid)
+        ).fetchone()
+        if not row or not (row['mime_type'] or '').startswith('image/'):
+            conn.close()
+            return jsonify({'success': False, 'message': 'الملف غير موجود أو ليس صورة'})
+        conn.execute("UPDATE materials SET photo_file_id=? WHERE id=?", (fid, mid))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'تم تعيين الصورة', 'file_id': int(fid)})
+
+    if action == 'clear':
+        conn.execute("UPDATE materials SET photo_file_id=NULL WHERE id=?", (mid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'تم إزالة الصورة'})
+
+    conn.close()
+    return jsonify({'success': False, 'message': 'إجراء غير معروف'}), 400
 
 # ===== Smart NCS-variant matching for ifra_contributions =====
 # Some CAS numbers in the IFRA Annex source data correspond to multiple
