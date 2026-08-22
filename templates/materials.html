@@ -208,6 +208,9 @@
         <button class="btn btn-outline-success btn-sm" onclick="showQuickDiluteModal()" title="إنشاء مادة مخفّفة جاهزة (مثل Vanillin 10% في DPG) — IFRA يُحسب تلقائياً من التركيب">
             <i class="bi bi-droplet-half"></i> تخفيف سريع
         </button>
+        <button class="btn btn-outline-primary btn-sm" onclick="startBulkPhotoUpdate()" title="يجلب صوراً تلقائياً لكل مادة بدون صورة، عبر Fraterworks / Perfumer's Apprentice / Perfumer Supply House — لا يمس المواد التي لديها صورة مسبقاً">
+            <i class="bi bi-images"></i> تحديث صور المواد
+        </button>
         <button class="btn btn-primary btn-sm" onclick="showMaterialModal()">
             <i class="bi bi-plus-circle"></i> إضافة مادة
         </button>
@@ -388,7 +391,7 @@
                                         <div id="matPhotoPreviewPh" class="mat-photo-placeholder" onclick="document.getElementById('matPhotoSearchBtn').click();"><i class="bi bi-image"></i></div>
                                         <div>
                                             <button type="button" class="btn btn-sm btn-outline-primary" id="matPhotoSearchBtn" onclick="openPhotoSearchModal()">
-                                                <i class="bi bi-search"></i> بحث عن صورة (Fraterworks)
+                                                <i class="bi bi-search"></i> بحث عن صورة
                                             </button>
                                             <button type="button" class="btn btn-sm btn-outline-danger" id="matPhotoClearBtn" style="display:none;" onclick="clearMaterialPhoto()">
                                                 <i class="bi bi-x-circle"></i> إزالة الصورة
@@ -920,12 +923,28 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-image"></i> بحث عن صورة — Fraterworks</h5>
+                <h5 class="modal-title"><i class="bi bi-image"></i> بحث عن صورة</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center" id="photoSearchBody">
                 <div class="spinner-border text-secondary" role="status"></div>
                 <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري البحث...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Photo Update Modal: fetch photos for every material missing one, in one pass -->
+<div class="modal fade" id="photoBulkModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-images"></i> تحديث صور المواد</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" id="photoBulkCloseBtn"></button>
+            </div>
+            <div class="modal-body text-center" id="photoBulkBody">
+                <div class="spinner-border text-secondary" role="status"></div>
+                <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري جلب الصور للمواد بدون صورة...</div>
             </div>
         </div>
     </div>
@@ -1057,6 +1076,49 @@ const modal = new bootstrap.Modal(document.getElementById('materialModal'));
 const wheelModal = new bootstrap.Modal(document.getElementById('wheelDetailModal'));
 const quickDiluteModal = new bootstrap.Modal(document.getElementById('quickDiluteModal'));
 const photoSearchModal = new bootstrap.Modal(document.getElementById('photoSearchModal'));
+const photoBulkModal = new bootstrap.Modal(document.getElementById('photoBulkModal'));
+
+function startBulkPhotoUpdate() {
+    if (!confirm('سيتم البحث عن صورة تلقائياً لكل مادة بدون صورة حالياً (لن يتم لمس المواد التي لديها صورة). قد يستغرق هذا بعض الوقت حسب عدد المواد. متابعة؟')) return;
+    document.getElementById('photoBulkCloseBtn').style.display = 'none';
+    document.getElementById('photoBulkBody').innerHTML = `
+        <div class="spinner-border text-secondary" role="status"></div>
+        <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري جلب الصور للمواد بدون صورة...</div>`;
+    photoBulkModal.show();
+    fetch('/api/materials/photo-bulk-update', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('photoBulkCloseBtn').style.display = '';
+            if (!data.success) {
+                document.getElementById('photoBulkBody').innerHTML = `<div class="text-danger">${escapeHtml(data.message || 'حدث خطأ')}</div>`;
+                return;
+            }
+            renderBulkPhotoResults(data);
+            loadMaterials();
+        })
+        .catch(() => {
+            document.getElementById('photoBulkCloseBtn').style.display = '';
+            document.getElementById('photoBulkBody').innerHTML = '<div class="text-danger">خطأ في الاتصال</div>';
+        });
+}
+
+function renderBulkPhotoResults(data) {
+    const notFoundList = (data.not_found || []).map(m => `<li>${escapeHtml(m.name || ('#' + m.id))}</li>`).join('');
+    document.getElementById('photoBulkBody').innerHTML = `
+        <div class="text-center mb-3">
+            <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
+        </div>
+        <div style="font-size:0.9rem;text-align:right;">
+            <div class="mb-1"><b>${data.updated_count}</b> مادة تم تحديث صورتها</div>
+            <div class="mb-1 text-muted"><b>${data.not_found_count}</b> مادة لم يتم إيجاد صورة لها</div>
+            ${data.skipped_no_identifier ? `<div class="mb-1 text-muted"><b>${data.skipped_no_identifier}</b> مادة بدون اسم أو CAS (تم تجاوزها)</div>` : ''}
+        </div>
+        ${notFoundList ? `
+        <div class="mt-3 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#faf7f0;border-radius:8px;padding:8px 12px;">
+            <div class="text-muted mb-1">مواد بدون تطابق تلقائي (يمكن البحث لها يدوياً من صفحة المادة):</div>
+            <ul class="mb-0" style="padding-inline-start:18px;">${notFoundList}</ul>
+        </div>` : ''}`;
+}
 
 // ===== Polar Area Chart Helper =====
 function createPolarChart(canvas, data, size='large') {
@@ -1659,12 +1721,13 @@ function togglePhotoBox(matId, photoFileId) {
 
 function openPhotoSearchModal() {
     if (!_photoMatId) { alert('احفظ المادة أولاً'); return; }
-    const q = (document.getElementById('mat_cas').value || document.getElementById('mat_name').value || '').trim();
-    if (!q) { alert('أدخل اسم المادة أو رقم CAS أولاً'); return; }
+    const name = (document.getElementById('mat_name').value || '').trim();
+    const cas = (document.getElementById('mat_cas').value || '').trim();
+    if (!name && !cas) { alert('أدخل اسم المادة أو رقم CAS أولاً'); return; }
     photoSearchModal.show();
     const body = document.getElementById('photoSearchBody');
-    body.innerHTML = `<div class="spinner-border text-secondary" role="status"></div><div class="mt-2 text-muted" style="font-size:0.85rem;">جاري البحث عن "${escapeHtml(q)}"...</div>`;
-    fetch(`/api/materials/photo-search?q=${encodeURIComponent(q)}`)
+    body.innerHTML = `<div class="spinner-border text-secondary" role="status"></div><div class="mt-2 text-muted" style="font-size:0.85rem;">جاري البحث عن "${escapeHtml(name || cas)}"...</div>`;
+    fetch(`/api/materials/photo-search?name=${encodeURIComponent(name)}&cas=${encodeURIComponent(cas)}`)
         .then(r => r.json())
         .then(data => {
             if (data.success) renderPhotoCandidate(data.data);
@@ -1678,6 +1741,7 @@ function renderPhotoCandidate(d) {
     body.innerHTML = `
         <img src="${d.image_url}" style="max-height:220px;max-width:100%;border-radius:10px;border:1px solid rgba(139,115,85,0.25);">
         <div class="mt-2" style="font-size:0.9rem;font-weight:600;">${escapeHtml(d.title)}</div>
+        ${d.source_label ? `<div class="text-muted" style="font-size:0.75rem;">المصدر: ${escapeHtml(d.source_label)}</div>` : ''}
         <div class="mt-3 d-flex justify-content-center gap-2">
             <button class="btn btn-primary btn-sm" onclick="useFetchedPhoto(this)" data-image-url="${escapeHtml(d.image_url)}"><i class="bi bi-check-circle"></i> استخدام هذه الصورة</button>
             <a class="btn btn-outline-secondary btn-sm" href="${d.product_url}" target="_blank"><i class="bi bi-box-arrow-up-left"></i> فتح صفحة المنتج</a>

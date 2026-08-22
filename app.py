@@ -2683,14 +2683,25 @@ def api_material_file_serve(mid, fid):
     resp.headers['X-Content-Type-Options'] = 'nosniff'
     return resp
 
-# ===== Material photo lookup (Fraterworks) =====
-# fraterworks.com/robots.txt disallows /search for crawlers, so we never hit
-# that path from server code. Instead: (1) guess the product handle is the
-# slugified material name and try /products/<slug>.json directly (allowed,
-# and returns clean JSON with title/images/CAS), or (2) let the user search
-# fraterworks.com themselves in their own browser (a human click, not
-# automation) and paste the product URL, which we then resolve the same way.
+# ===== Material photo lookup (Fraterworks / Perfumer's Apprentice / Perfumer Supply House) =====
+# Each vendor's robots.txt was checked before writing this:
+#  - fraterworks.com disallows /search for crawlers, so we never hit that
+#    path from server code. Instead we guess the product handle from the
+#    slugified material NAME (Fraterworks handles are name-based, not
+#    CAS-based — searching by CAS here was the old bug) and try
+#    /products/<slug>.json directly (allowed, returns clean JSON).
+#  - shop.perfumersapprentice.com (TPA) allows /search.aspx, and its search
+#    indexes CAS numbers directly, so we search by CAS there.
+#  - perfumersupplyhouse.com (PSH, WordPress/WooCommerce) allows /?s=, and
+#    WordPress redirects straight to the product page on a single match; we
+#    search by CAS there too, falling back to the first result link
+#    otherwise.
+# If none of the three find a match, the user can still fall back to
+# pasting a Fraterworks product URL by hand (unchanged, see /resolve below).
 _FRATERWORKS_HOSTS = ('fraterworks.com', 'www.fraterworks.com')
+_TPA_HOSTS = ('shop.perfumersapprentice.com',)
+_PSH_HOSTS = ('perfumersupplyhouse.com', 'www.perfumersupplyhouse.com')
+_PHOTO_VENDOR_HOSTS = _FRATERWORKS_HOSTS + ('cdn.shopify.com',) + _TPA_HOSTS + _PSH_HOSTS
 
 def _slugify_for_fraterworks(text):
     text = (text or '').strip().lower()
@@ -2720,29 +2731,116 @@ def _fetch_fraterworks_product_json(url):
         'product_url': f'https://fraterworks.com/products/{handle}' if handle else url.rsplit('.json', 1)[0],
     }
 
+def _fetch_fraterworks_by_name(name):
+    """Guess a Fraterworks product handle from the material name and fetch it."""
+    slug = _slugify_for_fraterworks(name)
+    if not slug:
+        return None
+    try:
+        return _fetch_fraterworks_product_json(f'https://fraterworks.com/products/{slug}.json')
+    except Exception:
+        return None
+
+def _fetch_tpa_by_cas(cas):
+    """Search shop.perfumersapprentice.com by CAS number, return the first hit."""
+    import urllib.request, urllib.parse
+    cas = (cas or '').strip()
+    if not cas:
+        return None
+    url = f'https://shop.perfumersapprentice.com/search.aspx?searchterm={urllib.parse.quote(cas)}'
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            html = resp.read().decode('utf-8', 'ignore')
+    except Exception:
+        return None
+    m = re.search(r'<a href="(/p-(\d+)-[^"]+\.aspx)"><img src="[^"]*"[^>]*alt="([^"]*)"', html)
+    if not m:
+        return None
+    path, pid, title = m.group(1), m.group(2), m.group(3)
+    return {
+        'title': title,
+        'image_url': f'https://shop.perfumersapprentice.com/images/product/large/{pid}.jpg',
+        'product_url': f'https://shop.perfumersapprentice.com{path}',
+    }
+
+def _fetch_psh_by_cas(cas):
+    """Search perfumersupplyhouse.com by CAS number, return the first hit."""
+    import urllib.request, urllib.parse
+    cas = (cas or '').strip()
+    if not cas:
+        return None
+    search_url = f'https://perfumersupplyhouse.com/?s={urllib.parse.quote(cas)}&post_type=product'
+    try:
+        req = urllib.request.Request(search_url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            html = resp.read().decode('utf-8', 'ignore')
+            final_url = resp.geturl()
+    except Exception:
+        return None
+    if '/product/' in final_url:
+        # Single match — WordPress redirected straight to the product page.
+        product_url, product_html = final_url, html
+    else:
+        m = re.search(r'<a href="(https://perfumersupplyhouse\.com/product/[^"]+)" class="woocommerce-LoopProduct-link', html)
+        if not m:
+            return None
+        product_url = m.group(1)
+        try:
+            req2 = urllib.request.Request(product_url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
+            with urllib.request.urlopen(req2, timeout=8) as resp2:
+                product_html = resp2.read().decode('utf-8', 'ignore')
+        except Exception:
+            return None
+    title_m = re.search(r'<title>([^<]+)</title>', product_html)
+    title = title_m.group(1).split('&#8211;')[0].strip() if title_m else 'Perfumer Supply House'
+    img_m = re.search(r'class="wp-post-image"[^>]*src="([^"]+)"', product_html)
+    if not img_m:
+        return None
+    return {'title': title, 'image_url': img_m.group(1), 'product_url': product_url}
+
+# (source_key, arabic_label, host_allowlist, lookup_fn(name, cas))
+_PHOTO_SOURCES = (
+    ('fraterworks', 'Fraterworks', _FRATERWORKS_HOSTS + ('cdn.shopify.com',), lambda name, cas: _fetch_fraterworks_by_name(name)),
+    ('tpa', "Perfumer's Apprentice", _TPA_HOSTS, lambda name, cas: _fetch_tpa_by_cas(cas)),
+    ('psh', 'Perfumer Supply House', _PSH_HOSTS, lambda name, cas: _fetch_psh_by_cas(cas)),
+)
+
+def _find_material_photo(name, cas):
+    """Try each vendor in order (Fraterworks by name, then TPA/PSH by CAS).
+    Returns the first match — with 'source'/'source_label'/'allowed_hosts'
+    added — or None if nobody has it."""
+    for key, label, hosts, fn in _PHOTO_SOURCES:
+        try:
+            result = fn(name, cas)
+        except Exception:
+            result = None
+        if result:
+            result['source'] = key
+            result['source_label'] = label
+            result['allowed_hosts'] = hosts
+            return result
+    return None
+
 @app.route('/api/materials/photo-search')
 @login_required
 def api_material_photo_search():
-    """يحاول إيجاد صورة المادة من Fraterworks بمطابقة اسم المنتج (slug) تلقائياً."""
+    """يبحث تلقائياً عن صورة المادة عبر Fraterworks (بالاسم) ثم Perfumer's
+    Apprentice و Perfumer Supply House (برقم CAS)."""
     import urllib.parse
-    q = (request.args.get('q') or '').strip()
-    if not q:
+    name = (request.args.get('name') or '').strip()
+    cas = (request.args.get('cas') or '').strip()
+    if not name and not cas:
         return jsonify({'success': False, 'message': 'الاسم أو رقم CAS مطلوب'})
-    slug = _slugify_for_fraterworks(q)
-    if not slug:
-        return jsonify({'success': False, 'message': 'الاسم أو رقم CAS مطلوب'})
-    url = f'https://fraterworks.com/products/{slug}.json'
-    try:
-        result = _fetch_fraterworks_product_json(url)
-        if not result:
-            raise ValueError('empty')
+    result = _find_material_photo(name, cas)
+    if result:
         return jsonify({'success': True, 'data': result})
-    except Exception:
-        return jsonify({
-            'success': False,
-            'message': f'لم يتم إيجاد تطابق تلقائي لـ "{q}" في Fraterworks',
-            'search_url': f'https://fraterworks.com/search?q={urllib.parse.quote(q)}',
-        })
+    query = name or cas
+    return jsonify({
+        'success': False,
+        'message': f'لم يتم إيجاد تطابق تلقائي لـ "{query}" في المواقع المدعومة',
+        'search_url': f'https://fraterworks.com/search?q={urllib.parse.quote(query)}',
+    })
 
 @app.route('/api/materials/photo-search/resolve', methods=['POST'])
 @login_required
@@ -2768,47 +2866,49 @@ def api_material_photo_search_resolve():
 
 _PHOTO_MAX_BYTES = 8 * 1024 * 1024  # 8 MB cap for fetched photos
 
+def _download_and_save_material_photo(conn, mid, image_url, allowed_hosts):
+    """Downloads image_url (must be https + host in allowed_hosts) and saves
+    it as the material's photo. Returns (file_id, None) on success or
+    (None, error_message) on failure. Does not close conn."""
+    import urllib.request, urllib.parse
+    try:
+        parsed = urllib.parse.urlparse(image_url)
+    except Exception:
+        parsed = None
+    if not parsed or parsed.scheme != 'https' or parsed.hostname not in allowed_hosts:
+        return None, 'رابط الصورة غير مسموح به'
+    try:
+        req = urllib.request.Request(image_url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            mime = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            if not mime.startswith('image/'):
+                return None, 'الرابط لا يشير إلى صورة'
+            content = resp.read(_PHOTO_MAX_BYTES + 1)
+            if len(content) > _PHOTO_MAX_BYTES:
+                return None, 'حجم الصورة كبير جداً'
+    except Exception as e:
+        return None, f'تعذر تحميل الصورة: {e}'
+    filename = parsed.path.rsplit('/', 1)[-1] or 'photo.jpg'
+    fid = _save_material_file(conn, mid, filename, mime, content)
+    if fid is None:
+        return None, 'فشل حفظ الصورة'
+    conn.execute("UPDATE materials SET photo_file_id=? WHERE id=?", (fid, mid))
+    conn.commit()
+    return fid, None
+
 @app.route('/api/materials/<int:mid>/photo', methods=['POST'])
 @login_required
 def api_material_photo(mid):
     """تعيين/إزالة الصورة الرئيسية للمادة."""
-    import urllib.parse
     conn = get_db()
     action = request.form.get('action', 'fetch_url')
 
     if action == 'fetch_url':
         image_url = (request.form.get('image_url') or '').strip()
-        try:
-            parsed = urllib.parse.urlparse(image_url)
-        except Exception:
-            parsed = None
-        allowed_hosts = _FRATERWORKS_HOSTS + ('cdn.shopify.com',)
-        if not parsed or parsed.scheme != 'https' or parsed.hostname not in allowed_hosts:
-            conn.close()
-            return jsonify({'success': False, 'message': 'رابط الصورة غير مسموح به'})
-        import urllib.request
-        try:
-            req = urllib.request.Request(image_url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                mime = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
-                if not mime.startswith('image/'):
-                    conn.close()
-                    return jsonify({'success': False, 'message': 'الرابط لا يشير إلى صورة'})
-                content = resp.read(_PHOTO_MAX_BYTES + 1)
-                if len(content) > _PHOTO_MAX_BYTES:
-                    conn.close()
-                    return jsonify({'success': False, 'message': 'حجم الصورة كبير جداً'})
-        except Exception as e:
-            conn.close()
-            return jsonify({'success': False, 'message': f'تعذر تحميل الصورة: {e}'})
-        filename = request.form.get('filename') or (parsed.path.rsplit('/', 1)[-1] or 'photo.jpg')
-        fid = _save_material_file(conn, mid, filename, mime, content)
-        if fid is None:
-            conn.close()
-            return jsonify({'success': False, 'message': 'فشل حفظ الصورة'})
-        conn.execute("UPDATE materials SET photo_file_id=? WHERE id=?", (fid, mid))
-        conn.commit()
+        fid, err = _download_and_save_material_photo(conn, mid, image_url, _PHOTO_VENDOR_HOSTS)
         conn.close()
+        if fid is None:
+            return jsonify({'success': False, 'message': err})
         return jsonify({'success': True, 'message': 'تم تعيين الصورة', 'file_id': fid})
 
     if action == 'set_existing':
@@ -2832,6 +2932,43 @@ def api_material_photo(mid):
 
     conn.close()
     return jsonify({'success': False, 'message': 'إجراء غير معروف'}), 400
+
+@app.route('/api/materials/photo-bulk-update', methods=['POST'])
+@login_required
+def api_materials_photo_bulk_update():
+    """يحدّث دفعة واحدة صور كل المواد التي ليس لديها صورة بعد، بالمطابقة
+    التلقائية عبر Fraterworks / Perfumer's Apprentice / Perfumer Supply
+    House. لا يمس المواد التي لديها صورة مسبقاً."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, cas_number FROM materials WHERE photo_file_id IS NULL"
+    ).fetchall()
+    updated, not_found = [], []
+    skipped_no_identifier = 0
+    for m in rows:
+        name = (m['name'] or '').strip()
+        cas = (m['cas_number'] or '').strip()
+        if not name and not cas:
+            skipped_no_identifier += 1
+            continue
+        result = _find_material_photo(name, cas)
+        if not result:
+            not_found.append({'id': m['id'], 'name': name})
+            continue
+        fid, err = _download_and_save_material_photo(conn, m['id'], result['image_url'], result['allowed_hosts'])
+        if fid is None:
+            not_found.append({'id': m['id'], 'name': name})
+            continue
+        updated.append({'id': m['id'], 'name': name, 'source': result['source_label']})
+    conn.close()
+    return jsonify({
+        'success': True,
+        'updated_count': len(updated),
+        'updated': updated,
+        'not_found_count': len(not_found),
+        'not_found': not_found,
+        'skipped_no_identifier': skipped_no_identifier,
+    })
 
 # ===== Smart NCS-variant matching for ifra_contributions =====
 # Some CAS numbers in the IFRA Annex source data correspond to multiple
