@@ -211,6 +211,9 @@
         <button class="btn btn-outline-primary btn-sm" onclick="startBulkPhotoUpdate()" title="يجلب صوراً تلقائياً لكل مادة بدون صورة، عبر Fraterworks / Perfumer's Apprentice / Perfumer Supply House — لا يمس المواد التي لديها صورة مسبقاً">
             <i class="bi bi-images"></i> تحديث صور المواد
         </button>
+        <button class="btn btn-outline-info btn-sm" onclick="startBulkDataUpdate()" title="يملأ الحقول الفارغة (وصف الرائحة، نقطة الوميض، الكثافة، ...) لكل مادة لديها CAS، من PubChem / TGSC / Scentree — لا يستبدل أي بيانات موجودة">
+            <i class="bi bi-cloud-download"></i> تحديث بيانات المواد
+        </button>
         <button class="btn btn-primary btn-sm" onclick="showMaterialModal()">
             <i class="bi bi-plus-circle"></i> إضافة مادة
         </button>
@@ -934,17 +937,17 @@
     </div>
 </div>
 
-<!-- Bulk Photo Update Modal: fetch photos for every material missing one, in one pass -->
+<!-- Bulk Job Modal: shared progress UI for bulk photo / data update passes -->
 <div class="modal fade" id="photoBulkModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-images"></i> تحديث صور المواد</h5>
+                <h5 class="modal-title"><i class="bi bi-images"></i> <span id="photoBulkTitle">تحديث</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" id="photoBulkCloseBtn"></button>
             </div>
             <div class="modal-body text-center" id="photoBulkBody">
                 <div class="spinner-border text-secondary" role="status"></div>
-                <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري جلب الصور للمواد بدون صورة...</div>
+                <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري البدء...</div>
             </div>
         </div>
     </div>
@@ -1072,39 +1075,98 @@ let currentView = 'card';
 let overviewChart = null;
 let modalChart = null;
 let detailChart = null;
+// Card/table mini-wheel Chart.js instances. renderCards()/renderTable()
+// rebuild the whole list's HTML on every loadMaterials() call, which
+// orphans the previous batch of canvases — without destroying the Chart.js
+// instances first, each one keeps running (resize listeners, animation
+// frames) forever, leaking more memory every time a material is
+// added/edited/deleted. Track them here and destroy before each rebuild.
+let miniCharts = [];
 const modal = new bootstrap.Modal(document.getElementById('materialModal'));
 const wheelModal = new bootstrap.Modal(document.getElementById('wheelDetailModal'));
 const quickDiluteModal = new bootstrap.Modal(document.getElementById('quickDiluteModal'));
 const photoSearchModal = new bootstrap.Modal(document.getElementById('photoSearchModal'));
 const photoBulkModal = new bootstrap.Modal(document.getElementById('photoBulkModal'));
 
-function startBulkPhotoUpdate() {
-    if (!confirm('سيتم البحث عن صورة تلقائياً لكل مادة بدون صورة حالياً (لن يتم لمس المواد التي لديها صورة). قد يستغرق هذا بعض الوقت حسب عدد المواد. متابعة؟')) return;
+// ===== Bulk background jobs (photo update / data enrichment) =====
+// Both bulk actions run server-side in a daemon thread and report live
+// progress via /api/materials/bulk-job-status, polled here every second —
+// so the modal visibly moves (progress bar + current material name)
+// instead of showing an indeterminate spinner that's indistinguishable
+// from a frozen page.
+function _bulkJobSetBody(html) {
+    document.getElementById('photoBulkBody').innerHTML = html;
+}
+
+function runBulkJob(startUrl, confirmMsg, title, resultRenderer) {
+    if (!confirm(confirmMsg)) return;
+    document.getElementById('photoBulkTitle').textContent = title;
     document.getElementById('photoBulkCloseBtn').style.display = 'none';
-    document.getElementById('photoBulkBody').innerHTML = `
+    _bulkJobSetBody(`
         <div class="spinner-border text-secondary" role="status"></div>
-        <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري جلب الصور للمواد بدون صورة...</div>`;
+        <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري البدء...</div>`);
     photoBulkModal.show();
-    fetch('/api/materials/photo-bulk-update', { method: 'POST' })
+    fetch(startUrl, { method: 'POST' })
         .then(r => r.json())
         .then(data => {
-            document.getElementById('photoBulkCloseBtn').style.display = '';
             if (!data.success) {
-                document.getElementById('photoBulkBody').innerHTML = `<div class="text-danger">${escapeHtml(data.message || 'حدث خطأ')}</div>`;
+                document.getElementById('photoBulkCloseBtn').style.display = '';
+                _bulkJobSetBody(`<div class="text-danger">${escapeHtml(data.message || 'حدث خطأ')}</div>`);
                 return;
             }
-            renderBulkPhotoResults(data);
-            loadMaterials();
+            if (data.total === 0) {
+                document.getElementById('photoBulkCloseBtn').style.display = '';
+                _bulkJobSetBody('<div class="text-muted">لا توجد مواد بحاجة لتحديث حالياً</div>');
+                return;
+            }
+            pollBulkJob(data.job_id, data.total, resultRenderer);
         })
         .catch(() => {
             document.getElementById('photoBulkCloseBtn').style.display = '';
-            document.getElementById('photoBulkBody').innerHTML = '<div class="text-danger">خطأ في الاتصال</div>';
+            _bulkJobSetBody('<div class="text-danger">خطأ في الاتصال</div>');
         });
+}
+
+function pollBulkJob(jobId, total, resultRenderer) {
+    fetch(`/api/materials/bulk-job-status?job_id=${encodeURIComponent(jobId)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                document.getElementById('photoBulkCloseBtn').style.display = '';
+                _bulkJobSetBody(`<div class="text-danger">${escapeHtml(data.message || 'تعذر متابعة المهمة')}</div>`);
+                return;
+            }
+            if (data.status === 'done') {
+                document.getElementById('photoBulkCloseBtn').style.display = '';
+                resultRenderer(data);
+                loadMaterials();
+                return;
+            }
+            const pct = total > 0 ? Math.min(99, Math.round((data.processed / total) * 100)) : 0;
+            _bulkJobSetBody(`
+                <div class="progress mb-2" style="height:18px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:${pct}%">${pct}%</div>
+                </div>
+                <div class="text-muted" style="font-size:0.85rem;">
+                    ${data.processed} / ${total}${data.current ? ' — ' + escapeHtml(data.current) : ''}
+                </div>`);
+            setTimeout(() => pollBulkJob(jobId, total, resultRenderer), 1000);
+        })
+        .catch(() => { setTimeout(() => pollBulkJob(jobId, total, resultRenderer), 2000); });
+}
+
+function startBulkPhotoUpdate() {
+    runBulkJob(
+        '/api/materials/photo-bulk-update',
+        'سيتم البحث عن صورة تلقائياً لكل مادة بدون صورة حالياً (لن يتم لمس المواد التي لديها صورة). قد يستغرق هذا بعض الوقت حسب عدد المواد. متابعة؟',
+        'تحديث صور المواد',
+        renderBulkPhotoResults
+    );
 }
 
 function renderBulkPhotoResults(data) {
     const notFoundList = (data.not_found || []).map(m => `<li>${escapeHtml(m.name || ('#' + m.id))}</li>`).join('');
-    document.getElementById('photoBulkBody').innerHTML = `
+    _bulkJobSetBody(`
         <div class="text-center mb-3">
             <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
         </div>
@@ -1117,7 +1179,34 @@ function renderBulkPhotoResults(data) {
         <div class="mt-3 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#faf7f0;border-radius:8px;padding:8px 12px;">
             <div class="text-muted mb-1">مواد بدون تطابق تلقائي (يمكن البحث لها يدوياً من صفحة المادة):</div>
             <ul class="mb-0" style="padding-inline-start:18px;">${notFoundList}</ul>
-        </div>` : ''}`;
+        </div>` : ''}`);
+}
+
+function startBulkDataUpdate() {
+    runBulkJob(
+        '/api/materials/data-bulk-update',
+        'سيتم جلب البيانات الفيزيائية والعطرية الناقصة (وصف الرائحة، نقطة الوميض، الكثافة، ...) من PubChem ثم TGSC ثم Scentree لكل مادة لديها رقم CAS. لن يتم استبدال أي بيانات موجودة حالياً. قد يستغرق هذا بعض الوقت. متابعة؟',
+        'تحديث بيانات المواد',
+        renderBulkDataResults
+    );
+}
+
+function renderBulkDataResults(data) {
+    const notFoundList = (data.not_found || []).map(m => `<li>${escapeHtml(m.name || ('#' + m.id))}</li>`).join('');
+    _bulkJobSetBody(`
+        <div class="text-center mb-3">
+            <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
+        </div>
+        <div style="font-size:0.9rem;text-align:right;">
+            <div class="mb-1"><b>${data.updated_count}</b> مادة تم تحديث بياناتها</div>
+            <div class="mb-1 text-muted"><b>${data.not_found_count}</b> مادة لم يُعثر على بيانات إضافية لها</div>
+            ${data.skipped_no_identifier ? `<div class="mb-1 text-muted"><b>${data.skipped_no_identifier}</b> مادة بدون رقم CAS (تم تجاوزها)</div>` : ''}
+        </div>
+        ${notFoundList ? `
+        <div class="mt-3 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#faf7f0;border-radius:8px;padding:8px 12px;">
+            <div class="text-muted mb-1">مواد بدون بيانات إضافية:</div>
+            <ul class="mb-0" style="padding-inline-start:18px;">${notFoundList}</ul>
+        </div>` : ''}`);
 }
 
 // ===== Polar Area Chart Helper =====
@@ -1258,7 +1347,7 @@ function renderView() {
 // card/table layout.
 function matPhotoHtml(m, sizeClass, phClass) {
     if (m.photo_file_id) {
-        return `<img src="/api/materials/${m.id}/files/${m.photo_file_id}?inline=1" class="${sizeClass}" title="${escapeHtml(m.name)}" onclick="event.stopPropagation();editMaterial(${m.id})">`;
+        return `<img src="/api/materials/${m.id}/files/${m.photo_file_id}?inline=1" loading="lazy" class="${sizeClass}" title="${escapeHtml(m.name)}" onclick="event.stopPropagation();editMaterial(${m.id})">`;
     }
     return `<div class="${phClass}" title="لا توجد صورة" onclick="event.stopPropagation();editMaterial(${m.id})"><i class="bi bi-image"></i></div>`;
 }
@@ -1313,11 +1402,13 @@ function renderCards() {
     }).join('');
 
     // Draw mini wheels
+    miniCharts.forEach(c => c.destroy());
+    miniCharts = [];
     setTimeout(() => {
         document.querySelectorAll('.mini-canvas').forEach(canvas => {
             const mid = parseInt(canvas.dataset.id);
             const m = materials.find(x => x.id === mid);
-            if (m && m.olfactive) createPolarChart(canvas, m.olfactive, 'mini');
+            if (m && m.olfactive) miniCharts.push(createPolarChart(canvas, m.olfactive, 'mini'));
         });
     }, 50);
 }
@@ -1347,11 +1438,13 @@ function renderTable() {
         </tr>
     `).join('');
 
+    miniCharts.forEach(c => c.destroy());
+    miniCharts = [];
     setTimeout(() => {
         document.querySelectorAll('.mini-canvas-tbl').forEach(canvas => {
             const mid = parseInt(canvas.dataset.id);
             const m = materials.find(x => x.id === mid);
-            if (m && m.olfactive) createPolarChart(canvas, m.olfactive, 'mini');
+            if (m && m.olfactive) miniCharts.push(createPolarChart(canvas, m.olfactive, 'mini'));
         });
     }, 50);
 }

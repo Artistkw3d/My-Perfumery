@@ -15,6 +15,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 import tempfile
 import uuid
+import threading
 from datetime import datetime
 from functools import wraps
 
@@ -1564,12 +1565,19 @@ def settings():
 @login_required
 def scentree_lookup():
     """Fetch perfumery data from Scentree.co using material name or CAS"""
-    import urllib.request
-    import urllib.parse
-
     query = request.args.get('q', '').strip()
     if not query:
         return jsonify({'success': False, 'message': 'Material name or CAS required'})
+    result, err = _lookup_scentree(query)
+    if err:
+        return jsonify({'success': False, 'message': err})
+    return jsonify({'success': True, 'data': result})
+
+def _lookup_scentree(query):
+    """Fetch perfumery data from Scentree.co using material name or CAS.
+    Returns (result_dict, None) on success, or (None, error_message) on failure."""
+    import urllib.request
+    import urllib.parse
 
     result = {}
     try:
@@ -1583,7 +1591,7 @@ def scentree_lookup():
 
         results = ac_data.get('results', [])
         if not results:
-            return jsonify({'success': False, 'message': f'"{query}" not found on Scentree'})
+            return None, f'"{query}" not found on Scentree'
 
         # Find first published, known result
         match = None
@@ -1596,7 +1604,7 @@ def scentree_lookup():
 
         page_url = match.get('url_en', '')
         if not page_url:
-            return jsonify({'success': False, 'message': 'No page URL found'})
+            return None, 'No page URL found'
 
         # Basic info from autocomplete
         result['name'] = (match.get('name', {}).get('text', '') or '').replace('\u00ae', '').replace('\u2122', '').strip()
@@ -1688,28 +1696,35 @@ def scentree_lookup():
         result['source_url'] = full_url
 
         if len(result) <= 2:
-            return jsonify({'success': False, 'message': f'No detailed data found for "{query}"'})
+            return None, f'No detailed data found for "{query}"'
 
-        return jsonify({'success': True, 'data': result})
+        return result, None
 
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return jsonify({'success': False, 'message': f'"{query}" not found on Scentree'})
-        return jsonify({'success': False, 'message': f'HTTP error: {e.code}'})
+            return None, f'"{query}" not found on Scentree'
+        return None, f'HTTP error: {e.code}'
     except Exception as e:
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+        return None, f'Error: {str(e)}'
 
 # ===== Perfumery Data Lookup (The Good Scents Company) =====
 @app.route('/api/tgsc-lookup', methods=['GET'])
 @login_required
 def tgsc_lookup():
     """Fetch perfumery data from The Good Scents Company using CAS number"""
-    import urllib.request
-    import urllib.parse
-
     cas = request.args.get('cas', '').strip()
     if not cas:
         return jsonify({'success': False, 'message': 'CAS number required'})
+    result, err = _lookup_tgsc(cas)
+    if err:
+        return jsonify({'success': False, 'message': err})
+    return jsonify({'success': True, 'data': result})
+
+def _lookup_tgsc(cas):
+    """Fetch perfumery data from The Good Scents Company using CAS number.
+    Returns (result_dict, None) on success, or (None, error_message) on failure."""
+    import urllib.request
+    import urllib.parse
 
     result = {}
     try:
@@ -1726,7 +1741,7 @@ def tgsc_lookup():
         # Find link - TGSC uses openMainWindow('data/XX123.html') where XX = rw, es, tl, etc.
         data_match = re.search(r"openMainWindow\('(data/[a-z]+\d+\.html)'\)", search_html)
         if not data_match:
-            return jsonify({'success': False, 'message': f'CAS {cas} not found on The Good Scents Company'})
+            return None, f'CAS {cas} not found on The Good Scents Company'
 
         data_url = 'https://www.thegoodscentscompany.com/' + data_match.group(1)
 
@@ -1799,14 +1814,14 @@ def tgsc_lookup():
         result['source_url'] = data_url
 
         if not result or len(result) <= 1:
-            return jsonify({'success': False, 'message': f'No perfumery data found for CAS {cas}'})
+            return None, f'No perfumery data found for CAS {cas}'
 
-        return jsonify({'success': True, 'data': result})
+        return result, None
 
     except urllib.error.HTTPError as e:
-        return jsonify({'success': False, 'message': f'HTTP error: {e.code}'})
+        return None, f'HTTP error: {e.code}'
     except Exception as e:
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+        return None, f'Error: {str(e)}'
 
 # ===== CAS Lookup API =====
 def _extract_celsius(text):
@@ -1840,12 +1855,19 @@ def _extract_number(text):
 @login_required
 def cas_lookup():
     """Fetch material data from PubChem using CAS number"""
-    import urllib.request
-    import urllib.parse
     cas = request.args.get('cas', '').strip()
     if not cas:
         return jsonify({'success': False, 'message': 'CAS number required'})
+    result, err = _lookup_pubchem_physical(cas)
+    if err:
+        return jsonify({'success': False, 'message': err})
+    return jsonify({'success': True, 'data': result})
 
+def _lookup_pubchem_physical(cas):
+    """Fetch physical/chemical material data from PubChem using CAS number.
+    Returns (result_dict, None) on success, or (None, error_message) on failure."""
+    import urllib.request
+    import urllib.parse
     result = {}
     try:
         # Step 1: Get CID from CAS number
@@ -1933,14 +1955,14 @@ def cas_lookup():
 
         result['cid'] = cid
         result['pubchem_url'] = f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}"
-        return jsonify({'success': True, 'data': result})
+        return result, None
 
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return jsonify({'success': False, 'message': f'CAS {cas} not found in PubChem'})
-        return jsonify({'success': False, 'message': f'PubChem error: {e.code}'})
+            return None, f'CAS {cas} not found in PubChem'
+        return None, f'PubChem error: {e.code}'
     except Exception as e:
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+        return None, f'Error: {str(e)}'
 
 # ===== MSDS/GHS Lookup API =====
 # Map PubChem GHS pictogram codes to our pictogram names
@@ -2681,7 +2703,55 @@ def api_material_file_serve(mid, fid):
     resp = Response(data, mimetype=mime)
     resp.headers['Content-Disposition'] = f'{disp}; filename="{safe_name}"; filename*=UTF-8\'\'{utf8_name}'
     resp.headers['X-Content-Type-Options'] = 'nosniff'
+    # A given file id's bytes never change in place (re-uploading/re-fetching
+    # a photo mints a new id, per the orphan-keep policy) — safe to cache
+    # aggressively. materials.html re-renders the full card/table grid after
+    # nearly every action, so every repeat request for the same photo this
+    # header avoids is a real, easy win against page-load weight.
+    resp.headers['Cache-Control'] = 'private, max-age=604800, immutable'
     return resp
+
+# ===== Background bulk-job tracking =====
+# Bulk operations (photo fetch, data enrichment) hit several external sites
+# per material and can take a while over a full catalog. Running them
+# synchronously inside the request left the UI with nothing but a static
+# spinner — indistinguishable from a frozen tab. Instead we run the work in
+# a daemon thread and track live progress in memory, polled by the
+# frontend, so it can show "x / y — currently: <name>" and actually move.
+_BULK_JOBS = {}
+_BULK_JOBS_LOCK = threading.Lock()
+
+def _bulk_job_start(total):
+    job_id = uuid.uuid4().hex[:12]
+    with _BULK_JOBS_LOCK:
+        _BULK_JOBS[job_id] = {
+            'status': 'running',
+            'total': total,
+            'processed': 0,
+            'current': '',
+            'updated': [],
+            'not_found': [],
+            'skipped_no_identifier': 0,
+        }
+    return job_id
+
+def _bulk_job_update(job_id, **kwargs):
+    with _BULK_JOBS_LOCK:
+        if job_id in _BULK_JOBS:
+            _BULK_JOBS[job_id].update(kwargs)
+
+def _bulk_job_get(job_id):
+    with _BULK_JOBS_LOCK:
+        job = _BULK_JOBS.get(job_id)
+        return dict(job) if job else None
+
+@app.route('/api/materials/bulk-job-status')
+@login_required
+def api_materials_bulk_job_status():
+    job = _bulk_job_get(request.args.get('job_id', ''))
+    if not job:
+        return jsonify({'success': False, 'message': 'job not found'})
+    return jsonify({'success': True, **job})
 
 # ===== Material photo lookup (Fraterworks / Perfumer's Apprentice / Perfumer Supply House) =====
 # Each vendor's robots.txt was checked before writing this:
@@ -2933,21 +3003,14 @@ def api_material_photo(mid):
     conn.close()
     return jsonify({'success': False, 'message': 'إجراء غير معروف'}), 400
 
-@app.route('/api/materials/photo-bulk-update', methods=['POST'])
-@login_required
-def api_materials_photo_bulk_update():
-    """يحدّث دفعة واحدة صور كل المواد التي ليس لديها صورة بعد، بالمطابقة
-    التلقائية عبر Fraterworks / Perfumer's Apprentice / Perfumer Supply
-    House. لا يمس المواد التي لديها صورة مسبقاً."""
+def _run_photo_bulk_job(job_id, materials):
     conn = get_db()
-    rows = conn.execute(
-        "SELECT id, name, cas_number FROM materials WHERE photo_file_id IS NULL"
-    ).fetchall()
     updated, not_found = [], []
     skipped_no_identifier = 0
-    for m in rows:
+    for i, m in enumerate(materials):
         name = (m['name'] or '').strip()
-        cas = (m['cas_number'] or '').strip()
+        cas = (m['cas'] or '').strip()
+        _bulk_job_update(job_id, processed=i, current=name or cas or f'#{m["id"]}')
         if not name and not cas:
             skipped_no_identifier += 1
             continue
@@ -2961,14 +3024,119 @@ def api_materials_photo_bulk_update():
             continue
         updated.append({'id': m['id'], 'name': name, 'source': result['source_label']})
     conn.close()
-    return jsonify({
-        'success': True,
-        'updated_count': len(updated),
-        'updated': updated,
-        'not_found_count': len(not_found),
-        'not_found': not_found,
-        'skipped_no_identifier': skipped_no_identifier,
-    })
+    _bulk_job_update(job_id, status='done', processed=len(materials), current='',
+                      updated=updated, updated_count=len(updated),
+                      not_found=not_found, not_found_count=len(not_found),
+                      skipped_no_identifier=skipped_no_identifier)
+
+@app.route('/api/materials/photo-bulk-update', methods=['POST'])
+@login_required
+def api_materials_photo_bulk_update():
+    """يبدأ مهمة خلفية تحدّث صور كل المواد التي ليس لديها صورة بعد، بالمطابقة
+    التلقائية عبر Fraterworks / Perfumer's Apprentice / Perfumer Supply
+    House. لا يمس المواد التي لديها صورة مسبقاً. يرجع job_id فوراً؛ التقدم
+    يُتابع عبر /api/materials/bulk-job-status."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, cas_number FROM materials WHERE photo_file_id IS NULL"
+    ).fetchall()
+    conn.close()
+    materials = [{'id': m['id'], 'name': m['name'], 'cas': m['cas_number']} for m in rows]
+    job_id = _bulk_job_start(len(materials))
+    threading.Thread(target=_run_photo_bulk_job, args=(job_id, materials), daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id, 'total': len(materials)})
+
+# ===== Material data enrichment — bulk (PubChem / TGSC / Scentree) =====
+# Reuses the same three per-material lookup sources as the manual
+# "جلب بيانات" buttons in the material modal (cas-lookup/tgsc-lookup/
+# scentree-lookup), run in that order over every material that has a CAS
+# number. Only fills columns that are currently empty — identical
+# "don't overwrite what the user already entered" rule the single-material
+# buttons already use — so it's safe to run repeatedly.
+_DATA_FILLABLE_FIELDS = (
+    'odor_description', 'flash_point', 'specific_gravity', 'refractive_index',
+    'color', 'appearance', 'melting_point', 'boiling_point', 'ph', 'solubility',
+    'vapor_density', 'synonyms', 'vapor_pressure', 'strength_odor', 'recommended_smell_pct',
+)
+
+def _enrich_material_data(conn, mid, cas):
+    """Runs PubChem -> TGSC -> Scentree in order for one material, writing
+    only currently-empty columns from _DATA_FILLABLE_FIELDS. Returns the
+    number of fields filled."""
+    row = conn.execute("SELECT * FROM materials WHERE id=?", (mid,)).fetchone()
+    if not row:
+        return 0
+    existing = dict(row)
+    updates = {}
+
+    def consider(source_dict):
+        if not source_dict:
+            return
+        for field in _DATA_FILLABLE_FIELDS:
+            if field in updates:
+                continue
+            value = source_dict.get(field)
+            if value in (None, ''):
+                continue
+            if existing.get(field) not in (None, ''):
+                continue
+            updates[field] = value
+
+    pubchem_data, _ = _lookup_pubchem_physical(cas)
+    consider(pubchem_data)
+    tgsc_data, _ = _lookup_tgsc(cas)
+    consider(tgsc_data)
+    scentree_data, _ = _lookup_scentree(cas)
+    consider(scentree_data)
+
+    if not updates:
+        return 0
+    set_clause = ', '.join(f'{f}=?' for f in updates)
+    conn.execute(f"UPDATE materials SET {set_clause} WHERE id=?", (*updates.values(), mid))
+    conn.commit()
+    return len(updates)
+
+def _run_data_bulk_job(job_id, materials):
+    conn = get_db()
+    updated, not_found = [], []
+    skipped_no_identifier = 0
+    for i, m in enumerate(materials):
+        name = (m['name'] or '').strip()
+        cas = (m['cas'] or '').strip()
+        _bulk_job_update(job_id, processed=i, current=name or cas or f'#{m["id"]}')
+        if not cas:
+            skipped_no_identifier += 1
+            continue
+        try:
+            filled = _enrich_material_data(conn, m['id'], cas)
+        except Exception:
+            filled = 0
+        if filled > 0:
+            updated.append({'id': m['id'], 'name': name, 'filled': filled})
+        else:
+            not_found.append({'id': m['id'], 'name': name})
+    conn.close()
+    _bulk_job_update(job_id, status='done', processed=len(materials), current='',
+                      updated=updated, updated_count=len(updated),
+                      not_found=not_found, not_found_count=len(not_found),
+                      skipped_no_identifier=skipped_no_identifier)
+
+@app.route('/api/materials/data-bulk-update', methods=['POST'])
+@login_required
+def api_materials_data_bulk_update():
+    """يبدأ مهمة خلفية تملأ الحقول الفارغة (وصف الرائحة، نقطة الوميض،
+    الكثافة، ...) لكل مادة لديها رقم CAS، من PubChem ثم TGSC ثم Scentree.
+    لا يستبدل أي قيمة موجودة مسبقاً. يرجع job_id فوراً؛ التقدم يُتابع عبر
+    /api/materials/bulk-job-status."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, cas_number FROM materials WHERE cas_number IS NOT NULL AND TRIM(cas_number) != ''"
+    ).fetchall()
+    conn.close()
+    materials = [{'id': m['id'], 'name': m['name'], 'cas': m['cas_number']} for m in rows]
+    job_id = _bulk_job_start(len(materials))
+    threading.Thread(target=_run_data_bulk_job, args=(job_id, materials), daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id, 'total': len(materials)})
 
 # ===== Smart NCS-variant matching for ifra_contributions =====
 # Some CAS numbers in the IFRA Annex source data correspond to multiple
