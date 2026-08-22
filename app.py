@@ -3927,7 +3927,28 @@ def api_formula_ingredients(fid):
             conn.commit()
             conn.close()
             return jsonify({'success': True})
-        
+
+        elif action == 'change_material':
+            ing_id = request.form.get('ing_id')
+            new_mid = request.form.get('material_id')
+            if not new_mid:
+                conn.close()
+                return jsonify({'success': False, 'message': 'اختر مادة'})
+            exists = conn.execute(
+                "SELECT id FROM formula_ingredients WHERE formula_id=? AND material_id=? AND id!=?",
+                (fid, new_mid, ing_id)).fetchone()
+            if exists:
+                conn.close()
+                return jsonify({'success': False, 'message': 'هذه المادة موجودة مسبقاً في التركيبة'})
+            # Reset per-row IFRA override — it was set against the old material,
+            # carrying it over to a different material could hide a real violation.
+            conn.execute(
+                "UPDATE formula_ingredients SET material_id=?, ifra_override=NULL WHERE id=? AND formula_id=?",
+                (new_mid, ing_id, fid))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'تم تغيير المكون'})
+
         elif action == 'delete':
             conn.execute("DELETE FROM formula_ingredients WHERE id=?", (request.form.get('ing_id'),))
             conn.commit()
@@ -4080,6 +4101,33 @@ def api_formula_drafts(fid):
             conn.commit()
             conn.close()
             return jsonify({'success': True, 'message': f'تم حفظ {draft_name}', 'draft_id': draft_id, 'draft_number': next_num})
+
+        elif action == 'update':
+            draft_id = request.form.get('draft_id')
+            draft = conn.execute("SELECT * FROM formula_drafts WHERE id=? AND formula_id=?", (draft_id, fid)).fetchone()
+            if not draft:
+                conn.close()
+                return jsonify({'success': False, 'message': 'المسودة غير موجودة'})
+            if draft['is_final']:
+                conn.close()
+                return jsonify({'success': False, 'message': 'لا يمكن تعديل المسودة المعتمدة'})
+
+            # Replace this draft's ingredients with the formula's current ingredients
+            conn.execute("DELETE FROM draft_ingredients WHERE draft_id=?", (draft_id,))
+            ingredients = conn.execute("SELECT * FROM formula_ingredients WHERE formula_id=?", (fid,)).fetchall()
+            for ing in ingredients:
+                conn.execute("""INSERT INTO draft_ingredients
+                    (draft_id, material_id, weight, dilution, diluent, diluent_other, notes, ifra_override)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (draft_id, ing['material_id'], ing['weight'], ing['dilution'],
+                     ing['diluent'] if 'diluent' in ing.keys() else '',
+                     ing['diluent_other'] if 'diluent_other' in ing.keys() else '',
+                     ing['notes'] if 'notes' in ing.keys() else '',
+                     ing['ifra_override'] if 'ifra_override' in ing.keys() and ing['ifra_override'] is not None else None))
+
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': f'تم تحديث {draft["name"]}'})
 
         elif action == 'load':
             draft_id = request.form.get('draft_id')

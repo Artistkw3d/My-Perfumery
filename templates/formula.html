@@ -207,6 +207,15 @@
         font-size: 0.85rem;
     }
     .e-del:hover { color: var(--red); }
+    .e-swap {
+        background: none;
+        border: none;
+        color: var(--text-light);
+        cursor: pointer;
+        font-size: 0.85rem;
+    }
+    .e-swap:hover { color: var(--gold); }
+    .e-row-actions { display: flex; align-items: center; justify-content: center; gap: 6px; }
 
     /* Sidebar forms */
     .side-label { font-size: 0.78rem; color: var(--text-mid); margin-bottom: 4px; display: block; }
@@ -420,6 +429,18 @@
         border-color: var(--sand);
     }
     .draft-tab-new:hover { border-color: var(--gold); color: var(--gold); }
+    .dt-update {
+        background: none;
+        border: none;
+        color: inherit;
+        opacity: 0.7;
+        cursor: pointer;
+        font-size: 0.78rem;
+        padding: 0;
+        display: flex;
+        align-items: center;
+    }
+    .dt-update:hover { opacity: 1; }
     .draft-actions {
         margin-right: auto;
         display: flex;
@@ -924,6 +945,40 @@
     </div>
 </div>
 
+<!-- Swap Ingredient Modal -->
+<div class="modal fade" id="swapModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2"></i>تبديل المكون</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label">المكون الحالي</label>
+                    <div id="swap_current_name" class="form-control-plaintext" style="font-weight:600;"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">المادة الجديدة</label>
+                    <select id="swap_material" class="form-select select2-material">
+                        <option value="">-- اختر --</option>
+                        {% for m in materials %}
+                        <option value="{{ m.id }}">{{ m.name }} {{ '(' + m.cas_number + ')' if m.cas_number else '' }}</option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">الوزن والتخفيف والملاحظات تبقى كما هي — يتغير فقط اسم المادة.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="confirmSwapIngredient()">
+                    <i class="bi bi-arrow-left-right"></i> تبديل
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Save Draft Modal -->
 <div class="modal fade" id="saveDraftModal" tabindex="-1">
     <div class="modal-dialog">
@@ -1024,10 +1079,12 @@
 <script>
 const formulaId = {{ formula.id }};
 const addModal = new bootstrap.Modal(document.getElementById('addModal'));
+const swapModal = new bootstrap.Modal(document.getElementById('swapModal'));
 const scaleModal = new bootstrap.Modal(document.getElementById('scaleModal'));
 const saveDraftModal = new bootstrap.Modal(document.getElementById('saveDraftModal'));
 const compareModal = new bootstrap.Modal(document.getElementById('compareModal'));
 let allDrafts = [];
+let swapIngId = null;
 
 const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
 const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
@@ -1320,7 +1377,12 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
             <td>${lDisplay}${lSubtitle}</td>
             <td class="adv-col">${kDisplay}</td>
             <td>${(i.cost || 0).toFixed(2)}</td>
-            <td><button class="e-del" onclick="deleteIngredient(${i.id})"><i class="bi bi-trash"></i></button></td>
+            <td>
+                <div class="e-row-actions">
+                    <button class="e-swap" title="تبديل المكون" onclick="openSwapModal(${i.id}, '${(i.name || '').replace(/'/g, "\\'")}')"><i class="bi bi-arrow-left-right"></i></button>
+                    <button class="e-del" title="حذف" onclick="deleteIngredient(${i.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
         </tr>
         ${i.constituents && i.constituents.length ? `
         <tr class="constituents-row" id="const_${i.id}" style="display:none;">
@@ -1373,6 +1435,28 @@ function addIngredient() {
     .then(r => r.json())
     .then(data => {
         if (data.success) { addModal.hide(); loadIngredients(); showAlert('تمت الإضافة'); }
+        else { showAlert(data.message || 'خطأ', 'danger'); }
+    });
+}
+
+function openSwapModal(ingId, currentName) {
+    swapIngId = ingId;
+    document.getElementById('swap_current_name').textContent = currentName || '';
+    $('#swap_material').val(null).trigger('change');
+    swapModal.show();
+}
+
+function confirmSwapIngredient() {
+    const mid = document.getElementById('swap_material').value;
+    if (!mid) { showAlert('اختر مادة', 'danger'); return; }
+    const fd = new FormData();
+    fd.append('action', 'change_material');
+    fd.append('ing_id', swapIngId);
+    fd.append('material_id', mid);
+    fetch(`/api/formula/${formulaId}/ingredients`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) { swapModal.hide(); loadIngredients(); showAlert(data.message || 'تم التبديل'); }
         else { showAlert(data.message || 'خطأ', 'danger'); }
     });
 }
@@ -1740,6 +1824,17 @@ $(document).ready(function() {
             searching: function() { return "جاري البحث..."; }
         }
     });
+    $('#swap_material').select2({
+        theme: 'bootstrap-5',
+        dir: 'rtl',
+        placeholder: '-- ابحث عن مادة --',
+        allowClear: true,
+        dropdownParent: $('#swapModal'),
+        language: {
+            noResults: function() { return "لا توجد نتائج"; },
+            searching: function() { return "جاري البحث..."; }
+        }
+    });
 });
 
 // Pre-populate review fields from server data
@@ -1772,12 +1867,19 @@ function renderDraftBar(drafts) {
     drafts.forEach(d => {
         const cls = d.is_final ? 'draft-tab dt-final' : 'draft-tab';
         const icon = d.is_final ? 'bi-check-circle-fill' : 'bi-archive';
+        const safeName = String(d.name || '').replace(/'/g, "\\'");
+        const updateBtn = d.is_final ? '' : `
+                <button type="button" class="dt-update" title="تحديث هذه المسودة بالمكونات الحالية"
+                    onclick="event.stopPropagation(); updateDraftInPlace(${d.id}, '${safeName}')">
+                    <i class="bi bi-arrow-repeat"></i>
+                </button>`;
         tabsHtml += `
             <div class="${cls}" onclick="loadDraft(${d.id})" title="${d.notes || ''}">
                 <i class="bi ${icon}"></i>
                 ${d.name}
                 <span class="dt-count">${d.ingredients_count}</span>
                 ${d.is_final ? '<i class="bi bi-star-fill" style="font-size:0.6rem;"></i>' : ''}
+                ${updateBtn}
             </div>`;
     });
 
@@ -1821,6 +1923,19 @@ function saveDraft() {
         } else {
             showAlert(data.message || 'خطأ', 'danger');
         }
+    });
+}
+
+function updateDraftInPlace(draftId, draftName) {
+    if (!confirm(`سيتم استبدال مكونات "${draftName}" بالمكونات الحالية للتركيبة. متأكد؟`)) return;
+    const fd = new FormData();
+    fd.append('action', 'update');
+    fd.append('draft_id', draftId);
+    fetch(`/api/formula/${formulaId}/drafts`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) { loadDrafts(); showAlert(data.message); }
+        else { showAlert(data.message || 'خطأ', 'danger'); }
     });
 }
 
