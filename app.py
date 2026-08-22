@@ -2805,25 +2805,36 @@ def api_materials_bulk_job_status():
         return jsonify({'success': False, 'message': 'job not found'})
     return jsonify({'success': True, **job})
 
-# ===== Material photo lookup (Fraterworks / Perfumer's Apprentice / Perfumer Supply House) =====
-# Each vendor's robots.txt was checked before writing this:
-#  - fraterworks.com disallows /search for crawlers, so we never hit that
-#    path from server code. Instead we guess the product handle from the
-#    slugified material NAME (Fraterworks handles are name-based, not
-#    CAS-based — searching by CAS here was the old bug) and try
-#    /products/<slug>.json directly (allowed, returns clean JSON).
-#  - shop.perfumersapprentice.com (TPA) allows /search.aspx, and its search
-#    indexes CAS numbers directly, so we search by CAS there.
+# ===== Material photo lookup (Perfumer Supply House / Bioland / Fraterworks) =====
+# Each vendor's robots.txt was checked before writing this. Order matters:
+# CAS-number search is strictly preferred (unambiguous — matches the exact
+# material, not a name that could collide with something else), and only
+# falls through to Fraterworks' name-guessing as a last resort:
 #  - perfumersupplyhouse.com (PSH, WordPress/WooCommerce) allows /?s=, and
 #    WordPress redirects straight to the product page on a single match; we
-#    search by CAS there too, falling back to the first result link
-#    otherwise.
-# If none of the three find a match, the user can still fall back to
-# pasting a Fraterworks product URL by hand (unchanged, see /resolve below).
+#    search by CAS there, falling back to the first result link otherwise.
+#  - biolandes.com (Bioland, WordPress/WooCommerce + Ivory Search plugin)
+#    allows /wp-admin/admin-ajax.php explicitly in robots.txt. Their search
+#    box literally advertises "CAS code" as a supported query. The plugin's
+#    AJAX search (action=is_ajax_load_posts) needs a nonce, fetched fresh
+#    from the homepage each call — WP nonces for this plugin aren't tied to
+#    a session/cookie, just a short validity window, so a stateless fetch
+#    then POST works fine.
+#  - fraterworks.com disallows /search for crawlers, so we never hit that
+#    path from server code, and it has no CAS-search of any kind — product
+#    handles are purely name-based. So it's tried last, by name, only after
+#    both CAS-based sources have already missed.
+#  - Previously also tried shop.perfumersapprentice.com (TPA) by CAS, but
+#    dropped 2026-08-22: user reported its images consistently failed to
+#    load/save (the vendor started serving those product-image URLs
+#    differently), so it was pulled from the chain entirely rather than
+#    kept as a source of broken results.
+# If none find a match, the user can still fall back to pasting a
+# Fraterworks product URL by hand (unchanged, see /resolve below).
 _FRATERWORKS_HOSTS = ('fraterworks.com', 'www.fraterworks.com')
-_TPA_HOSTS = ('shop.perfumersapprentice.com',)
 _PSH_HOSTS = ('perfumersupplyhouse.com', 'www.perfumersupplyhouse.com')
-_PHOTO_VENDOR_HOSTS = _FRATERWORKS_HOSTS + ('cdn.shopify.com',) + _TPA_HOSTS + _PSH_HOSTS
+_BIOLAND_HOSTS = ('biolandes.com', 'www.biolandes.com')
+_PHOTO_VENDOR_HOSTS = _FRATERWORKS_HOSTS + ('cdn.shopify.com',) + _PSH_HOSTS + _BIOLAND_HOSTS
 
 def _slugify_for_fraterworks(text):
     text = (text or '').strip().lower()
@@ -2863,28 +2874,43 @@ def _fetch_fraterworks_by_name(name):
     except Exception:
         return None
 
-def _fetch_tpa_by_cas(cas):
-    """Search shop.perfumersapprentice.com by CAS number, return the first hit."""
+def _fetch_bioland_by_cas(cas):
+    """Search biolandes.com by CAS number via their Ivory Search AJAX
+    endpoint (action=is_ajax_load_posts), return the first hit."""
     import urllib.request, urllib.parse
     cas = (cas or '').strip()
     if not cas:
         return None
-    url = f'https://shop.perfumersapprentice.com/search.aspx?searchterm={urllib.parse.quote(cas)}'
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
+        req = urllib.request.Request('https://biolandes.com/en/', headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
         with urllib.request.urlopen(req, timeout=8) as resp:
-            html = resp.read().decode('utf-8', 'ignore')
+            home_html = resp.read().decode('utf-8', 'ignore')
     except Exception:
         return None
-    m = re.search(r'<a href="(/p-(\d+)-[^"]+\.aspx)"><img src="[^"]*"[^>]*alt="([^"]*)"', html)
-    if not m:
+    nonce_m = re.search(r'"ajax_nonce":"([a-f0-9]+)"', home_html)
+    if not nonce_m:
         return None
-    path, pid, title = m.group(1), m.group(2), m.group(3)
-    return {
-        'title': title,
-        'image_url': f'https://shop.perfumersapprentice.com/images/product/large/{pid}.jpg',
-        'product_url': f'https://shop.perfumersapprentice.com{path}',
-    }
+    data = urllib.parse.urlencode({
+        's': cas, 'id': '24395', 'post_type': 'product',
+        'action': 'is_ajax_load_posts', 'page': '1', 'security': nonce_m.group(1),
+    }).encode()
+    try:
+        req2 = urllib.request.Request('https://biolandes.com/wp-admin/admin-ajax.php', data=data,
+            headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
+        with urllib.request.urlopen(req2, timeout=8) as resp2:
+            html = resp2.read().decode('utf-8', 'ignore')
+    except Exception:
+        return None
+    img_m = re.search(r'class="thumbnail">\s*<a href="([^"]+)"><img[^>]*src="([^"]+)"', html)
+    if not img_m:
+        return None
+    product_url, image_url = img_m.group(1), img_m.group(2)
+    # Strip WordPress's auto-generated thumbnail suffix (e.g. "-150x150")
+    # to get the original full-resolution upload instead of a tiny crop.
+    image_url = re.sub(r'-\d+x\d+(?=\.\w+$)', '', image_url)
+    title_m = re.search(r'class="is-title">\s*<a href="[^"]+">\s*([^<]+?)\s*</a>', html)
+    title = title_m.group(1).strip() if title_m else 'Bioland'
+    return {'title': title, 'image_url': image_url, 'product_url': product_url}
 
 def _fetch_psh_by_cas(cas):
     """Search perfumersupplyhouse.com by CAS number, return the first hit."""
@@ -2922,16 +2948,18 @@ def _fetch_psh_by_cas(cas):
     return {'title': title, 'image_url': img_m.group(1), 'product_url': product_url}
 
 # (source_key, arabic_label, host_allowlist, lookup_fn(name, cas))
+# CAS-based sources first (unambiguous match), Fraterworks last (name-based
+# guess — the only one that can misfire on a similarly-named material).
 _PHOTO_SOURCES = (
-    ('fraterworks', 'Fraterworks', _FRATERWORKS_HOSTS + ('cdn.shopify.com',), lambda name, cas: _fetch_fraterworks_by_name(name)),
-    ('tpa', "Perfumer's Apprentice", _TPA_HOSTS, lambda name, cas: _fetch_tpa_by_cas(cas)),
     ('psh', 'Perfumer Supply House', _PSH_HOSTS, lambda name, cas: _fetch_psh_by_cas(cas)),
+    ('bioland', 'Bioland', _BIOLAND_HOSTS, lambda name, cas: _fetch_bioland_by_cas(cas)),
+    ('fraterworks', 'Fraterworks', _FRATERWORKS_HOSTS + ('cdn.shopify.com',), lambda name, cas: _fetch_fraterworks_by_name(name)),
 )
 
 def _find_material_photo(name, cas):
-    """Try each vendor in order (Fraterworks by name, then TPA/PSH by CAS).
-    Returns the first match — with 'source'/'source_label'/'allowed_hosts'
-    added — or None if nobody has it."""
+    """Try each vendor in order (PSH/Bioland by CAS, then Fraterworks by
+    name as a last resort). Returns the first match — with
+    'source'/'source_label'/'allowed_hosts' added — or None if nobody has it."""
     for key, label, hosts, fn in _PHOTO_SOURCES:
         try:
             result = fn(name, cas)
@@ -2991,25 +3019,44 @@ _PHOTO_MAX_BYTES = 8 * 1024 * 1024  # 8 MB cap for fetched photos
 def _download_and_save_material_photo(conn, mid, image_url, allowed_hosts):
     """Downloads image_url (must be https + host in allowed_hosts) and saves
     it as the material's photo. Returns (file_id, None) on success or
-    (None, error_message) on failure. Does not close conn."""
-    import urllib.request, urllib.parse
+    (None, error_message) on failure. Does not close conn.
+
+    Some vendor CDNs (seen on PSH) intermittently 403 a direct image fetch —
+    hotlink/bot protection reacting to a non-browser User-Agent or a missing
+    Referer, not a permanently dead link. Sends a real browser UA + a
+    same-host Referer, and retries once after a short pause before giving up,
+    since this exact class of "image looks found but won't actually load"
+    was the original complaint that got Perfumer's Apprentice dropped."""
+    import urllib.request, urllib.parse, time
     try:
         parsed = urllib.parse.urlparse(image_url)
     except Exception:
         parsed = None
     if not parsed or parsed.scheme != 'https' or parsed.hostname not in allowed_hosts:
         return None, 'رابط الصورة غير مسموح به'
-    try:
-        req = urllib.request.Request(image_url, headers={'User-Agent': 'Mozilla/5.0 (MyPerfumery)'})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            mime = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
-            if not mime.startswith('image/'):
-                return None, 'الرابط لا يشير إلى صورة'
-            content = resp.read(_PHOTO_MAX_BYTES + 1)
-            if len(content) > _PHOTO_MAX_BYTES:
-                return None, 'حجم الصورة كبير جداً'
-    except Exception as e:
-        return None, f'تعذر تحميل الصورة: {e}'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+        'Referer': f'https://{parsed.hostname}/',
+    }
+    content, mime, last_err = None, None, None
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(image_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                mime = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+                if not mime.startswith('image/'):
+                    return None, 'الرابط لا يشير إلى صورة'
+                content = resp.read(_PHOTO_MAX_BYTES + 1)
+                if len(content) > _PHOTO_MAX_BYTES:
+                    return None, 'حجم الصورة كبير جداً'
+            break
+        except Exception as e:
+            last_err = e
+            content = None
+            if attempt == 0:
+                time.sleep(1)
+    if content is None:
+        return None, f'تعذر تحميل الصورة: {last_err}'
     filename = parsed.path.rsplit('/', 1)[-1] or 'photo.jpg'
     fid = _save_material_file(conn, mid, filename, mime, content)
     if fid is None:
