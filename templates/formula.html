@@ -987,7 +987,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-save me-2"></i>حفظ مسودة</h5>
+                <h5 class="modal-title"><i class="bi bi-save me-2"></i>حفظ وانشاء مسودة</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -1004,7 +1004,7 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
                 <button type="button" class="btn btn-primary" onclick="saveDraft()">
-                    <i class="bi bi-save me-1"></i> حفظ المسودة
+                    <i class="bi bi-save me-1"></i> حفظ وانشاء مسودة
                 </button>
             </div>
         </div>
@@ -1901,7 +1901,7 @@ function renderDraftBar(drafts) {
     // Add "Save Draft" button
     tabsHtml += `
         <div class="draft-tab draft-tab-new" onclick="showSaveDraftModal()">
-            <i class="bi bi-plus-lg"></i> حفظ مسودة
+            <i class="bi bi-plus-lg"></i> حفظ وانشاء مسودة
         </div>`;
 
     tabs.innerHTML = tabsHtml;
