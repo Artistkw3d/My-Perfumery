@@ -142,6 +142,18 @@
         transition: all 0.2s;
     }
     .btn-add-e:hover { background: var(--sand); }
+    .btn-update-draft {
+        background: var(--primary);
+        border: 1px solid var(--primary);
+        color: white;
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-update-draft:hover { opacity: 0.85; }
 
     /* Table */
     .e-table {
@@ -429,18 +441,6 @@
         border-color: var(--sand);
     }
     .draft-tab-new:hover { border-color: var(--gold); color: var(--gold); }
-    .dt-update {
-        background: none;
-        border: none;
-        color: inherit;
-        opacity: 0.7;
-        cursor: pointer;
-        font-size: 0.78rem;
-        padding: 0;
-        display: flex;
-        align-items: center;
-    }
-    .dt-update:hover { opacity: 1; }
     .draft-actions {
         margin-right: auto;
         display: flex;
@@ -650,7 +650,10 @@
         <div class="e-card">
             <div class="e-card-head">
                 <span><i class="bi bi-list-ul"></i> المكونات</span>
-                <button class="btn-add-e" onclick="showAddModal()"><i class="bi bi-plus"></i> إضافة</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-update-draft" onclick="updateOrSaveDraft()"><i class="bi bi-arrow-repeat"></i> تحديث وحفظ المسودة</button>
+                    <button class="btn-add-e" onclick="showAddModal()"><i class="bi bi-plus"></i> إضافة</button>
+                </div>
             </div>
             <div style="overflow-x:auto;">
                 <table class="e-table">
@@ -1085,6 +1088,17 @@ const saveDraftModal = new bootstrap.Modal(document.getElementById('saveDraftMod
 const compareModal = new bootstrap.Modal(document.getElementById('compareModal'));
 let allDrafts = [];
 let swapIngId = null;
+let activeDraftId = parseInt(localStorage.getItem('activeDraft_' + formulaId)) || null;
+
+function setActiveDraft(id) {
+    activeDraftId = id;
+    localStorage.setItem('activeDraft_' + formulaId, id);
+}
+
+function clearActiveDraft() {
+    activeDraftId = null;
+    localStorage.removeItem('activeDraft_' + formulaId);
+}
 
 const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
 const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
@@ -1854,6 +1868,11 @@ function loadDrafts() {
     .then(data => {
         if (data.success) {
             allDrafts = data.data;
+            // The active draft may have been deleted or approved (locked) elsewhere — drop it if so.
+            if (activeDraftId) {
+                const active = allDrafts.find(d => d.id === activeDraftId);
+                if (!active || active.is_final) clearActiveDraft();
+            }
             renderDraftBar(data.data);
         }
     });
@@ -1865,21 +1884,17 @@ function renderDraftBar(drafts) {
 
     let tabsHtml = '';
     drafts.forEach(d => {
-        const cls = d.is_final ? 'draft-tab dt-final' : 'draft-tab';
+        let cls = 'draft-tab';
+        if (d.is_final) cls += ' dt-final';
+        else if (d.id === activeDraftId) cls += ' dt-active';
         const icon = d.is_final ? 'bi-check-circle-fill' : 'bi-archive';
-        const safeName = String(d.name || '').replace(/'/g, "\\'");
-        const updateBtn = d.is_final ? '' : `
-                <button type="button" class="dt-update" title="تحديث هذه المسودة بالمكونات الحالية"
-                    onclick="event.stopPropagation(); updateDraftInPlace(${d.id}, '${safeName}')">
-                    <i class="bi bi-arrow-repeat"></i>
-                </button>`;
         tabsHtml += `
             <div class="${cls}" onclick="loadDraft(${d.id})" title="${d.notes || ''}">
                 <i class="bi ${icon}"></i>
                 ${d.name}
                 <span class="dt-count">${d.ingredients_count}</span>
                 ${d.is_final ? '<i class="bi bi-star-fill" style="font-size:0.6rem;"></i>' : ''}
-                ${updateBtn}
+                ${d.id === activeDraftId ? '<i class="bi bi-pencil-fill" style="font-size:0.6rem;" title="المسودة النشطة"></i>' : ''}
             </div>`;
     });
 
@@ -1917,6 +1932,7 @@ function saveDraft() {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
+            setActiveDraft(data.draft_id);
             saveDraftModal.hide();
             loadDrafts();
             showAlert(data.message);
@@ -1926,11 +1942,19 @@ function saveDraft() {
     });
 }
 
-function updateDraftInPlace(draftId, draftName) {
-    if (!confirm(`سيتم استبدال مكونات "${draftName}" بالمكونات الحالية للتركيبة. متأكد؟`)) return;
+// Header button: updates the active draft in place if one is set (and still
+// updatable), otherwise falls back to the "save as new draft" modal.
+function updateOrSaveDraft() {
+    const active = activeDraftId ? allDrafts.find(d => d.id === activeDraftId) : null;
+    if (!active || active.is_final) {
+        clearActiveDraft();
+        showSaveDraftModal();
+        return;
+    }
+    if (!confirm(`سيتم تحديث "${active.name}" بالمكونات الحالية للتركيبة. متأكد؟`)) return;
     const fd = new FormData();
     fd.append('action', 'update');
-    fd.append('draft_id', draftId);
+    fd.append('draft_id', active.id);
     fetch(`/api/formula/${formulaId}/drafts`, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
@@ -1948,7 +1972,9 @@ function loadDraft(draftId) {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
+            setActiveDraft(draftId);
             loadIngredients();
+            loadDrafts();
             showAlert(data.message);
         } else {
             showAlert(data.message || 'خطأ', 'danger');
@@ -1965,6 +1991,7 @@ function deleteDraft(draftId) {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
+            if (draftId === activeDraftId) clearActiveDraft();
             loadDrafts();
             showAlert(data.message);
         } else {
