@@ -126,6 +126,7 @@ def list_backups():
 
 def restore_backup(filename):
     """Restore database from backup, keeping admin credentials"""
+    global _db_migrated
     backup_path = os.path.join(BACKUP_DIR, filename)
     if not os.path.exists(backup_path):
         return False, 'Backup not found'
@@ -139,6 +140,11 @@ def restore_backup(filename):
     create_backup('pre_restore')
     # Restore
     shutil.copy2(backup_path, DB_PATH)
+    # The restored file may be an older schema (missing columns/tables added
+    # since that backup was taken) — get_db()'s migration check is cached
+    # per-process, so force it to re-run once against this freshly-swapped
+    # file instead of assuming the schema it already checked still applies.
+    _db_migrated = False
     # Re-apply admin credentials
     if admin_data:
         conn = sqlite3.connect(DB_PATH)
@@ -670,11 +676,17 @@ GHS_SIGNAL_WORDS = ['Warning', 'Danger']
 GHS_CLASSIFICATIONS = ['Irritant', 'Oxidizing', 'Flammable', 'Environmentally Damaging', 'Corrosive', 'Toxic', 'Health Hazard', 'Compressed Gas', 'Explosive']
 
 # ===== قاعدة البيانات =====
-def get_db():
-    if not os.path.exists(DB_PATH):
-        init_db()
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
+# get_db() used to re-run every CREATE TABLE IF NOT EXISTS / PRAGMA
+# table_info / ALTER TABLE check below on EVERY call — and it's called on
+# nearly every request in the app (~40 call sites). Harmless per-call, but
+# pure repeated overhead since the schema can't change mid-process except
+# via restore_backup() (which swaps the whole DB file under a running
+# process). So: run it once per process, cached behind _db_migrated, and
+# have restore_backup() clear the flag so the next get_db() re-checks the
+# freshly-restored (possibly older-schema) file before anything else touches it.
+_db_migrated = False
+
+def _ensure_db_migrated(conn):
     # إنشاء جدول البروفايل العطري لو ما كان موجود
     conn.execute('''CREATE TABLE IF NOT EXISTS material_olfactive (
         material_id INTEGER PRIMARY KEY,
@@ -725,6 +737,17 @@ def get_db():
         ifra_override REAL DEFAULT NULL,
         FOREIGN KEY (draft_id) REFERENCES formula_drafts(id) ON DELETE CASCADE
     )''')
+    conn.commit()
+
+def get_db():
+    global _db_migrated
+    if not os.path.exists(DB_PATH):
+        init_db()
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+    if not _db_migrated:
+        _ensure_db_migrated(conn)
+        _db_migrated = True
     return conn
 
 def init_db():
@@ -1400,11 +1423,14 @@ def formulas():
 def formula_detail(id):
     conn = get_db()
     formula = conn.execute("SELECT * FROM formulas WHERE id=?", (id,)).fetchone()
-    materials = conn.execute("SELECT id, name, name_ar, cas_number FROM materials ORDER BY name").fetchall()
     conn.close()
     if not formula:
         return redirect('/formulas')
-    return render_template('formula.html', formula=formula, materials=materials, ifra_categories=IFRA_CATEGORIES)
+    # The add-ingredient / swap-ingredient material pickers use select2's ajax
+    # mode against /api/materials/search now, instead of every material in
+    # the catalog being baked into this page's HTML as a Jinja-rendered
+    # <option> — that used to scale linearly with catalog size on every load.
+    return render_template('formula.html', formula=formula, ifra_categories=IFRA_CATEGORIES)
 
 @app.route('/formula/<int:id>/print')
 @login_required
@@ -2405,6 +2431,32 @@ def api_ifra_formula_check(fid):
     })
 
 # ===== API المواد =====
+@app.route('/api/materials/search')
+@login_required
+def api_materials_search():
+    """بحث سريع بالاسم/الاسم العربي/CAS لقوائم select2 (إضافة مكوّن، تبديل
+    مكوّن في صفحة التركيبة) — بدلاً من تضمين كل المواد كـ <option> في الصفحة
+    عند تحميلها، وهو ما كان يتضخم مع حجم قائمة المواد."""
+    q = (request.args.get('q') or '').strip()
+    conn = get_db()
+    if q:
+        like = f'%{q}%'
+        rows = conn.execute('''
+            SELECT id, name, name_ar, cas_number FROM materials
+            WHERE name LIKE ? OR name_ar LIKE ? OR cas_number LIKE ?
+            ORDER BY name LIMIT 30
+        ''', (like, like, like)).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, name, name_ar, cas_number FROM materials ORDER BY name LIMIT 30"
+        ).fetchall()
+    conn.close()
+    results = [{
+        'id': r['id'],
+        'text': r['name'] + (f" ({r['cas_number']})" if r['cas_number'] else '')
+    } for r in rows]
+    return jsonify({'results': results})
+
 @app.route('/api/materials', methods=['GET', 'POST'])
 @login_required
 def api_materials():

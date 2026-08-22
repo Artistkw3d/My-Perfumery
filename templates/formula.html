@@ -892,9 +892,6 @@
                         <label class="form-label">المادة</label>
                         <select name="material_id" id="add_material" class="form-select select2-material" required>
                             <option value="">-- اختر --</option>
-                            {% for m in materials %}
-                            <option value="{{ m.id }}">{{ m.name }} {{ '(' + m.cas_number + ')' if m.cas_number else '' }}</option>
-                            {% endfor %}
                         </select>
                     </div>
                     <div class="row">
@@ -965,9 +962,6 @@
                     <label class="form-label">المادة الجديدة</label>
                     <select id="swap_material" class="form-select select2-material">
                         <option value="">-- اختر --</option>
-                        {% for m in materials %}
-                        <option value="{{ m.id }}">{{ m.name }} {{ '(' + m.cas_number + ')' if m.cas_number else '' }}</option>
-                        {% endfor %}
                     </select>
                     <small class="text-muted">الوزن والتخفيف والملاحظات تبقى كما هي — يتغير فقط اسم المادة.</small>
                 </div>
@@ -1718,7 +1712,7 @@ function printScaleResults() {
     const printHtml = `<!DOCTYPE html>
 <html lang="ar" dir="rtl"><head><meta charset="UTF-8">
 <title>Scale — ${formulaName}</title>
-<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="/static/vendor/fonts/tajawal/tajawal.css" rel="stylesheet">
 <style>
 @page { size: A4; margin: 12mm; }
 body { font-family: 'Tajawal','Tahoma','Arial Unicode MS',sans-serif; color: #222; margin: 0; padding: 18px; }
@@ -1826,29 +1820,30 @@ function deleteNote(id) {
     .then(data => { if (data.success) loadNotes(); });
 }
 
+// Both material pickers search /api/materials/search live instead of
+// having every catalog material pre-rendered as an <option> on page load —
+// scales with search results (max 30), not with catalog size.
+const materialSelect2Opts = {
+    theme: 'bootstrap-5',
+    dir: 'rtl',
+    placeholder: '-- ابحث عن مادة --',
+    allowClear: true,
+    ajax: {
+        url: '/api/materials/search',
+        dataType: 'json',
+        delay: 200,
+        data: params => ({ q: params.term || '' }),
+        processResults: data => ({ results: data.results })
+    },
+    language: {
+        noResults: function() { return "لا توجد نتائج"; },
+        searching: function() { return "جاري البحث..."; }
+    }
+};
+
 $(document).ready(function() {
-    $('#add_material').select2({
-        theme: 'bootstrap-5',
-        dir: 'rtl',
-        placeholder: '-- ابحث عن مادة --',
-        allowClear: true,
-        dropdownParent: $('#addModal'),
-        language: {
-            noResults: function() { return "لا توجد نتائج"; },
-            searching: function() { return "جاري البحث..."; }
-        }
-    });
-    $('#swap_material').select2({
-        theme: 'bootstrap-5',
-        dir: 'rtl',
-        placeholder: '-- ابحث عن مادة --',
-        allowClear: true,
-        dropdownParent: $('#swapModal'),
-        language: {
-            noResults: function() { return "لا توجد نتائج"; },
-            searching: function() { return "جاري البحث..."; }
-        }
-    });
+    $('#add_material').select2({ ...materialSelect2Opts, dropdownParent: $('#addModal') });
+    $('#swap_material').select2({ ...materialSelect2Opts, dropdownParent: $('#swapModal') });
 });
 
 // Pre-populate review fields from server data
