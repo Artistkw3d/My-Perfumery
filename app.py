@@ -1176,9 +1176,20 @@ def import_ifra_standards():
     finally:
         conn.close()
 
+# Decryption key for data/materials_reference.enc. Honest security model:
+# this stops the raw ~23k-row reference data from being casually opened by
+# anyone browsing the repo/installed app (it's not a plain .xlsx anymore),
+# but the key has to live somewhere this app can reach it to import the
+# file at all — same constraint any offline desktop app has. Someone who
+# actually reads this source and runs the two lines below could still
+# decrypt it. That's the ceiling for "protect it from casual copying"
+# without a server-side gatekeeper, which a distributed .exe doesn't have.
+_MATERIALS_REF_KEY = b'2_IW54wud1iJWIxhhh6c8e69FV2pNPvQ2uV2TksRV0I='
+
 def import_materials_reference():
-    """Imports the user-supplied offline materials reference (data/materials_reference.xlsx,
-    ~23k rows, largely a personal TGSC mirror covering many natural
+    """Imports the user-supplied offline materials reference
+    (data/materials_reference.enc, Fernet-encrypted — see _MATERIALS_REF_KEY
+    above — ~23k rows, largely a personal TGSC mirror covering many natural
     essential oils/absolutes that live PubChem/TGSC/Scentree lookups miss
     entirely). Populates materials_reference so _lookup_local_reference()
     can check it first — instant, no network call, and empirically covers
@@ -1186,11 +1197,17 @@ def import_materials_reference():
     Anise, Yuzu, and Mandarin Oil under its real CAS all present, several
     with none of the three live sources)."""
     import zipfile
+    import io
     import xml.etree.ElementTree as ET
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:
+        log("[REF] cryptography package not installed, skipping reference import")
+        return
 
-    xlsx_path = os.path.join(ASSET_DIR, 'data', 'materials_reference.xlsx')
-    if not os.path.exists(xlsx_path):
-        log("[REF] materials_reference.xlsx not found, skipping import")
+    enc_path = os.path.join(ASSET_DIR, 'data', 'materials_reference.enc')
+    if not os.path.exists(enc_path):
+        log("[REF] materials_reference.enc not found, skipping import")
         return
 
     conn = get_db()
@@ -1211,7 +1228,7 @@ def import_materials_reference():
     count = conn.execute("SELECT COUNT(*) FROM materials_reference").fetchone()[0]
     # Re-import if the source file was replaced with a newer/bigger one;
     # otherwise this is a no-op on every startup after the first.
-    file_size = os.path.getsize(xlsx_path)
+    file_size = os.path.getsize(enc_path)
     marker = conn.execute("SELECT value FROM app_meta WHERE key='materials_reference_size'").fetchone()
     if count > 0 and marker and marker['value'] == str(file_size):
         conn.close()
@@ -1219,7 +1236,9 @@ def import_materials_reference():
 
     log("[REF] Importing offline materials reference (this can take a moment)...")
     try:
-        zf = zipfile.ZipFile(xlsx_path)
+        with open(enc_path, 'rb') as fh:
+            decrypted = Fernet(_MATERIALS_REF_KEY).decrypt(fh.read())
+        zf = zipfile.ZipFile(io.BytesIO(decrypted))
         ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
 
         shared = []
