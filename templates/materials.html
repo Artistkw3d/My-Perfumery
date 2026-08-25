@@ -1419,8 +1419,23 @@ function loadMaterials() {
                 materials = data.data;
                 renderView();
                 updateOverviewWheel();
+                maybeOpenFromQueryParam();
             }
         });
+}
+
+// Lets other pages deep-link straight into a material's edit modal, e.g.
+// "تحويل إلى مادة" on the formula page opens /materials?edit=<new_id> so
+// the user lands directly on the material it just created instead of
+// having to find it themselves in the list.
+let _openedFromQueryParam = false;
+function maybeOpenFromQueryParam() {
+    if (_openedFromQueryParam) return;
+    const id = new URLSearchParams(window.location.search).get('edit');
+    if (id && materials.some(m => m.id == id)) {
+        _openedFromQueryParam = true;
+        editMaterial(parseInt(id, 10));
+    }
 }
 
 // ===== View Toggle =====

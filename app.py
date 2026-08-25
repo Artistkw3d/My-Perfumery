@@ -763,6 +763,13 @@ def _ensure_db_migrated(conn):
     for col in ['target_audience', 'age_group', 'gender', 'season', 'occasion', 'scent_type', 'review_notes', 'card_settings']:
         if col not in existing:
             conn.execute(f"ALTER TABLE formulas ADD COLUMN {col} TEXT DEFAULT ''")
+    # Links a formula to the material it was converted into (see
+    # /api/formula/<fid>/convert-to-material) — not every formula becomes a
+    # reusable material, so this is only set once the user explicitly
+    # triggers the conversion, and lets a repeat click re-sync the same
+    # material's composition instead of creating a duplicate.
+    if 'converted_material_id' not in existing:
+        conn.execute("ALTER TABLE formulas ADD COLUMN converted_material_id INTEGER DEFAULT NULL")
     # Migrate: add ifra_override to formula_ingredients
     fi_cols = [row[1] for row in conn.execute("PRAGMA table_info(formula_ingredients)").fetchall()]
     if 'ifra_override' not in fi_cols:
@@ -4288,6 +4295,108 @@ def api_material_quick_dilute():
         })
     except Exception as e:
         log(f"[ERROR quick-dilute] {e}")
+        conn.close()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/formula/<int:fid>/convert-to-material', methods=['POST'])
+@login_required
+def api_formula_convert_to_material(fid):
+    """Turns a finished formula into a reusable material — the composition
+    system already models "this material is a mixture of other materials"
+    (used for pre-made bases / captives), and a formula's ingredient list
+    at their formula weight-percentages is exactly that shape. Deliberately
+    a manual, explicit action (button on the formula page) rather than
+    automatic on formula save, since not every formula is meant to become
+    a reusable base — the user decides which ones are.
+    Idempotent by design: formulas.converted_material_id remembers the link,
+    so calling this again on an already-converted formula re-syncs the
+    existing material's composition/name/scent profile instead of creating
+    a duplicate — useful after the formula gets tweaked post-conversion."""
+    conn = get_db()
+    formula = conn.execute("SELECT * FROM formulas WHERE id=?", (fid,)).fetchone()
+    if not formula:
+        conn.close()
+        return jsonify({'success': False, 'message': 'التركيبة غير موجودة'}), 404
+
+    rows = conn.execute(
+        "SELECT material_id, weight FROM formula_ingredients WHERE formula_id=?", (fid,)
+    ).fetchall()
+    total_weight = sum((r['weight'] or 0) for r in rows)
+    if not rows or total_weight <= 0:
+        conn.close()
+        return jsonify({'success': False, 'message': 'التركيبة لا تحتوي مكوّنات لتحويلها'}), 400
+
+    custom_name = (request.form.get('name') or '').strip() or formula['name'] or f'Formula {fid}'
+    existing_mat_id = formula['converted_material_id']
+
+    try:
+        already_exists = False
+        if existing_mat_id:
+            already_exists = bool(conn.execute("SELECT id FROM materials WHERE id=?", (existing_mat_id,)).fetchone())
+
+        if already_exists:
+            new_id = existing_mat_id
+            conn.execute("UPDATE materials SET name=? WHERE id=?", (custom_name, new_id))
+            msg_prefix = 'تم تحديث'
+        else:
+            cur = conn.execute('''INSERT INTO materials
+                (name, profile, purchase_price, purchase_quantity, price_per_gram, notes, in_stock)
+                VALUES (?,?,?,?,?,?,?)''',
+                (custom_name, 'Heart', 0, 1, 0,
+                 f'محوّلة من التركيبة «{formula["name"]}» (ID: {fid})', 0))
+            new_id = cur.lastrowid
+            conn.execute("UPDATE formulas SET converted_material_id=? WHERE id=?", (new_id, fid))
+            msg_prefix = 'تم إنشاء'
+
+        # Composition rows: each ingredient at its formula weight-percentage
+        # (H = weight / total_weight — same quantity as the ingredients
+        # table's "weight %" column). Self-reference guarded the same way
+        # api_material_composition does, in case this formula includes a
+        # material it was itself previously converted into.
+        conn.execute("DELETE FROM material_composition WHERE parent_material_id=?", (new_id,))
+        for r in rows:
+            if r['material_id'] == new_id:
+                continue
+            pct = (r['weight'] or 0) / total_weight * 100
+            if pct <= 0:
+                continue
+            conn.execute('''INSERT INTO material_composition
+                (parent_material_id, component_material_id, pct, note)
+                VALUES (?,?,?,?)''', (new_id, r['material_id'], round(pct, 4), ''))
+
+        # Seed the scent wheel from the formula's own aggregate olfactive
+        # profile (same weighted-by-pure-weight calc /api/formulas uses for
+        # its card view) so the new material isn't left with a blank wheel.
+        olf_cats = ['citrus', 'aldehydic', 'aromatic', 'green', 'marine', 'floral', 'fruity',
+                    'spicy', 'balsamic', 'woody', 'ambery', 'musky', 'leathery', 'animal']
+        fi_full = conn.execute(
+            "SELECT weight, dilution, material_id FROM formula_ingredients WHERE formula_id=?", (fid,)
+        ).fetchall()
+        total_pure = sum((r['weight'] or 0) * (r['dilution'] or 1) for r in fi_full)
+        if total_pure > 0:
+            olf_values = {}
+            for cat in olf_cats:
+                val = 0
+                for r in fi_full:
+                    olf = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (r['material_id'],)).fetchone()
+                    if olf and olf[cat]:
+                        pure_w = (r['weight'] or 0) * (r['dilution'] or 1)
+                        val += olf[cat] * (pure_w / total_pure)
+                olf_values[cat] = round(val, 1)
+            conn.execute(f'''INSERT OR REPLACE INTO material_olfactive
+                (material_id, {", ".join(olf_cats)})
+                VALUES (?, {", ".join("?" for _ in olf_cats)})''',
+                (new_id, *[olf_values[c] for c in olf_cats]))
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'success': True, 'id': new_id, 'name': custom_name,
+            'message': f'{msg_prefix} «{custom_name}» كمادة (ID: {new_id})'
+        })
+    except Exception as e:
+        log(f"[ERROR formula convert-to-material] {e}")
         conn.close()
         return jsonify({'success': False, 'message': str(e)}), 500
 

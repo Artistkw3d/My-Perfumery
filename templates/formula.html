@@ -573,6 +573,18 @@
             <i class="bi bi-printer-fill"></i> طباعة PDF
         </a>
         <a href="/formula/{{ formula.id }}/card" class="fh-btn"><i class="bi bi-card-heading"></i> بطاقة</a>
+        {% if formula.converted_material_id %}
+        <button class="fh-btn" onclick="convertToMaterial()" title="هذه التركيبة محوّلة مسبقاً إلى مادة — اضغط لتحديث تركيب/اسم المادة حسب آخر تعديلات هنا">
+            <i class="bi bi-arrow-repeat"></i> تحديث المادة
+        </button>
+        <a class="fh-btn" href="/materials?edit={{ formula.converted_material_id }}" title="افتح المادة المحوّلة من هذه التركيبة">
+            <i class="bi bi-box-seam"></i> عرض المادة
+        </a>
+        {% else %}
+        <button class="fh-btn" onclick="convertToMaterial()" title="ينشئ مادة جديدة (خليط) من مكوّنات هذه التركيبة بنسبها الحالية — ليست كل تركيبة يجب تحويلها، فقط اللي تبيها كمادة أساس جاهزة">
+            <i class="bi bi-box-seam"></i> تحويل إلى مادة
+        </button>
+        {% endif %}
     </div>
 </div>
 
@@ -1304,6 +1316,22 @@ function usesBadgesHtml(uses) {
         if (!tag) return '';
         return `<span class="use-badge" title="${tag.label_en} (${tag.label_ar})">${tag.icon}</span>`;
     }).join('')}</div>`;
+}
+
+// Not every finished formula should become a reusable material — this is
+// a deliberate, explicit action the user takes only for the ones they
+// intend as a base/accord. Safe to click more than once: the backend
+// re-syncs the same linked material's composition/name instead of
+// creating a duplicate (see /api/formula/<fid>/convert-to-material).
+function convertToMaterial() {
+    fetch(`/api/formula/{{ formula.id }}/convert-to-material`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { showAlert(data.message || 'فشل التحويل', 'danger'); return; }
+            showAlert(data.message, 'success');
+            setTimeout(() => { window.location.reload(); }, 1200);
+        })
+        .catch(err => showAlert('خطأ: ' + err.message, 'danger'));
 }
 
 function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraFinalLimit) {
