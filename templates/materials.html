@@ -1412,7 +1412,7 @@ function updateOverviewWheel() {
 
 // ===== Load Materials =====
 function loadMaterials() {
-    fetch('/api/materials?action=list')
+    return fetch('/api/materials?action=list')
         .then(r => r.json())
         .then(data => {
             if (data.success) {
@@ -1511,6 +1511,7 @@ function renderCards() {
                 ${m.in_stock > 0 ? `<small class="text-success fw-bold"><i class="bi bi-box-seam"></i> ${m.in_stock}</small>` : ''}
                 <div>
                     <button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation();editMaterial(${m.id})"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation();duplicateMaterial(${m.id})" title="دبلكيت"><i class="bi bi-files"></i></button>
                     <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation();deleteMaterial(${m.id},'${m.name.replace(/'/g,"\\'")}')"><i class="bi bi-trash"></i></button>
                 </div>
             </div>
@@ -1550,6 +1551,7 @@ function renderTable() {
             <td>${m.price_per_gram ? m.price_per_gram.toFixed(3) : '-'}</td>
             <td>
                 <button class="btn btn-sm btn-outline-primary" onclick="editMaterial(${m.id})"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="duplicateMaterial(${m.id})" title="دبلكيت"><i class="bi bi-files"></i></button>
                 <button class="btn btn-sm btn-outline-danger" onclick="deleteMaterial(${m.id},'${m.name.replace(/'/g,"\\'")}')"><i class="bi bi-trash"></i></button>
             </td>
         </tr>
@@ -2742,6 +2744,22 @@ function deleteMaterial(id, name) {
             }
         });
     }
+}
+
+// Non-destructive (unlike delete), so no confirm() — just duplicates and
+// opens the new copy so the user can tweak whatever should actually differ
+// beyond the name (the backend already appends " (نسخة)").
+function duplicateMaterial(id) {
+    const formData = new FormData();
+    formData.append('action', 'duplicate');
+    formData.append('id', id);
+    fetch('/api/materials', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { showAlert(data.message || 'خطأ', 'danger'); return; }
+            showAlert(data.message);
+            loadMaterials().then(() => editMaterial(data.id));
+        });
 }
 
 // ===== Quick-Dilute (create a pre-diluted material in one shot) =====

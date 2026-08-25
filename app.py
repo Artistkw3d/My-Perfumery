@@ -2957,6 +2957,76 @@ def api_materials():
             conn.close()
             return jsonify({'success': True, 'message': 'تم الحذف'})
 
+        elif action == 'duplicate':
+            id = request.form.get('id')
+            src = conn.execute("SELECT * FROM materials WHERE id=?", (id,)).fetchone()
+            if not src:
+                conn.close()
+                return jsonify({'success': False, 'message': 'المادة غير موجودة'})
+            src_d = dict(src)
+            new_name = (src_d.get('name') or '') + ' (نسخة)'
+            # Copy every column verbatim except id/name — "only the name
+            # differs" per the user's own framing. photo_file_id is excluded
+            # from this direct column copy on purpose: material_files rows
+            # are scoped to one material_id (the delete handler wipes them
+            # by that column), so just pointing two materials at the same
+            # file row would leave the duplicate's photo dangling the moment
+            # someone deletes the original. The photo (and any other
+            # attachments) are actually duplicated on disk below instead,
+            # through the same _save_material_file() writer normal uploads
+            # use, so each material owns its own copy.
+            cols = [c for c in src_d.keys() if c not in ('id', 'name', 'photo_file_id')]
+            col_list = ', '.join(cols)
+            placeholders = ', '.join('?' for _ in cols)
+            cur = conn.execute(
+                f"INSERT INTO materials (name, {col_list}) VALUES (?, {placeholders})",
+                [new_name] + [src_d[c] for c in cols]
+            )
+            new_id = cur.lastrowid
+
+            msds = conn.execute("SELECT * FROM material_msds WHERE material_id=?", (id,)).fetchone()
+            if msds:
+                conn.execute('''INSERT INTO material_msds
+                    (material_id, h_codes, p_codes, pictograms, signal_word, ghs_classification)
+                    VALUES (?,?,?,?,?,?)''',
+                    (new_id, msds['h_codes'], msds['p_codes'], msds['pictograms'],
+                     msds['signal_word'], msds['ghs_classification']))
+
+            olf = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (id,)).fetchone()
+            if olf:
+                olf_cats = ['citrus', 'aldehydic', 'aromatic', 'green', 'marine', 'floral', 'fruity',
+                            'spicy', 'balsamic', 'woody', 'ambery', 'musky', 'leathery', 'animal']
+                conn.execute(
+                    f"INSERT INTO material_olfactive (material_id, {', '.join(olf_cats)}) "
+                    f"VALUES (?, {', '.join('?' for _ in olf_cats)})",
+                    (new_id, *[olf[c] for c in olf_cats])
+                )
+
+            for comp in conn.execute(
+                "SELECT component_material_id, pct, note FROM material_composition WHERE parent_material_id=?", (id,)
+            ).fetchall():
+                conn.execute('''INSERT INTO material_composition
+                    (parent_material_id, component_material_id, pct, note) VALUES (?,?,?,?)''',
+                    (new_id, comp['component_material_id'], comp['pct'], comp['note']))
+
+            new_photo_id = None
+            for f in conn.execute("SELECT * FROM material_files WHERE material_id=?", (id,)).fetchall():
+                content = _read_attachment_bytes(f['id'], f['content'])
+                if content is None:
+                    continue
+                fid = _save_material_file(conn, new_id, f['filename'], f['mime_type'], content)
+                if fid and f['id'] == src_d.get('photo_file_id'):
+                    new_photo_id = fid
+            if new_photo_id:
+                conn.execute("UPDATE materials SET photo_file_id=? WHERE id=?", (new_photo_id, new_id))
+
+            conn.commit()
+            conn.close()
+            return jsonify({
+                'success': True, 'id': new_id, 'name': new_name,
+                'message': f'تم إنشاء نسخة: «{new_name}» (ID: {new_id})'
+            })
+
         elif action == 'delete_all_unused':
             # Delete every material that is not referenced by any formula_ingredients row.
             unused_ids = [r[0] for r in conn.execute("""
