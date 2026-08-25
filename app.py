@@ -333,18 +333,25 @@ OLFACTIVE_LABELS = {
 # aroma/fixative/solvent/colourant come from the offline reference file's
 # "Uses" column (stored concatenated without delimiters there, e.g.
 # "aromasolventfixative" — parsed by substring match, see
-# _parse_uses_tags()). projection/silage are perfumery-craft concepts the
-# user added on top, not present in that source data at all — silage gets
-# auto-applied to any material with Physical State = Crystal (see
-# _ensure_db_migrated / the material save handler), projection is manual
-# tagging only, no auto-rule.
+# _parse_uses_tags()). projection/aura ('silage' key, kept as-is since it's
+# already the stored value in existing data — see the 2026-08-25 correction
+# below) are perfumery-craft concepts the user added on top, not present in
+# that source data at all — aura gets auto-applied to any material with
+# Physical State = Crystal (see _ensure_db_migrated / the material save
+# handler / _enrich_material_data), projection is manual tagging only, no
+# auto-rule.
+# 2026-08-25 correction: this tag means "aura" (the scent cloud around the
+# wearer), not "trail" — the initial Arabic label ("ذيل عطري") and footprint
+# icon both implied a trail one leaves behind, which the user corrected.
+# Dict key stays 'silage' (already the value written into existing
+# materials.uses JSON) — only the display label/icon changed.
 MATERIAL_USE_TAGS = {
     'aroma':      {'label_ar': 'عطر',        'label_en': 'Aroma',      'icon': '🧪'},
     'fixative':   {'label_ar': 'مثبت',       'label_en': 'Fixative',   'icon': '⚓'},
     'solvent':    {'label_ar': 'مذيب',       'label_en': 'Solvent',    'icon': '💧'},
     'colourant':  {'label_ar': 'ملوّن',      'label_en': 'Colourant',  'icon': '🎨'},
     'projection': {'label_ar': 'انتشار',     'label_en': 'Projection', 'icon': '💨'},
-    'silage':     {'label_ar': 'ذيل عطري',   'label_en': 'Silage',     'icon': '👣'},
+    'silage':     {'label_ar': 'هالة',       'label_en': 'Aura',       'icon': '✨'},
 }
 
 def _parse_uses_tags(raw):
@@ -356,6 +363,24 @@ def _parse_uses_tags(raw):
         return []
     text = raw.lower()
     return [key for key in ('aroma', 'fixative', 'solvent', 'colourant') if key in text]
+
+def _get_all_use_tags(conn):
+    """MATERIAL_USE_TAGS builtins plus any user-defined custom tags from
+    custom_use_tags (added via the material form's Uses section), merged
+    into one dict shaped the same way so templates/API responses don't need
+    to know which tags are builtin vs custom."""
+    tags = dict(MATERIAL_USE_TAGS)
+    try:
+        rows = conn.execute("SELECT id, label_ar, label_en, icon FROM custom_use_tags ORDER BY id").fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    for r in rows:
+        tags[f'custom_{r["id"]}'] = {
+            'label_ar': r['label_ar'] or '',
+            'label_en': r['label_en'] or '',
+            'icon': r['icon'] or '🏷️',
+        }
+    return tags
 
 # Keyword mapping for auto-classification (EN + AR)
 ODOR_KEYWORD_MAP = {
@@ -766,10 +791,10 @@ def _ensure_db_migrated(conn):
         FOREIGN KEY (draft_id) REFERENCES formula_drafts(id) ON DELETE CASCADE
     )''')
     # Migrate: add "uses" tags (aroma/fixative/solvent/colourant/projection/
-    # silage) to materials. One-time backfill runs only at the moment the
-    # column is first added: crystalline materials always get "silage"
-    # tagged automatically, per explicit user domain rule (crystalline raw
-    # materials are characteristically strong in sillage/trail).
+    # aura) to materials. One-time backfill runs only at the moment the
+    # column is first added: crystalline materials always get the aura tag
+    # ('silage' key) automatically, per explicit user domain rule
+    # (crystalline raw materials are characteristically strong in aura).
     mat_cols = [row[1] for row in conn.execute("PRAGMA table_info(materials)").fetchall()]
     if 'uses' not in mat_cols:
         conn.execute("ALTER TABLE materials ADD COLUMN uses TEXT DEFAULT ''")
@@ -779,6 +804,17 @@ def _ensure_db_migrated(conn):
     ref_cols = [row[1] for row in conn.execute("PRAGMA table_info(materials_reference)").fetchall()]
     if ref_cols and 'uses_tags' not in ref_cols:
         conn.execute("ALTER TABLE materials_reference ADD COLUMN uses_tags TEXT DEFAULT ''")
+    # User-defined "Uses" tags on top of the MATERIAL_USE_TAGS built-ins
+    # (added via the "+" control in the material form's Uses section) — see
+    # _get_all_use_tags(). Keyed by autoincrement id rather than a slugged
+    # label so two custom tags can share a display name without colliding.
+    conn.execute('''CREATE TABLE IF NOT EXISTS custom_use_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label_ar TEXT,
+        label_en TEXT,
+        icon TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )''')
     conn.commit()
 
 def get_db():
@@ -1607,11 +1643,12 @@ def materials():
     conn = get_db()
     families = conn.execute("SELECT * FROM families ORDER BY name").fetchall()
     suppliers = conn.execute("SELECT * FROM suppliers ORDER BY name").fetchall()
+    use_tags = _get_all_use_tags(conn)
     conn.close()
     return render_template('materials.html', families=families, suppliers=suppliers,
                           h_codes=GHS_H_CODES, p_codes=GHS_P_CODES, pictograms=GHS_PICTOGRAMS,
                           classifications=GHS_CLASSIFICATIONS, signal_words=GHS_SIGNAL_WORDS,
-                          ifra_categories=IFRA_CATEGORIES, material_use_tags=MATERIAL_USE_TAGS)
+                          ifra_categories=IFRA_CATEGORIES, material_use_tags=use_tags)
 
 @app.route('/formulas')
 @login_required
@@ -1623,6 +1660,7 @@ def formulas():
 def formula_detail(id):
     conn = get_db()
     formula = conn.execute("SELECT * FROM formulas WHERE id=?", (id,)).fetchone()
+    use_tags = _get_all_use_tags(conn)
     conn.close()
     if not formula:
         return redirect('/formulas')
@@ -1631,7 +1669,7 @@ def formula_detail(id):
     # the catalog being baked into this page's HTML as a Jinja-rendered
     # <option> — that used to scale linearly with catalog size on every load.
     return render_template('formula.html', formula=formula, ifra_categories=IFRA_CATEGORIES,
-                          material_use_tags=MATERIAL_USE_TAGS)
+                          material_use_tags=use_tags)
 
 @app.route('/formula/<int:id>/print')
 @login_required
@@ -2088,6 +2126,38 @@ def _extract_number(text):
         return ''
     m = re.search(r'(-?[\d.]+)', text)
     return m.group(1) if m else text
+
+# physical_state and color are rarely given directly by PubChem/TGSC/Scentree/
+# the offline reference as their own field, but Appearance almost always
+# describes both in free text (e.g. "White crystalline solid",
+# "Colorless oily liquid") — so once Appearance is known, both can usually
+# be derived from it instead of staying empty. Order matters: more specific
+# state/color phrases are checked before their generic substrings (e.g.
+# "pale yellow" before bare "yellow", "crystal" before "solid").
+_APPEARANCE_STATE_KEYWORDS = [
+    ('crystal', 'Crystal'), ('powder', 'Powder'), ('paste', 'Paste'),
+    ('wax', 'Waxy'), ('solid', 'Solid'), ('liquid', 'Liquid'), ('oil', 'Liquid'),
+]
+_APPEARANCE_COLOR_KEYWORDS = [
+    ('pale yellow', 'Pale Yellow'), ('light yellow', 'Light Yellow'),
+    ('dark brown', 'Dark Brown'), ('light brown', 'Light Brown'),
+    ('colorless', 'Colorless'), ('colourless', 'Colorless'), ('clear', 'Clear'),
+    ('white', 'White'), ('yellow', 'Yellow'), ('amber', 'Amber'),
+    ('golden', 'Golden'), ('brown', 'Brown'), ('red', 'Red'),
+    ('orange', 'Orange'), ('green', 'Green'), ('blue', 'Blue'),
+    ('black', 'Black'), ('pink', 'Pink'),
+]
+
+def _derive_state_color_from_appearance(appearance):
+    """Best-effort keyword match against free-text Appearance to fill
+    physical_state/color when a source doesn't provide them directly.
+    Returns (state_or_None, color_or_None)."""
+    if not appearance:
+        return None, None
+    text = appearance.lower()
+    state = next((label for kw, label in _APPEARANCE_STATE_KEYWORDS if kw in text), None)
+    color = next((label for kw, label in _APPEARANCE_COLOR_KEYWORDS if kw in text), None)
+    return state, color
 
 @app.route('/api/cas-lookup', methods=['GET'])
 @login_required
@@ -3486,11 +3556,31 @@ def _enrich_material_data(conn, mid, cas):
     scentree_data, _ = _lookup_scentree(cas_clean)
     consider(scentree_data)
 
+    # physical_state isn't in _DATA_FILLABLE_FIELDS (no source gives it as
+    # its own field) but Appearance usually implies it — derive from
+    # whichever Appearance text ended up available (freshly filled above, or
+    # already on the material) and only write it if still empty. Same for
+    # color when a source's Appearance text is more specific than what's on
+    # file (e.g. "White crystalline powder" -> color=White) but stay
+    # fill-only-if-empty, matching every other field's semantics here.
+    appearance_text = updates.get('appearance') or existing.get('appearance')
+    derived_state, derived_color = _derive_state_color_from_appearance(appearance_text)
+    if derived_state and not existing.get('physical_state'):
+        updates['physical_state'] = derived_state
+    if derived_color and not existing.get('color') and 'color' not in updates:
+        updates['color'] = derived_color
+
     # "uses" tags are a union merge (add newly-found tags, never drop ones
     # already there — manually set or from the crystalline auto-rule) —
     # different semantics than the "fill only if empty" consider() above,
     # so handled separately rather than going through _DATA_FILLABLE_FIELDS.
     new_use_tags = set((local_data or {}).get('uses_tags', []))
+    # Crystal implies silage the same way it does in the manual save handler
+    # — if Appearance just told us this material is crystalline, the tag
+    # needs to land here too, since this enrichment path never goes through
+    # that form handler.
+    if updates.get('physical_state') == 'Crystal' or existing.get('physical_state') == 'Crystal':
+        new_use_tags.add('silage')
     if new_use_tags:
         try:
             existing_uses = json.loads(existing.get('uses') or '[]')
@@ -3549,6 +3639,35 @@ def api_materials_data_bulk_update():
     job_id = _bulk_job_start(len(materials))
     threading.Thread(target=_run_data_bulk_job, args=(job_id, materials), daemon=True).start()
     return jsonify({'success': True, 'job_id': job_id, 'total': len(materials)})
+
+@app.route('/api/use-tags', methods=['POST'])
+@login_required
+def api_use_tags():
+    """Lets the user extend MATERIAL_USE_TAGS with their own tags (own
+    icon + label) beyond the six built-ins, from the '+' control in the
+    material form's Uses section. Stored in custom_use_tags, keyed
+    'custom_<id>' so it can be used as a materials.uses tag value exactly
+    like a builtin key."""
+    action = request.form.get('action')
+    conn = get_db()
+    if action == 'add':
+        label_ar = (request.form.get('label_ar') or '').strip()
+        label_en = (request.form.get('label_en') or '').strip()
+        icon = (request.form.get('icon') or '').strip() or '🏷️'
+        if not label_ar and not label_en:
+            conn.close()
+            return jsonify({'success': False, 'message': 'أدخل اسم الاستخدام'})
+        cur = conn.execute(
+            "INSERT INTO custom_use_tags (label_ar, label_en, icon) VALUES (?, ?, ?)",
+            (label_ar, label_en or label_ar, icon)
+        )
+        conn.commit()
+        new_key = f'custom_{cur.lastrowid}'
+        conn.close()
+        return jsonify({'success': True, 'key': new_key, 'label_ar': label_ar,
+                         'label_en': label_en or label_ar, 'icon': icon})
+    conn.close()
+    return jsonify({'success': False, 'message': 'إجراء غير معروف'})
 
 # ===== One-time repair: Scentree comma-decimal truncation (found 2026-08-25) =====
 # Scentree formats decimals with a comma ("0,878"), but _extract_number()

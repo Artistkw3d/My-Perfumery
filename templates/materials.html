@@ -686,7 +686,12 @@
                                             </div>
                                             {% endfor %}
                                         </div>
-                                        <small class="text-muted">Silage (👣) تُضاف تلقائياً للمواد ذات الحالة الفيزيائية "Crystal"</small>
+                                        <small class="text-muted">هالة (✨) تُضاف تلقائياً للمواد ذات الحالة الفيزيائية "Crystal"</small>
+                                        <div class="d-flex align-items-center gap-2 mt-2">
+                                            <input type="text" id="newUseIcon" class="form-control form-control-sm" style="width:60px;" placeholder="🏷️" maxlength="4">
+                                            <input type="text" id="newUseLabel" class="form-control form-control-sm" style="width:220px;" placeholder="اسم استخدام جديد">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addCustomUseTag()"><i class="bi bi-plus-lg"></i> إضافة استخدام</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1065,6 +1070,37 @@ function usesBadgesHtml(m) {
         if (!tag) return '';
         return `<span class="badge bg-light text-dark border" style="font-size:0.62rem;margin-right:2px;" title="${tag.label_en} (${tag.label_ar})">${tag.icon} ${tag.label_en}</span>`;
     }).join('')}</div>`;
+}
+
+// Lets the user extend the fixed Uses list with their own tag (own icon +
+// label) from the "+" control in the form, without a page reload — the new
+// checkbox is appended live and checked immediately since the point of
+// adding one mid-edit is almost always to apply it to the material being edited.
+function addCustomUseTag() {
+    const icon = document.getElementById('newUseIcon').value.trim() || '🏷️';
+    const label = document.getElementById('newUseLabel').value.trim();
+    if (!label) { showAlert('اكتب اسم الاستخدام أولاً', 'warning'); return; }
+    const fd = new FormData();
+    fd.append('action', 'add');
+    fd.append('label_ar', label);
+    fd.append('label_en', label);
+    fd.append('icon', icon);
+    fetch('/api/use-tags', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { showAlert(data.message || 'فشل الإضافة', 'danger'); return; }
+            MATERIAL_USE_TAGS[data.key] = { label_ar: data.label_ar, label_en: data.label_en, icon: data.icon };
+            const group = document.getElementById('mat_uses_group');
+            const div = document.createElement('div');
+            div.className = 'form-check';
+            div.innerHTML = `<input class="form-check-input" type="checkbox" name="uses" value="${escapeHtml(data.key)}" id="mat_uses_${escapeHtml(data.key)}" checked>
+                <label class="form-check-label" for="mat_uses_${escapeHtml(data.key)}">${escapeHtml(data.icon)} ${escapeHtml(data.label_en)} (${escapeHtml(data.label_ar)})</label>`;
+            group.appendChild(div);
+            document.getElementById('newUseIcon').value = '';
+            document.getElementById('newUseLabel').value = '';
+            showAlert('تمت إضافة الاستخدام ✓', 'success');
+        })
+        .catch(err => showAlert('خطأ: ' + err.message, 'danger'));
 }
 
 // Plugin to draw labels around polar area charts
