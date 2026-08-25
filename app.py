@@ -1665,6 +1665,17 @@ def _lookup_scentree(query):
                     return val
             return ''
 
+        def _decomma(s):
+            """Scentree formats decimals with a comma, not a period (e.g.
+            density "0,878", molecular weight "154,25 g/mol", refractive
+            index "1,475 - 1,478") — European convention. _extract_number()/
+            _extract_celsius() only match [\\d.]+, so without this the value
+            silently truncates at the comma (confirmed: "0,878" was coming
+            through as just "0"). Only touches digit-comma-digit, so it's a
+            no-op on already-correct values and doesn't affect text fields
+            that never call it."""
+            return re.sub(r'(\d),(\d)', r'\1.\2', s or '')
+
         # General info
         vol = extract_field('Volatility')
         if vol:
@@ -1673,35 +1684,35 @@ def _lookup_scentree(query):
         # Physical properties
         density = extract_field('Density')
         if density:
-            result['specific_gravity'] = _extract_number(density)
+            result['specific_gravity'] = _extract_number(_decomma(density))
 
         ri = extract_field('Refractive Index')
         if ri:
-            result['refractive_index'] = _extract_number(ri)
+            result['refractive_index'] = _extract_number(_decomma(ri))
 
         fp = extract_field('Flash Point')
         if fp:
-            result['flash_point'] = _extract_celsius(fp)
+            result['flash_point'] = _extract_celsius(_decomma(fp))
 
         bp = extract_field('Boiling Point')
         if bp:
-            result['boiling_point'] = _extract_celsius(bp)
+            result['boiling_point'] = _extract_celsius(_decomma(bp))
 
         mp = extract_field('Fusion Point')
         if mp:
-            result['melting_point'] = _extract_celsius(mp)
+            result['melting_point'] = _extract_celsius(_decomma(mp))
 
         vp = extract_field('Vapor pressure')
         if vp:
-            result['vapor_pressure'] = _extract_number(vp)
+            result['vapor_pressure'] = _extract_number(_decomma(vp))
 
         mw = extract_field('Molecular Weight')
         if mw:
-            result['molecular_weight'] = _extract_number(mw)
+            result['molecular_weight'] = _extract_number(_decomma(mw))
 
         logp = extract_field('Log P')
         if logp:
-            result['logp'] = _extract_number(logp)
+            result['logp'] = _extract_number(_decomma(logp))
 
         appear = extract_field('Appearance')
         if appear:
@@ -1952,12 +1963,24 @@ def _lookup_pubchem_physical(cas):
                         if not val:
                             continue
                         h = heading.lower()
+                        # Order matters: more specific headings ("vapor
+                        # density", "vapor pressure") must be checked before
+                        # the generic "density" catch-all — "vapor density"
+                        # contains the substring "density", so with the
+                        # broad check first it always won, silently
+                        # overwriting specific_gravity with the vapor
+                        # density value instead of ever reaching the
+                        # (then-unreachable) vapor_density branch below.
                         if 'boiling' in h:
                             result['boiling_point'] = _extract_celsius(val)
                         elif 'melting' in h:
                             result['melting_point'] = _extract_celsius(val)
                         elif 'flash' in h:
                             result['flash_point'] = _extract_celsius(val)
+                        elif 'vapor density' in h:
+                            result['vapor_density'] = _extract_number(val)
+                        elif 'vapor pressure' in h:
+                            result['vapor_pressure'] = _extract_number(val) + ' mmHg' if re.search(r'[\d.]', val) else val
                         elif 'density' in h or 'specific gravity' in h:
                             result['specific_gravity'] = _extract_number(val)
                         elif 'refractive' in h:
@@ -1968,10 +1991,6 @@ def _lookup_pubchem_physical(cas):
                             result['appearance'] = val
                         elif 'solubility' in h:
                             result['solubility'] = val
-                        elif 'vapor pressure' in h:
-                            result['vapor_pressure'] = _extract_number(val) + ' mmHg' if re.search(r'[\d.]', val) else val
-                        elif 'vapor density' in h:
-                            result['vapor_density'] = _extract_number(val)
                         elif 'odor' in h or 'smell' in h:
                             result['odor_description'] = val
                         elif 'ph' == h.strip():
@@ -3256,6 +3275,84 @@ def api_materials_data_bulk_update():
     job_id = _bulk_job_start(len(materials))
     threading.Thread(target=_run_data_bulk_job, args=(job_id, materials), daemon=True).start()
     return jsonify({'success': True, 'job_id': job_id, 'total': len(materials)})
+
+# ===== One-time repair: Scentree comma-decimal truncation (found 2026-08-25) =====
+# Scentree formats decimals with a comma ("0,878"), but _extract_number()
+# only matched [\d.]+ — every comma-decimal value silently truncated at the
+# comma before the fix above. Materials that already had e.g.
+# specific_gravity filled in from Scentree before the fix are stuck with
+# the wrong (truncated) value forever: _enrich_material_data() only ever
+# writes to *empty* columns, so simply re-running the normal bulk update
+# does nothing for a column that's already (wrongly) filled. This is a
+# separate, explicit repair pass: find values that look like a truncated
+# decimal (a bare integer inside the range real values are never a whole
+# number in), clear just that field, then let the normal (now-fixed)
+# enrichment logic refill it.
+_DECIMAL_REPAIR_PLAUSIBLE = {'specific_gravity': (0, 2), 'refractive_index': (1, 2)}
+
+def _looks_truncated_decimal(value, lo, hi):
+    v = (value or '').strip()
+    if not v or '.' in v:
+        return False
+    try:
+        f = float(v)
+    except ValueError:
+        return False
+    return lo <= f <= hi
+
+def _run_decimal_repair_job(job_id, materials):
+    conn = get_db()
+    repaired, unchanged = [], []
+    for i, m in enumerate(materials):
+        name = (m['name'] or '').strip()
+        cas = (m['cas'] or '').strip()
+        _bulk_job_update(job_id, processed=i, current=name or f'#{m["id"]}')
+        row = conn.execute("SELECT * FROM materials WHERE id=?", (m['id'],)).fetchone()
+        if not row:
+            continue
+        existing = dict(row)
+        suspect_fields = [f for f, (lo, hi) in _DECIMAL_REPAIR_PLAUSIBLE.items()
+                           if _looks_truncated_decimal(existing.get(f), lo, hi)]
+        if not suspect_fields:
+            continue
+        set_clause = ', '.join(f'{f}=NULL' for f in suspect_fields)
+        conn.execute(f"UPDATE materials SET {set_clause} WHERE id=?", (m['id'],))
+        conn.commit()
+        try:
+            filled = _enrich_material_data(conn, m['id'], cas)
+        except Exception:
+            filled = 0
+        if filled > 0:
+            repaired.append({'id': m['id'], 'name': name, 'fields': suspect_fields})
+        else:
+            unchanged.append({'id': m['id'], 'name': name})
+    conn.close()
+    _bulk_job_update(job_id, status='done', processed=len(materials), current='',
+                      updated=repaired, updated_count=len(repaired),
+                      not_found=unchanged, not_found_count=len(unchanged),
+                      skipped_no_identifier=0)
+
+@app.route('/api/materials/repair-decimal-data', methods=['POST'])
+@login_required
+def api_materials_repair_decimal_data():
+    """يبدأ مهمة خلفية تصلح قيم specific_gravity/refractive_index اللي
+    انقطعت عند الفاصلة العشرية بسبب تنسيق Scentree الأوروبي (فاصلة بدل
+    نقطة) — تمسح القيمة الخاطئة فقط ثم تعيد جلبها بالمنطق المُصحّح. يرجع
+    job_id فوراً؛ التقدم يُتابع عبر /api/materials/bulk-job-status."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, cas_number, specific_gravity, refractive_index FROM materials "
+        "WHERE cas_number IS NOT NULL AND TRIM(cas_number) != ''"
+    ).fetchall()
+    conn.close()
+    candidates = [
+        {'id': r['id'], 'name': r['name'], 'cas': r['cas_number']}
+        for r in rows
+        if any(_looks_truncated_decimal(r[f], lo, hi) for f, (lo, hi) in _DECIMAL_REPAIR_PLAUSIBLE.items())
+    ]
+    job_id = _bulk_job_start(len(candidates))
+    threading.Thread(target=_run_decimal_repair_job, args=(job_id, candidates), daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id, 'total': len(candidates)})
 
 # ===== Smart NCS-variant matching for ifra_contributions =====
 # Some CAS numbers in the IFRA Annex source data correspond to multiple

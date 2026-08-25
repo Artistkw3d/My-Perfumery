@@ -214,6 +214,9 @@
         <button class="btn btn-outline-info btn-sm" onclick="startBulkDataUpdate()" title="يملأ الحقول الفارغة (وصف الرائحة، نقطة الوميض، الكثافة، ...) لكل مادة لديها CAS، من PubChem / TGSC / Scentree — لا يستبدل أي بيانات موجودة">
             <i class="bi bi-cloud-download"></i> تحديث بيانات المواد
         </button>
+        <button class="btn btn-outline-warning btn-sm" onclick="startDecimalRepair()" title="يصلح قيم الكثافة (specific gravity) ومعامل الانكسار اللي انقطعت عند الفاصلة العشرية بسبب تنسيق Scentree الأوروبي (0,878 بدل 0.878) — يمسح القيمة الخاطئة فقط ثم يعيد جلبها صحيحة">
+            <i class="bi bi-wrench-adjustable"></i> إصلاح بيانات تالفة
+        </button>
         <button class="btn btn-primary btn-sm" onclick="showMaterialModal()">
             <i class="bi bi-plus-circle"></i> إضافة مادة
         </button>
@@ -1206,6 +1209,38 @@ function renderBulkDataResults(data) {
         <div class="mt-3 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#faf7f0;border-radius:8px;padding:8px 12px;">
             <div class="text-muted mb-1">مواد بدون بيانات إضافية:</div>
             <ul class="mb-0" style="padding-inline-start:18px;">${notFoundList}</ul>
+        </div>` : ''}`);
+}
+
+// One-time repair for materials whose specific_gravity/refractive_index
+// got silently truncated by the Scentree comma-decimal bug (fixed
+// 2026-08-25) — e.g. "0,878" was being read as just "0". Only affects
+// materials fetched from Scentree before the fix; the normal "تحديث
+// بيانات المواد" button never touches an already-filled field, so those
+// stay wrong until this runs once.
+function startDecimalRepair() {
+    runBulkJob(
+        '/api/materials/repair-decimal-data',
+        'سيتم فحص كل مادة لديها كثافة أو معامل انكسار يبدو مقطوعاً عند الفاصلة العشرية (بسبب خلل قديم في قراءة تنسيق Scentree الأوروبي)، ومسح القيمة الخاطئة فقط ثم إعادة جلبها صحيحة. لن تُمس أي قيمة تبدو سليمة. متابعة؟',
+        'إصلاح بيانات تالفة',
+        renderDecimalRepairResults
+    );
+}
+
+function renderDecimalRepairResults(data) {
+    const unchangedList = (data.not_found || []).map(m => `<li>${escapeHtml(m.name || ('#' + m.id))}</li>`).join('');
+    _bulkJobSetBody(`
+        <div class="text-center mb-3">
+            <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
+        </div>
+        <div style="font-size:0.9rem;text-align:right;">
+            <div class="mb-1"><b>${data.updated_count}</b> مادة تم إصلاح بياناتها</div>
+            <div class="mb-1 text-muted"><b>${data.not_found_count}</b> مادة كانت تبدو تالفة لكن ما رجّعت قيمة صحيحة</div>
+        </div>
+        ${unchangedList ? `
+        <div class="mt-3 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#faf7f0;border-radius:8px;padding:8px 12px;">
+            <div class="text-muted mb-1">مواد لم تُصلح تلقائياً:</div>
+            <ul class="mb-0" style="padding-inline-start:18px;">${unchangedList}</ul>
         </div>` : ''}`);
 }
 
