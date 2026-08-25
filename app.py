@@ -3173,29 +3173,13 @@ def _clean_cas(cas):
     m = _CAS_RE.search(cas or '')
     return m.group(0) if m else (cas or '').strip()
 
-def _clean_material_name_for_search(name):
-    """Strips common catalog-naming noise (dilution notes, 'Essential
-    Oil'/'EO'/'Organic' qualifiers) before trying a material name as a
-    Scentree search query. Reference-site naming is the bare ingredient
-    ("Star Anise", "Ambroxan"), while catalog names often carry extra
-    qualifiers ("Star Anise Essential Oil", "Ambroxan 10% in DPG") that
-    break Scentree's exact-ish autocomplete match. Verified against the
-    real catalog: recovers Scentree matches for materials that returned
-    nothing under the raw name."""
-    n = name or ''
-    n = re.sub(r'\s+\d+(\.\d+)?%\s+in\s+\S+\s*$', '', n, flags=re.IGNORECASE)
-    n = re.sub(r'\s*[-–]?\s*(organic\s+)?(essential\s+oil|e\.?o\.?|distilled(\s+eo)?)\s*$', '', n, flags=re.IGNORECASE)
-    n = n.strip(' -–')
-    return n or (name or '').strip()
-
-def _enrich_material_data(conn, mid, cas, name=None):
-    """Runs PubChem -> TGSC -> Scentree (by CAS) in order for one material,
-    writing only currently-empty columns from _DATA_FILLABLE_FIELDS. If none
-    of the CAS-based lookups filled anything and a name is given, also tries
-    Scentree by name — natural essential oils are inconsistently indexed by
-    CAS there (or not covered by PubChem/TGSC at all, since those two are
-    compound-focused rather than natural-extract-focused) but sometimes do
-    turn up under the plain name. Returns the number of fields filled."""
+def _enrich_material_data(conn, mid, cas):
+    """Runs PubChem -> TGSC -> Scentree (all by CAS) in order for one
+    material, writing only currently-empty columns from
+    _DATA_FILLABLE_FIELDS. CAS-only by design — materials without a CAS
+    number are explicitly out of scope for this feature (handled manually
+    by the user instead); no name-based fallback is attempted. Returns the
+    number of fields filled."""
     row = conn.execute("SELECT * FROM materials WHERE id=?", (mid,)).fetchone()
     if not row:
         return 0
@@ -3216,17 +3200,12 @@ def _enrich_material_data(conn, mid, cas, name=None):
             updates[field] = value
 
     cas_clean = _clean_cas(cas)
-    if cas_clean:
-        pubchem_data, _ = _lookup_pubchem_physical(cas_clean)
-        consider(pubchem_data)
-        tgsc_data, _ = _lookup_tgsc(cas_clean)
-        consider(tgsc_data)
-        scentree_data, _ = _lookup_scentree(cas_clean)
-        consider(scentree_data)
-
-    if not updates and name:
-        scentree_by_name, _ = _lookup_scentree(_clean_material_name_for_search(name))
-        consider(scentree_by_name)
+    pubchem_data, _ = _lookup_pubchem_physical(cas_clean)
+    consider(pubchem_data)
+    tgsc_data, _ = _lookup_tgsc(cas_clean)
+    consider(tgsc_data)
+    scentree_data, _ = _lookup_scentree(cas_clean)
+    consider(scentree_data)
 
     if not updates:
         return 0
@@ -3243,11 +3222,11 @@ def _run_data_bulk_job(job_id, materials):
         name = (m['name'] or '').strip()
         cas = (m['cas'] or '').strip()
         _bulk_job_update(job_id, processed=i, current=name or cas or f'#{m["id"]}')
-        if not cas and not name:
+        if not cas:
             skipped_no_identifier += 1
             continue
         try:
-            filled = _enrich_material_data(conn, m['id'], cas, name)
+            filled = _enrich_material_data(conn, m['id'], cas)
         except Exception:
             filled = 0
         if filled > 0:
@@ -3264,18 +3243,14 @@ def _run_data_bulk_job(job_id, materials):
 @login_required
 def api_materials_data_bulk_update():
     """يبدأ مهمة خلفية تملأ الحقول الفارغة (وصف الرائحة، نقطة الوميض،
-    الكثافة، ...) من PubChem ثم TGSC ثم Scentree بالكاس، ثم Scentree بالاسم
-    كخيار أخير للمواد بدون تطابق (مفيد خصوصاً للزيوت الطبيعية). لا يستبدل
+    الكثافة، ...) لكل مادة لديها رقم CAS، من PubChem ثم TGSC ثم Scentree.
+    مواد بدون CAS خارج نطاق هذه الميزة عمداً (تُدار يدوياً). لا يستبدل
     أي قيمة موجودة مسبقاً. يرجع job_id فوراً؛ التقدم يُتابع عبر
     /api/materials/bulk-job-status."""
     conn = get_db()
-    # Every material is attempted now (not just ones with a CAS) — the
-    # Scentree-by-name fallback in _enrich_material_data gives materials
-    # with no CAS (or a CAS none of the 3 sources recognize) a real shot,
-    # which matters most for natural essential oils and quick-dilute
-    # derivatives that often carry no CAS of their own. The per-material
-    # skip below still catches the genuine edge case of neither identifier.
-    rows = conn.execute("SELECT id, name, cas_number FROM materials").fetchall()
+    rows = conn.execute(
+        "SELECT id, name, cas_number FROM materials WHERE cas_number IS NOT NULL AND TRIM(cas_number) != ''"
+    ).fetchall()
     conn.close()
     materials = [{'id': m['id'], 'name': m['name'], 'cas': m['cas_number']} for m in rows]
     job_id = _bulk_job_start(len(materials))
