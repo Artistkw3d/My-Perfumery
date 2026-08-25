@@ -329,6 +329,34 @@ OLFACTIVE_LABELS = {
     'ambery': 'Ambery', 'musky': 'Musky', 'leathery': 'Leathery', 'animal': 'Animal'
 }
 
+# ===== Material "Uses" tags =====
+# aroma/fixative/solvent/colourant come from the offline reference file's
+# "Uses" column (stored concatenated without delimiters there, e.g.
+# "aromasolventfixative" — parsed by substring match, see
+# _parse_uses_tags()). projection/silage are perfumery-craft concepts the
+# user added on top, not present in that source data at all — silage gets
+# auto-applied to any material with Physical State = Crystal (see
+# _ensure_db_migrated / the material save handler), projection is manual
+# tagging only, no auto-rule.
+MATERIAL_USE_TAGS = {
+    'aroma':      {'label_ar': 'عطر',        'label_en': 'Aroma',      'icon': '🧪'},
+    'fixative':   {'label_ar': 'مثبت',       'label_en': 'Fixative',   'icon': '⚓'},
+    'solvent':    {'label_ar': 'مذيب',       'label_en': 'Solvent',    'icon': '💧'},
+    'colourant':  {'label_ar': 'ملوّن',      'label_en': 'Colourant',  'icon': '🎨'},
+    'projection': {'label_ar': 'انتشار',     'label_en': 'Projection', 'icon': '💨'},
+    'silage':     {'label_ar': 'ذيل عطري',   'label_en': 'Silage',     'icon': '👣'},
+}
+
+def _parse_uses_tags(raw):
+    """Extracts atomic use tags from a string that may have them
+    concatenated with no delimiter (the reference file's own quirk, e.g.
+    "aromasolventfixative") or normally separated. Order-independent,
+    substring match against the known tag keys."""
+    if not raw:
+        return []
+    text = raw.lower()
+    return [key for key in ('aroma', 'fixative', 'solvent', 'colourant') if key in text]
+
 # Keyword mapping for auto-classification (EN + AR)
 ODOR_KEYWORD_MAP = {
     # CITRUS
@@ -737,6 +765,20 @@ def _ensure_db_migrated(conn):
         ifra_override REAL DEFAULT NULL,
         FOREIGN KEY (draft_id) REFERENCES formula_drafts(id) ON DELETE CASCADE
     )''')
+    # Migrate: add "uses" tags (aroma/fixative/solvent/colourant/projection/
+    # silage) to materials. One-time backfill runs only at the moment the
+    # column is first added: crystalline materials always get "silage"
+    # tagged automatically, per explicit user domain rule (crystalline raw
+    # materials are characteristically strong in sillage/trail).
+    mat_cols = [row[1] for row in conn.execute("PRAGMA table_info(materials)").fetchall()]
+    if 'uses' not in mat_cols:
+        conn.execute("ALTER TABLE materials ADD COLUMN uses TEXT DEFAULT ''")
+        conn.execute("UPDATE materials SET uses='[\"silage\"]' WHERE physical_state='Crystal'")
+    # Same tags, pre-extracted from the offline reference file's "Uses"
+    # column, so _lookup_local_reference() can merge them into new materials.
+    ref_cols = [row[1] for row in conn.execute("PRAGMA table_info(materials_reference)").fetchall()]
+    if ref_cols and 'uses_tags' not in ref_cols:
+        conn.execute("ALTER TABLE materials_reference ADD COLUMN uses_tags TEXT DEFAULT ''")
     conn.commit()
 
 def get_db():
@@ -1220,7 +1262,8 @@ def import_materials_reference():
         appearance TEXT,
         specific_gravity TEXT,
         refractive_index TEXT,
-        boiling_point TEXT
+        boiling_point TEXT,
+        uses_tags TEXT
     )''')
     conn.execute("CREATE INDEX IF NOT EXISTS idx_materials_reference_cas ON materials_reference(cas_number)")
 
@@ -1279,9 +1322,9 @@ def import_materials_reference():
             return v_el.text
 
         # Column layout of data/materials_reference.xlsx (0-indexed):
-        # 1 Names, 2 CasNumber, 20 TGSC Appearance, 21 TGSC Specific Gravity,
-        # 22 TGSC Refractive Index, 23 TGSC Boiling Point, 26 TGSC Odor
-        # Strength, 27 TGSC Odor Description, 30 Boiling Point (fallback)
+        # 1 Names, 2 CasNumber, 7 Uses, 20 TGSC Appearance, 21 TGSC Specific
+        # Gravity, 22 TGSC Refractive Index, 23 TGSC Boiling Point, 26 TGSC
+        # Odor Strength, 27 TGSC Odor Description, 30 Boiling Point (fallback)
         conn.execute("DELETE FROM materials_reference")
         imported = 0
         batch = []
@@ -1297,6 +1340,7 @@ def import_materials_reference():
             cas = (cells.get(2) or '').strip()
             if not cas:
                 continue
+            uses_tags = ','.join(_parse_uses_tags(cells.get(7) or ''))
             batch.append((
                 cas,
                 (cells.get(1) or '').strip(),
@@ -1306,19 +1350,20 @@ def import_materials_reference():
                 (cells.get(21) or '').strip(),
                 (cells.get(22) or '').strip(),
                 (cells.get(23) or '').strip() or (cells.get(30) or '').strip(),
+                uses_tags,
             ))
             imported += 1
             if len(batch) >= 1000:
                 conn.executemany(
                     "INSERT INTO materials_reference (cas_number, name, odor_description, "
-                    "strength_odor, appearance, specific_gravity, refractive_index, boiling_point) "
-                    "VALUES (?,?,?,?,?,?,?,?)", batch)
+                    "strength_odor, appearance, specific_gravity, refractive_index, boiling_point, uses_tags) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)", batch)
                 batch = []
         if batch:
             conn.executemany(
                 "INSERT INTO materials_reference (cas_number, name, odor_description, "
-                "strength_odor, appearance, specific_gravity, refractive_index, boiling_point) "
-                "VALUES (?,?,?,?,?,?,?,?)", batch)
+                "strength_odor, appearance, specific_gravity, refractive_index, boiling_point, uses_tags) "
+                "VALUES (?,?,?,?,?,?,?,?,?)", batch)
 
         conn.execute(
             "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('materials_reference_size', ?)",
@@ -1566,7 +1611,7 @@ def materials():
     return render_template('materials.html', families=families, suppliers=suppliers,
                           h_codes=GHS_H_CODES, p_codes=GHS_P_CODES, pictograms=GHS_PICTOGRAMS,
                           classifications=GHS_CLASSIFICATIONS, signal_words=GHS_SIGNAL_WORDS,
-                          ifra_categories=IFRA_CATEGORIES)
+                          ifra_categories=IFRA_CATEGORIES, material_use_tags=MATERIAL_USE_TAGS)
 
 @app.route('/formulas')
 @login_required
@@ -1585,7 +1630,8 @@ def formula_detail(id):
     # mode against /api/materials/search now, instead of every material in
     # the catalog being baked into this page's HTML as a Jinja-rendered
     # <option> — that used to scale linearly with catalog size on every load.
-    return render_template('formula.html', formula=formula, ifra_categories=IFRA_CATEGORIES)
+    return render_template('formula.html', formula=formula, ifra_categories=IFRA_CATEGORIES,
+                          material_use_tags=MATERIAL_USE_TAGS)
 
 @app.route('/formula/<int:id>/print')
 @login_required
@@ -2658,6 +2704,10 @@ def api_materials():
                 item = dict(d)
                 item['olfactive'] = olf_map.get(item['id'], None)
                 item['composition_count'] = comp_counts.get(item['id'], 0)
+                try:
+                    item['uses'] = json.loads(item.get('uses') or '[]') or []
+                except Exception:
+                    item['uses'] = []
                 result.append(item)
             conn.close()
             return jsonify({'success': True, 'data': result})
@@ -2675,6 +2725,10 @@ def api_materials():
                     result['manual_ifra_cats'] = json.loads(result.get('manual_ifra_cats') or '{}') or {}
                 except Exception:
                     result['manual_ifra_cats'] = {}
+                try:
+                    result['uses'] = json.loads(result.get('uses') or '[]') or []
+                except Exception:
+                    result['uses'] = []
                 if olfactive:
                     result['olfactive'] = {cat: dict(olfactive).get(cat, 0) or 0 for cat in OLFACTIVE_CATEGORIES}
                 else:
@@ -2722,6 +2776,15 @@ def api_materials():
                             pass
                 manual_cats_json = json.dumps(manual_cats) if manual_cats else None
 
+                # "Uses" tags (aroma/fixative/solvent/colourant/projection/
+                # silage) — checkboxes sent as repeated 'uses' form values.
+                # Crystal physical state always implies "silage" per the
+                # established domain rule, even if the box wasn't checked.
+                uses_selected = set(request.form.getlist('uses'))
+                if request.form.get('physical_state') == 'Crystal':
+                    uses_selected.add('silage')
+                uses_json = json.dumps(sorted(uses_selected))
+
                 if id and id != '':
                     conn.execute('''UPDATE materials SET name=?, name_ar=?, cas_number=?, family_id=?,
                         profile=?, supplier_id=?, ifra_limit=?, manual_ifra_cats=?, purchase_price=?, purchase_quantity=?,
@@ -2729,7 +2792,7 @@ def api_materials():
                         color=?, physical_state=?, ph=?, melting_point=?, boiling_point=?,
                         solubility=?, vapor_density=?, appearance=?, refractive_index=?,
                         synonyms=?, lot=?, strength_odor=?, vapor_pressure=?,
-                        effect=?, recommended_smell_pct=?, properties=?, in_stock=? WHERE id=?''',
+                        effect=?, recommended_smell_pct=?, properties=?, in_stock=?, uses=? WHERE id=?''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
@@ -2745,7 +2808,7 @@ def api_materials():
                          request.form.get('strength_odor'), request.form.get('vapor_pressure'),
                          request.form.get('effect'), request.form.get('recommended_smell_pct'),
                          request.form.get('properties'),
-                         float(request.form.get('in_stock') or 0), id))
+                         float(request.form.get('in_stock') or 0), uses_json, id))
                     mat_id = id
                     msg = 'تم التحديث'
                 else:
@@ -2753,8 +2816,8 @@ def api_materials():
                         supplier_id, ifra_limit, manual_ifra_cats, purchase_price, purchase_quantity, price_per_gram,
                         odor_description, notes, flash_point, specific_gravity, color, physical_state,
                         ph, melting_point, boiling_point, solubility, vapor_density, appearance, refractive_index,
-                        synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock, uses)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
@@ -2770,7 +2833,7 @@ def api_materials():
                          request.form.get('strength_odor'), request.form.get('vapor_pressure'),
                          request.form.get('effect'), request.form.get('recommended_smell_pct'),
                          request.form.get('properties'),
-                         float(request.form.get('in_stock') or 0)))
+                         float(request.form.get('in_stock') or 0), uses_json))
                     mat_id = cur.lastrowid
                     msg = f'تم الإضافة (ID: {mat_id})'
                 
@@ -3366,6 +3429,7 @@ def _lookup_local_reference(conn, cas):
     if not rows:
         return None
     result = {}
+    uses_tags = set()
     for row in rows:
         d = dict(row)
         if d.get('odor_description') and not result.get('odor_description'):
@@ -3380,6 +3444,10 @@ def _lookup_local_reference(conn, cas):
             result['refractive_index'] = _extract_number(d['refractive_index'])
         if d.get('boiling_point') and not result.get('boiling_point'):
             result['boiling_point'] = _extract_celsius(d['boiling_point'])
+        if d.get('uses_tags'):
+            uses_tags.update(t for t in d['uses_tags'].split(',') if t)
+    if uses_tags:
+        result['uses_tags'] = sorted(uses_tags)
     return result or None
 
 def _enrich_material_data(conn, mid, cas):
@@ -3417,6 +3485,20 @@ def _enrich_material_data(conn, mid, cas):
     consider(tgsc_data)
     scentree_data, _ = _lookup_scentree(cas_clean)
     consider(scentree_data)
+
+    # "uses" tags are a union merge (add newly-found tags, never drop ones
+    # already there — manually set or from the crystalline auto-rule) —
+    # different semantics than the "fill only if empty" consider() above,
+    # so handled separately rather than going through _DATA_FILLABLE_FIELDS.
+    new_use_tags = set((local_data or {}).get('uses_tags', []))
+    if new_use_tags:
+        try:
+            existing_uses = json.loads(existing.get('uses') or '[]')
+        except (ValueError, TypeError):
+            existing_uses = []
+        merged = sorted(set(existing_uses) | new_use_tags)
+        if merged != sorted(existing_uses):
+            updates['uses'] = json.dumps(merged)
 
     if not updates:
         return 0
@@ -4224,7 +4306,7 @@ def api_formula_ingredients(fid):
 
         data = conn.execute('''
             SELECT fi.*, m.name, m.name_ar, m.cas_number, m.ifra_limit, m.manual_ifra_cats,
-                   m.price_per_gram, m.profile
+                   m.price_per_gram, m.profile, m.uses
             FROM formula_ingredients fi
             JOIN materials m ON fi.material_id = m.id
             WHERE fi.formula_id = ?
@@ -4380,6 +4462,11 @@ def api_formula_ingredients(fid):
                         'pct': cr['concentration_pct']
                     })
 
+            try:
+                uses_tags = json.loads(i['uses']) if i['uses'] else []
+            except (ValueError, TypeError):
+                uses_tags = []
+
             temp_results.append({
                 'data': i,
                 'conc': conc,
@@ -4391,7 +4478,8 @@ def api_formula_ingredients(fid):
                 'ifra_std_name': ifra_std_name,
                 'ifra_std_type': ifra_std_type,
                 'ifra_design_calc': ifra_design_calc,
-                'ifra_final_calc': ifra_final_calc
+                'ifra_final_calc': ifra_final_calc,
+                'uses': uses_tags
             })
         
         # NOTE: E3/N3 (ifra_design_limit, ifra_final_limit) are computed BELOW
@@ -4433,7 +4521,8 @@ def api_formula_ingredients(fid):
                 'ifra_final_exceeded': ifra_final_exceeded,  # K
                 'constituents': t.get('constituents', []),
                 'effective_ppg': eff_ppg,
-                'cost': i['weight'] * eff_ppg
+                'cost': i['weight'] * eff_ppg,
+                'uses': t.get('uses', [])
             })
         
         # === IFRA Contributions from other sources ===

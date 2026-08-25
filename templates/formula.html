@@ -184,6 +184,8 @@
     .e-table tbody td.mat-cell { text-align: right; }
     .e-table tbody td.mat-cell strong { color: var(--text-dark); }
     .e-table tbody td .cas-t { font-size: 0.68rem; color: var(--text-light); }
+    .mat-uses-badges { display: inline-flex; gap: 2px; margin-top: 2px; }
+    .use-badge { font-size: 0.78rem; cursor: default; }
     .e-table tbody tr.row-warn { background: rgba(184,92,92,0.06); }
     .e-table tfoot td {
         padding: 10px 7px;
@@ -1293,6 +1295,17 @@ function loadIngredients() {
         });
 }
 
+const MATERIAL_USE_TAGS = {{ material_use_tags | tojson }};
+
+function usesBadgesHtml(uses) {
+    if (!uses || !uses.length) return '';
+    return `<div class="mat-uses-badges">${uses.map(key => {
+        const tag = MATERIAL_USE_TAGS[key];
+        if (!tag) return '';
+        return `<span class="use-badge" title="${tag.label_en} (${tag.label_ar})">${tag.icon}</span>`;
+    }).join('')}</div>`;
+}
+
 function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraFinalLimit) {
     const tbody = document.getElementById('ingredientsBody');
     let totalCost = 0;
@@ -1352,6 +1365,7 @@ function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraF
             <td class="mat-cell">
                 <strong>${i.name}</strong>
                 ${i.cas_number ? `<br><span class="cas-t">${i.cas_number}</span>` : ''}
+                ${usesBadgesHtml(i.uses)}
                 ${i.constituents && i.constituents.length ? `<br><button class="toggle-const" onclick="toggleConst(${i.id})"><i class="bi bi-diagram-3"></i> ${i.constituents.length} جزيئات</button>` : ''}
             </td>
             <td>

@@ -132,6 +132,7 @@
         font-weight: 600;
         text-transform: uppercase;
     }
+    .mat-card-uses { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
     .mat-card-footer {
         display: flex;
         justify-content: space-between;
@@ -671,6 +672,24 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="mb-3">
+                                        <label class="form-label">Uses (الاستخدامات)</label>
+                                        <div id="mat_uses_group" class="d-flex flex-wrap gap-3">
+                                            {% for key, tag in material_use_tags.items() %}
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" name="uses" value="{{ key }}" id="mat_uses_{{ key }}">
+                                                <label class="form-check-label" for="mat_uses_{{ key }}">
+                                                    {{ tag.icon }} {{ tag.label_en }} ({{ tag.label_ar }})
+                                                </label>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                        <small class="text-muted">Silage (👣) تُضاف تلقائياً للمواد ذات الحالة الفيزيائية "Crystal"</small>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- MSDS Tab -->
@@ -1037,6 +1056,16 @@
 {% block extra_js %}
 <script>
 const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
+const MATERIAL_USE_TAGS = {{ material_use_tags | tojson }};
+
+function usesBadgesHtml(m) {
+    if (!m.uses || !m.uses.length) return '';
+    return `<div class="mat-card-uses">${m.uses.map(key => {
+        const tag = MATERIAL_USE_TAGS[key];
+        if (!tag) return '';
+        return `<span class="badge bg-light text-dark border" style="font-size:0.62rem;margin-right:2px;" title="${tag.label_en} (${tag.label_ar})">${tag.icon} ${tag.label_en}</span>`;
+    }).join('')}</div>`;
+}
 
 // Plugin to draw labels around polar area charts
 const polarLabelsPlugin = {
@@ -1423,6 +1452,7 @@ function renderCards() {
                         }).join('')}
                     </div>
                     ${m.odor_description ? `<div class="mt-1" style="font-size:0.75rem;color:#888;max-height:32px;overflow:hidden;">${m.odor_description}</div>` : ''}
+                    ${usesBadgesHtml(m)}
                 </div>
             </div>
             <div class="mat-card-footer">
@@ -1460,6 +1490,7 @@ function renderTable() {
                 <strong>${m.name}</strong>
                 ${m.composition_count > 0 ? ` <span class="badge bg-success" style="font-size:0.62rem;" title="${m.composition_count} مكوّن"><i class="bi bi-diagram-3"></i> خليط</span>` : ''}
                 ${m.name_ar ? `<br><small class="text-muted">${m.name_ar}</small>` : ''}
+                ${usesBadgesHtml(m)}
             </td>
             <td><code>${m.cas_number || '-'}</code></td>
             <td>${m.family_icon ? '<span style="font-size:1.2em">' + m.family_icon + '</span> ' : ''}${m.family_name || '-'}</td>
@@ -2151,6 +2182,9 @@ function editMaterial(id) {
                 document.getElementById('mat_refractive').value = m.refractive_index || '';
                 document.getElementById('mat_vapor').value = m.vapor_density || '';
                 document.getElementById('mat_solubility').value = m.solubility || '';
+                document.querySelectorAll('#mat_uses_group input[name="uses"]').forEach(cb => {
+                    cb.checked = (m.uses || []).includes(cb.value);
+                });
                 // New fields
                 document.getElementById('mat_synonyms').value = m.synonyms || '';
                 document.getElementById('mat_lot').value = m.lot || '';
