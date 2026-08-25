@@ -1176,6 +1176,142 @@ def import_ifra_standards():
     finally:
         conn.close()
 
+def import_materials_reference():
+    """Imports the user-supplied offline materials reference (data/materials_reference.xlsx,
+    ~23k rows, largely a personal TGSC mirror covering many natural
+    essential oils/absolutes that live PubChem/TGSC/Scentree lookups miss
+    entirely). Populates materials_reference so _lookup_local_reference()
+    can check it first — instant, no network call, and empirically covers
+    materials nothing else does (verified: Hinoki wood, Oregano, Star
+    Anise, Yuzu, and Mandarin Oil under its real CAS all present, several
+    with none of the three live sources)."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    xlsx_path = os.path.join(ASSET_DIR, 'data', 'materials_reference.xlsx')
+    if not os.path.exists(xlsx_path):
+        log("[REF] materials_reference.xlsx not found, skipping import")
+        return
+
+    conn = get_db()
+    conn.execute('''CREATE TABLE IF NOT EXISTS materials_reference (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cas_number TEXT,
+        name TEXT,
+        odor_description TEXT,
+        strength_odor TEXT,
+        appearance TEXT,
+        specific_gravity TEXT,
+        refractive_index TEXT,
+        boiling_point TEXT
+    )''')
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_materials_reference_cas ON materials_reference(cas_number)")
+
+    conn.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)")
+    count = conn.execute("SELECT COUNT(*) FROM materials_reference").fetchone()[0]
+    # Re-import if the source file was replaced with a newer/bigger one;
+    # otherwise this is a no-op on every startup after the first.
+    file_size = os.path.getsize(xlsx_path)
+    marker = conn.execute("SELECT value FROM app_meta WHERE key='materials_reference_size'").fetchone()
+    if count > 0 and marker and marker['value'] == str(file_size):
+        conn.close()
+        return
+
+    log("[REF] Importing offline materials reference (this can take a moment)...")
+    try:
+        zf = zipfile.ZipFile(xlsx_path)
+        ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+
+        shared = []
+        try:
+            ss_tree = ET.parse(zf.open('xl/sharedStrings.xml'))
+            for si in ss_tree.findall('.//s:si', ns):
+                parts = []
+                for t in si.iter('{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t'):
+                    if t.text:
+                        parts.append(t.text)
+                shared.append(''.join(parts))
+        except Exception:
+            pass
+
+        sheet_tree = ET.parse(zf.open('xl/worksheets/sheet1.xml'))
+        rows = sheet_tree.findall('.//s:sheetData/s:row', ns)
+
+        def cell_ref_to_col(ref):
+            col = ''
+            for ch in ref:
+                if ch.isalpha():
+                    col += ch
+                else:
+                    break
+            result = 0
+            for ch in col:
+                result = result * 26 + (ord(ch) - ord('A') + 1)
+            return result - 1
+
+        def get_cell_value(cell):
+            t = cell.get('t', '')
+            v_el = cell.find('s:v', ns)
+            if v_el is None or v_el.text is None:
+                return ''
+            if t == 's':
+                idx = int(v_el.text)
+                return shared[idx] if idx < len(shared) else ''
+            return v_el.text
+
+        # Column layout of data/materials_reference.xlsx (0-indexed):
+        # 1 Names, 2 CasNumber, 20 TGSC Appearance, 21 TGSC Specific Gravity,
+        # 22 TGSC Refractive Index, 23 TGSC Boiling Point, 26 TGSC Odor
+        # Strength, 27 TGSC Odor Description, 30 Boiling Point (fallback)
+        conn.execute("DELETE FROM materials_reference")
+        imported = 0
+        batch = []
+        for row_el in rows:
+            row_num = int(row_el.get('r', '0'))
+            if row_num < 2:  # header row
+                continue
+            cells = {}
+            for cell in row_el.findall('s:c', ns):
+                col_idx = cell_ref_to_col(cell.get('r', ''))
+                cells[col_idx] = get_cell_value(cell)
+
+            cas = (cells.get(2) or '').strip()
+            if not cas:
+                continue
+            batch.append((
+                cas,
+                (cells.get(1) or '').strip(),
+                (cells.get(27) or '').strip() or (cells.get(8) or '').strip(),
+                (cells.get(26) or '').strip(),
+                (cells.get(20) or '').strip(),
+                (cells.get(21) or '').strip(),
+                (cells.get(22) or '').strip(),
+                (cells.get(23) or '').strip() or (cells.get(30) or '').strip(),
+            ))
+            imported += 1
+            if len(batch) >= 1000:
+                conn.executemany(
+                    "INSERT INTO materials_reference (cas_number, name, odor_description, "
+                    "strength_odor, appearance, specific_gravity, refractive_index, boiling_point) "
+                    "VALUES (?,?,?,?,?,?,?,?)", batch)
+                batch = []
+        if batch:
+            conn.executemany(
+                "INSERT INTO materials_reference (cas_number, name, odor_description, "
+                "strength_odor, appearance, specific_gravity, refractive_index, boiling_point) "
+                "VALUES (?,?,?,?,?,?,?,?)", batch)
+
+        conn.execute(
+            "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('materials_reference_size', ?)",
+            (str(file_size),))
+        conn.commit()
+        zf.close()
+        log(f"[REF] Imported {imported} materials reference rows")
+    except Exception as e:
+        log(f"[REF] Error importing materials reference: {e}")
+    finally:
+        conn.close()
+
 def import_ifra_contributions():
     """Import IFRA contributions from other sources (naturals + Schiff bases)"""
     import zipfile
@@ -3192,13 +3328,48 @@ def _clean_cas(cas):
     m = _CAS_RE.search(cas or '')
     return m.group(0) if m else (cas or '').strip()
 
+def _lookup_local_reference(conn, cas):
+    """Checks the offline materials_reference table (imported from
+    data/materials_reference.xlsx, a ~23k-row personal reference the user
+    supplied) for this CAS — instant, no network call, and empirically
+    covers several natural essential oils/absolutes that none of
+    PubChem/TGSC/Scentree have under their CAS number at all (verified:
+    Hinoki wood, Oregano, Star Anise, Yuzu, Mandarin Oil). If multiple rows
+    share the same CAS, merges them field-by-field (first non-empty value
+    per field wins). Returns a dict shaped like the other _lookup_*
+    functions, or None if the CAS isn't in the reference."""
+    if not cas:
+        return None
+    try:
+        rows = conn.execute("SELECT * FROM materials_reference WHERE cas_number=?", (cas,)).fetchall()
+    except sqlite3.OperationalError:
+        return None  # table not imported yet (e.g. reference file missing)
+    if not rows:
+        return None
+    result = {}
+    for row in rows:
+        d = dict(row)
+        if d.get('odor_description') and not result.get('odor_description'):
+            result['odor_description'] = d['odor_description']
+        if d.get('strength_odor') and not result.get('strength_odor'):
+            result['strength_odor'] = d['strength_odor']
+        if d.get('appearance') and not result.get('appearance'):
+            result['appearance'] = d['appearance']
+        if d.get('specific_gravity') and not result.get('specific_gravity'):
+            result['specific_gravity'] = _extract_number(d['specific_gravity'])
+        if d.get('refractive_index') and not result.get('refractive_index'):
+            result['refractive_index'] = _extract_number(d['refractive_index'])
+        if d.get('boiling_point') and not result.get('boiling_point'):
+            result['boiling_point'] = _extract_celsius(d['boiling_point'])
+    return result or None
+
 def _enrich_material_data(conn, mid, cas):
-    """Runs PubChem -> TGSC -> Scentree (all by CAS) in order for one
-    material, writing only currently-empty columns from
-    _DATA_FILLABLE_FIELDS. CAS-only by design — materials without a CAS
-    number are explicitly out of scope for this feature (handled manually
-    by the user instead); no name-based fallback is attempted. Returns the
-    number of fields filled."""
+    """Runs the local reference, then PubChem -> TGSC -> Scentree (all by
+    CAS) in order for one material, writing only currently-empty columns
+    from _DATA_FILLABLE_FIELDS. CAS-only by design — materials without a
+    CAS number are explicitly out of scope for this feature (handled
+    manually by the user instead); no name-based fallback is attempted.
+    Returns the number of fields filled."""
     row = conn.execute("SELECT * FROM materials WHERE id=?", (mid,)).fetchone()
     if not row:
         return 0
@@ -3219,6 +3390,8 @@ def _enrich_material_data(conn, mid, cas):
             updates[field] = value
 
     cas_clean = _clean_cas(cas)
+    local_data = _lookup_local_reference(conn, cas_clean)
+    consider(local_data)
     pubchem_data, _ = _lookup_pubchem_physical(cas_clean)
     consider(pubchem_data)
     tgsc_data, _ = _lookup_tgsc(cas_clean)
@@ -5883,6 +6056,7 @@ def bootstrap():
     _migrate_attachments_to_disk()
     import_ifra_standards()
     import_ifra_contributions()
+    import_materials_reference()
 
 if __name__ == '__main__':
     bootstrap()
