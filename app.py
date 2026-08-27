@@ -814,6 +814,13 @@ def _ensure_db_migrated(conn):
     # outcome — see _run_data_bulk_job.
     if 'data_searched_at' not in mat_cols:
         conn.execute("ALTER TABLE materials ADD COLUMN data_searched_at TEXT DEFAULT NULL")
+    # Shelf-life tracking — the app previously had no concept of a material
+    # expiring at all. A plain user-entered date (not derived from purchase
+    # date + a shelf-life duration, since purchase date isn't tracked either)
+    # kept deliberately simple: materials.html flags it as "expired" /
+    # "expiring soon" (within 60 days) with a badge, nothing more automated.
+    if 'expiry_date' not in mat_cols:
+        conn.execute("ALTER TABLE materials ADD COLUMN expiry_date TEXT DEFAULT NULL")
     # Same tags, pre-extracted from the offline reference file's "Uses"
     # column, so _lookup_local_reference() can merge them into new materials.
     ref_cols = [row[1] for row in conn.execute("PRAGMA table_info(materials_reference)").fetchall()]
@@ -2877,7 +2884,7 @@ def api_materials():
                         color=?, physical_state=?, ph=?, melting_point=?, boiling_point=?,
                         solubility=?, vapor_density=?, appearance=?, refractive_index=?,
                         synonyms=?, lot=?, strength_odor=?, vapor_pressure=?,
-                        effect=?, recommended_smell_pct=?, properties=?, in_stock=?, uses=? WHERE id=?''',
+                        effect=?, recommended_smell_pct=?, properties=?, in_stock=?, uses=?, expiry_date=? WHERE id=?''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
@@ -2893,7 +2900,8 @@ def api_materials():
                          request.form.get('strength_odor'), request.form.get('vapor_pressure'),
                          request.form.get('effect'), request.form.get('recommended_smell_pct'),
                          request.form.get('properties'),
-                         float(request.form.get('in_stock') or 0), uses_json, id))
+                         float(request.form.get('in_stock') or 0), uses_json,
+                         request.form.get('expiry_date') or None, id))
                     mat_id = id
                     msg = 'تم التحديث'
                 else:
@@ -2901,8 +2909,8 @@ def api_materials():
                         supplier_id, ifra_limit, manual_ifra_cats, purchase_price, purchase_quantity, price_per_gram,
                         odor_description, notes, flash_point, specific_gravity, color, physical_state,
                         ph, melting_point, boiling_point, solubility, vapor_density, appearance, refractive_index,
-                        synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock, uses)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock, uses, expiry_date)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
@@ -2918,7 +2926,8 @@ def api_materials():
                          request.form.get('strength_odor'), request.form.get('vapor_pressure'),
                          request.form.get('effect'), request.form.get('recommended_smell_pct'),
                          request.form.get('properties'),
-                         float(request.form.get('in_stock') or 0), uses_json))
+                         float(request.form.get('in_stock') or 0), uses_json,
+                         request.form.get('expiry_date') or None))
                     mat_id = cur.lastrowid
                     msg = f'تم الإضافة (ID: {mat_id})'
                 
@@ -3675,12 +3684,37 @@ def _enrich_material_data(conn, mid, cas):
         if merged != sorted(existing_uses):
             updates['uses'] = json.dumps(merged)
 
-    if not updates:
+    # Olfactive wheel (family) auto-classification — same auto_classify_odor()
+    # keyword-matching the Excel-import path already runs when it has a
+    # description to work with; this CAS-based path never called it before,
+    # so a material's wheel stayed permanently blank until someone opened
+    # the edit modal and clicked "تصنيف تلقائي" by hand. Runs against
+    # whichever odor_description ended up available (freshly filled above,
+    # or already on file) and only writes if the material has no non-zero
+    # wheel score at all yet — never overwrites an existing profile, even a
+    # partial hand-adjusted one.
+    extra_filled = 0
+    odor_text = updates.get('odor_description') or existing.get('odor_description')
+    if odor_text:
+        existing_olf = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (mid,)).fetchone()
+        has_real_olf = existing_olf and any((existing_olf[c] or 0) > 0 for c in OLFACTIVE_CATEGORIES)
+        if not has_real_olf:
+            scores = auto_classify_odor(odor_text)
+            if any(v > 0 for v in scores.values()):
+                conn.execute(
+                    f"INSERT OR REPLACE INTO material_olfactive (material_id, {', '.join(OLFACTIVE_CATEGORIES)}) "
+                    f"VALUES (?, {', '.join('?' for _ in OLFACTIVE_CATEGORIES)})",
+                    (mid, *[scores[c] for c in OLFACTIVE_CATEGORIES])
+                )
+                extra_filled = 1
+
+    if not updates and not extra_filled:
         return 0
-    set_clause = ', '.join(f'{f}=?' for f in updates)
-    conn.execute(f"UPDATE materials SET {set_clause} WHERE id=?", (*updates.values(), mid))
+    if updates:
+        set_clause = ', '.join(f'{f}=?' for f in updates)
+        conn.execute(f"UPDATE materials SET {set_clause} WHERE id=?", (*updates.values(), mid))
     conn.commit()
-    return len(updates)
+    return len(updates) + extra_filled
 
 def _run_data_bulk_job(job_id, materials):
     conn = get_db()
@@ -3762,6 +3796,53 @@ def api_use_tags():
         conn.close()
         return jsonify({'success': True, 'key': new_key, 'label_ar': label_ar,
                          'label_en': label_en or label_ar, 'icon': icon})
+
+    # edit/delete only ever apply to user-added tags — the six MATERIAL_USE_TAGS
+    # builtins are Python constants, not custom_use_tags rows, so a 'custom_'
+    # key prefix is both how a key is recognized as editable and the guard
+    # that stops a builtin from being targeted by id-guessing.
+    if action in ('edit', 'delete'):
+        key = (request.form.get('key') or '').strip()
+        if not key.startswith('custom_'):
+            conn.close()
+            return jsonify({'success': False, 'message': 'لا يمكن تعديل أو حذف الاستخدامات الأساسية'})
+        tag_id = key[len('custom_'):]
+
+        if action == 'delete':
+            conn.execute("DELETE FROM custom_use_tags WHERE id=?", (tag_id,))
+            # Also strip this key out of every material's own `uses` array —
+            # otherwise a deleted tag's badge would keep "ghost" appearing
+            # (MATERIAL_USE_TAGS lookup just silently returns nothing for an
+            # unknown key today, but the stale key would linger in the data
+            # forever and reappear if the same id is ever reused).
+            for r in conn.execute("SELECT id, uses FROM materials WHERE uses LIKE ?", (f'%{key}%',)).fetchall():
+                try:
+                    tags = json.loads(r['uses'] or '[]')
+                except (ValueError, TypeError):
+                    continue
+                if key in tags:
+                    tags.remove(key)
+                    conn.execute("UPDATE materials SET uses=? WHERE id=?", (json.dumps(tags), r['id']))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'key': key, 'message': 'تم حذف الاستخدام'})
+
+        # action == 'edit'
+        label_ar = (request.form.get('label_ar') or '').strip()
+        label_en = (request.form.get('label_en') or '').strip()
+        icon = (request.form.get('icon') or '').strip() or '🏷️'
+        if not label_ar and not label_en:
+            conn.close()
+            return jsonify({'success': False, 'message': 'أدخل اسم الاستخدام'})
+        conn.execute(
+            "UPDATE custom_use_tags SET label_ar=?, label_en=?, icon=? WHERE id=?",
+            (label_ar, label_en or label_ar, icon, tag_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'key': key, 'label_ar': label_ar,
+                         'label_en': label_en or label_ar, 'icon': icon})
+
     conn.close()
     return jsonify({'success': False, 'message': 'إجراء غير معروف'})
 

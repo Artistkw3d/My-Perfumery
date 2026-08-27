@@ -497,16 +497,22 @@
                                 <textarea name="odor_description" id="mat_odor" class="form-control" rows="2"></textarea>
                             </div>
                             <div class="row">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="mb-3">
                                         <label class="form-label">Synonyms (أسماء بديلة)</label>
                                         <input type="text" name="synonyms" id="mat_synonyms" class="form-control" placeholder="Alternative names">
                                     </div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="mb-3">
                                         <label class="form-label">Lot (رقم الدفعة)</label>
                                         <input type="text" name="lot" id="mat_lot" class="form-control" placeholder="Lot/Batch number">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">تاريخ انتهاء الصلاحية</label>
+                                        <input type="date" name="expiry_date" id="mat_expiry_date" class="form-control">
                                     </div>
                                 </div>
                             </div>
@@ -681,11 +687,15 @@
                                         <label class="form-label">Uses (الاستخدامات)</label>
                                         <div id="mat_uses_group" class="d-flex flex-wrap gap-3">
                                             {% for key, tag in material_use_tags.items() %}
-                                            <div class="form-check">
+                                            <div class="form-check d-flex align-items-center gap-1" data-use-key="{{ key }}">
                                                 <input class="form-check-input" type="checkbox" name="uses" value="{{ key }}" id="mat_uses_{{ key }}">
                                                 <label class="form-check-label" for="mat_uses_{{ key }}">
                                                     {{ tag.icon }} {{ tag.label_en }} ({{ tag.label_ar }})
                                                 </label>
+                                                {% if key.startswith('custom_') %}
+                                                <button type="button" class="btn btn-link btn-sm p-0 ms-1" style="line-height:1;" title="تعديل" onclick="editCustomUseTag('{{ key }}')"><i class="bi bi-pencil-square"></i></button>
+                                                <button type="button" class="btn btn-link btn-sm p-0 text-danger" style="line-height:1;" title="حذف" onclick="deleteCustomUseTag('{{ key }}')"><i class="bi bi-x-circle"></i></button>
+                                                {% endif %}
                                             </div>
                                             {% endfor %}
                                         </div>
@@ -1066,6 +1076,23 @@
 const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
 const MATERIAL_USE_TAGS = {{ material_use_tags | tojson }};
 
+// Only shows a badge when there's actually something to flag (expired or
+// within 60 days) — a material with a fine, distant expiry date shouldn't
+// get visual noise on every single card.
+function expiryBadgeHtml(m) {
+    if (!m.expiry_date) return '';
+    const today = new Date(); today.setHours(0,0,0,0);
+    const exp = new Date(m.expiry_date);
+    const days = Math.round((exp - today) / 86400000);
+    if (days < 0) {
+        return `<span class="badge bg-danger" style="font-size:0.62rem;margin-right:2px;" title="انتهت الصلاحية بتاريخ ${m.expiry_date}"><i class="bi bi-exclamation-octagon"></i> منتهية الصلاحية</span>`;
+    }
+    if (days <= 60) {
+        return `<span class="badge bg-warning text-dark" style="font-size:0.62rem;margin-right:2px;" title="تنتهي الصلاحية بتاريخ ${m.expiry_date}"><i class="bi bi-hourglass-split"></i> تنتهي خلال ${days} يوم</span>`;
+    }
+    return '';
+}
+
 function usesBadgesHtml(m) {
     if (!m.uses || !m.uses.length) return '';
     return `<div class="mat-card-uses">${m.uses.map(key => {
@@ -1073,6 +1100,21 @@ function usesBadgesHtml(m) {
         if (!tag) return '';
         return `<span class="badge bg-light text-dark border" style="font-size:0.62rem;margin-right:2px;" title="${tag.label_en} (${tag.label_ar})">${tag.icon} ${tag.label_en}</span>`;
     }).join('')}</div>`;
+}
+
+// Shared markup builder so a freshly-added tag (JS-appended) and a
+// freshly-edited tag (JS-replaced) render identically to the ones Jinja
+// rendered on page load — edit/delete controls only for custom_* keys,
+// matching the server-side Jinja guard on that same key prefix.
+function useTagCheckboxHtml(key, tag, checked) {
+    const controls = key.startsWith('custom_') ? `
+        <button type="button" class="btn btn-link btn-sm p-0 ms-1" style="line-height:1;" title="تعديل" onclick="editCustomUseTag('${key}')"><i class="bi bi-pencil-square"></i></button>
+        <button type="button" class="btn btn-link btn-sm p-0 text-danger" style="line-height:1;" title="حذف" onclick="deleteCustomUseTag('${key}')"><i class="bi bi-x-circle"></i></button>` : '';
+    return `<div class="form-check d-flex align-items-center gap-1" data-use-key="${key}">
+        <input class="form-check-input" type="checkbox" name="uses" value="${escapeHtml(key)}" id="mat_uses_${escapeHtml(key)}" ${checked ? 'checked' : ''}>
+        <label class="form-check-label" for="mat_uses_${escapeHtml(key)}">${escapeHtml(tag.icon)} ${escapeHtml(tag.label_en)} (${escapeHtml(tag.label_ar)})</label>
+        ${controls}
+    </div>`;
 }
 
 // Lets the user extend the fixed Uses list with their own tag (own icon +
@@ -1094,14 +1136,63 @@ function addCustomUseTag() {
             if (!data.success) { showAlert(data.message || 'فشل الإضافة', 'danger'); return; }
             MATERIAL_USE_TAGS[data.key] = { label_ar: data.label_ar, label_en: data.label_en, icon: data.icon };
             const group = document.getElementById('mat_uses_group');
-            const div = document.createElement('div');
-            div.className = 'form-check';
-            div.innerHTML = `<input class="form-check-input" type="checkbox" name="uses" value="${escapeHtml(data.key)}" id="mat_uses_${escapeHtml(data.key)}" checked>
-                <label class="form-check-label" for="mat_uses_${escapeHtml(data.key)}">${escapeHtml(data.icon)} ${escapeHtml(data.label_en)} (${escapeHtml(data.label_ar)})</label>`;
-            group.appendChild(div);
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = useTagCheckboxHtml(data.key, MATERIAL_USE_TAGS[data.key], true);
+            group.appendChild(wrapper.firstElementChild);
             document.getElementById('newUseIcon').value = '';
             document.getElementById('newUseLabel').value = '';
             showAlert('تمت إضافة الاستخدام ✓', 'success');
+        })
+        .catch(err => showAlert('خطأ: ' + err.message, 'danger'));
+}
+
+function editCustomUseTag(key) {
+    const tag = MATERIAL_USE_TAGS[key];
+    if (!tag) return;
+    const newLabel = prompt('اسم الاستخدام:', tag.label_en || tag.label_ar || '');
+    if (newLabel === null) return;
+    if (!newLabel.trim()) { showAlert('اكتب اسم الاستخدام', 'warning'); return; }
+    const newIcon = prompt('الأيقونة (إيموجي):', tag.icon || '🏷️');
+    if (newIcon === null) return;
+    const fd = new FormData();
+    fd.append('action', 'edit');
+    fd.append('key', key);
+    fd.append('label_ar', newLabel.trim());
+    fd.append('label_en', newLabel.trim());
+    fd.append('icon', newIcon.trim() || '🏷️');
+    fetch('/api/use-tags', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { showAlert(data.message || 'فشل التعديل', 'danger'); return; }
+            MATERIAL_USE_TAGS[key] = { label_ar: data.label_ar, label_en: data.label_en, icon: data.icon };
+            const container = document.querySelector(`#mat_uses_group [data-use-key="${key}"]`);
+            if (container) {
+                const wasChecked = !!document.getElementById('mat_uses_' + key)?.checked;
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = useTagCheckboxHtml(key, MATERIAL_USE_TAGS[key], wasChecked);
+                container.replaceWith(wrapper.firstElementChild);
+            }
+            showAlert('تم التعديل ✓', 'success');
+            loadMaterials();
+        })
+        .catch(err => showAlert('خطأ: ' + err.message, 'danger'));
+}
+
+function deleteCustomUseTag(key) {
+    const tag = MATERIAL_USE_TAGS[key];
+    if (!confirm(`حذف الاستخدام "${tag ? tag.label_en : key}"؟ سيُزال من كل مادة مستخدمة فيه.`)) return;
+    const fd = new FormData();
+    fd.append('action', 'delete');
+    fd.append('key', key);
+    fetch('/api/use-tags', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { showAlert(data.message || 'فشل الحذف', 'danger'); return; }
+            delete MATERIAL_USE_TAGS[key];
+            const container = document.querySelector(`#mat_uses_group [data-use-key="${key}"]`);
+            if (container) container.remove();
+            showAlert('تم الحذف ✓', 'success');
+            loadMaterials();
         })
         .catch(err => showAlert('خطأ: ' + err.message, 'danger'));
 }
@@ -1566,6 +1657,7 @@ function renderCards() {
                     </div>
                     ${m.odor_description ? `<div class="mt-1" style="font-size:0.75rem;color:#888;max-height:32px;overflow:hidden;">${m.odor_description}</div>` : ''}
                     ${usesBadgesHtml(m)}
+                    ${expiryBadgeHtml(m)}
                 </div>
             </div>
             <div class="mat-card-footer">
@@ -1605,6 +1697,7 @@ function renderTable() {
                 ${m.composition_count > 0 ? ` <span class="badge bg-success" style="font-size:0.62rem;" title="${m.composition_count} مكوّن"><i class="bi bi-diagram-3"></i> خليط</span>` : ''}
                 ${m.name_ar ? `<br><small class="text-muted">${m.name_ar}</small>` : ''}
                 ${usesBadgesHtml(m)}
+                ${expiryBadgeHtml(m)}
             </td>
             <td><code>${m.cas_number || '-'}</code></td>
             <td>${m.family_icon ? '<span style="font-size:1.2em">' + m.family_icon + '</span> ' : ''}${m.family_name || '-'}</td>
@@ -2303,6 +2396,7 @@ function editMaterial(id) {
                 // New fields
                 document.getElementById('mat_synonyms').value = m.synonyms || '';
                 document.getElementById('mat_lot').value = m.lot || '';
+                document.getElementById('mat_expiry_date').value = m.expiry_date || '';
                 document.getElementById('mat_strength_odor').value = m.strength_odor || '';
                 document.getElementById('mat_vapor_pressure').value = m.vapor_pressure || '';
                 document.getElementById('mat_effect').value = m.effect || '';
