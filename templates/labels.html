@@ -6,21 +6,36 @@
 /* Shared between the on-page preview and the print iframe (read via
    textContent at print time) so the two never drift apart. */
 .ph-label-frame { overflow:hidden; page-break-after: always; box-sizing:border-box; background:#fff; }
+/* Absolutely-positioned layout on purpose, not flex/flow. While chasing an
+   earlier real bug (every label printing across two pages — root cause was
+   a missing `@page { size: ... }`, see printLabels() below), a flawed local
+   test harness kept reporting the same 2-page split even after that fix
+   landed, which pointed suspicion at flex/flow overflow instead of the
+   harness. This layout was the result of debugging that false trail — it's
+   not fixing a real bug (the actual fix was the @page size), but it's a
+   sound design on its own merits for a print label: every child is
+   `position:absolute` inside a `position:relative` box with a hard
+   `width/height` + `overflow:hidden`, so no child's content can ever affect
+   the container's box height, which is exactly the guarantee you want for
+   a fixed physical label size. Kept for that reason. mm coordinates below
+   are for the 50x30mm reference design; other sizes scale via the
+   transform wrapper in labelHtml(). */
 .ph-label-inner {
+    position: relative;
     width: 50mm; height: 30mm; box-sizing: border-box;
-    border: 1mm solid #000; padding: 1.5mm 2mm;
-    display: flex; flex-direction: column;
+    border: 1mm solid #000;
     font-family: Arial, 'Tajawal', sans-serif; color:#000; background:#fff;
-    direction: ltr;
+    direction: ltr; overflow: hidden;
 }
-.ph-top-row { display:flex; align-items:center; justify-content:flex-start; gap:1.2mm; }
-.ph-x-icon { width:6mm; height:6mm; flex-shrink:0; }
-.ph-family { font-weight:800; font-size:6.5mm; line-height:1; white-space:nowrap; }
-.ph-name { font-weight:700; font-size:3.4mm; text-align:center; margin-top:1mm; line-height:1.15; }
-.ph-cas { font-weight:700; font-size:3.4mm; text-align:center; }
-.ph-bottom-row { flex:1; display:flex; align-items:flex-end; justify-content:space-between; }
-.ph-pyramid { width:9mm; height:9mm; flex-shrink:0; }
-.ph-meta { text-align:left; font-weight:700; font-size:2.8mm; line-height:1.35; }
+.ph-top-row { position:absolute; top:1.5mm; left:2mm; display:flex; align-items:center; gap:1.2mm; }
+.ph-x-icon { width:6mm; height:6mm; flex-shrink:0; display:block; }
+.ph-x-icon svg { display:block; }
+.ph-family { font-weight:800; font-size:6mm; line-height:1; white-space:nowrap; }
+.ph-name { position:absolute; top:9mm; left:1mm; right:1mm; font-weight:700; font-size:3.2mm; text-align:center; line-height:1; }
+.ph-cas { position:absolute; top:13.5mm; left:1mm; right:1mm; font-weight:700; font-size:3.2mm; text-align:center; line-height:1; }
+.ph-pyramid { position:absolute; bottom:1.5mm; left:2mm; width:8mm; height:8mm; display:block; }
+.ph-pyramid svg { display:block; }
+.ph-meta { position:absolute; bottom:1.5mm; right:2mm; text-align:right; font-weight:700; font-size:2.6mm; line-height:1.3; }
 </style>
 <div class="mb-4">
     <h2><i class="bi bi-tag"></i> ليبلات المواد</h2>
@@ -163,12 +178,10 @@ function labelHtml(m, w, h) {
             </div>` : ''}
             <div class="ph-name">${escapeHtml(m.name)}</div>
             ${m.cas_number ? `<div class="ph-cas">CAS N° :${escapeHtml(m.cas_number)}</div>` : ''}
-            <div class="ph-bottom-row">
-                <div class="ph-pyramid">${pyramidSvg(m.profile)}</div>
-                <div class="ph-meta">
-                    <div>${mw}</div>
-                    <div>${fp}</div>
-                </div>
+            <div class="ph-pyramid">${pyramidSvg(m.profile)}</div>
+            <div class="ph-meta">
+                <div>${mw}</div>
+                <div>${fp}</div>
             </div>
         </div>`;
     return `<div class="ph-label-frame" style="width:${w}mm;height:${h}mm;">
@@ -220,7 +233,12 @@ function printLabels() {
     // live from #labelCss) plus @page/body resets only relevant to the
     // print document, so preview and print can never visually drift apart.
     const css = document.getElementById('labelCss').textContent;
-    const printHtml = `<!doctype html><html><head><meta charset="utf-8"><style>@page{margin:0;}body{margin:0;padding:0;}${css}</style></head><body>${pagesHtml}</body></html>`;
+    // @page size must match the physical label — without it the print
+    // pipeline falls back to a default paper size (e.g. Letter/A4) and the
+    // small label content ends up stranded in the corner of a full sheet,
+    // which is meaningless for a thermal label printer that feeds exactly
+    // one page-sized label per job.
+    const printHtml = `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:${labelW}mm ${labelH}mm;margin:0;}body{margin:0;padding:0;}${css}</style></head><body>${pagesHtml}</body></html>`;
 
     // Hidden iframe — window.open is blocked inside the pywebview/WebView2
     // desktop shell, this pattern already works there (see formula.html's
