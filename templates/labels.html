@@ -79,6 +79,7 @@
                 <span><i class="bi bi-eye"></i> المعاينة (<span id="queueCount">0</span> ليبل)</span>
                 <div>
                     <button class="btn btn-sm btn-outline-danger" onclick="clearQueue()"><i class="bi bi-trash"></i> إفراغ القائمة</button>
+                    <button class="btn btn-sm btn-outline-success" onclick="downloadAllPng()" id="downloadPngBtn" disabled><i class="bi bi-file-earmark-image"></i> تنزيل كصور PNG</button>
                     <button class="btn btn-sm btn-primary" onclick="printLabels()" id="printLabelsBtn" disabled><i class="bi bi-printer-fill"></i> طباعة</button>
                 </div>
             </div>
@@ -193,6 +194,7 @@ function renderPreview() {
     const area = document.getElementById('labelPreviewArea');
     document.getElementById('queueCount').textContent = printQueue.length;
     document.getElementById('printLabelsBtn').disabled = printQueue.length === 0;
+    document.getElementById('downloadPngBtn').disabled = printQueue.length === 0;
     if (!printQueue.length) {
         area.innerHTML = '<div class="text-muted w-100 text-center py-4" id="emptyQueueMsg">أضف مادة من القائمة على اليسار لبدء المعاينة</div>';
         return;
@@ -201,6 +203,7 @@ function renderPreview() {
         <div style="position:relative;">
             ${labelHtml(m, labelW, labelH)}
             <button class="btn btn-sm btn-outline-danger" style="position:absolute;top:-10px;left:-10px;border-radius:50%;width:26px;height:26px;padding:0;line-height:1;" title="إزالة" onclick="removeFromQueue(${i})"><i class="bi bi-x"></i></button>
+            <button class="btn btn-sm btn-outline-success" style="position:absolute;top:-10px;right:-10px;border-radius:50%;width:26px;height:26px;padding:0;line-height:1;" title="تنزيل PNG" onclick="downloadLabelPng(printQueue[${i}])"><i class="bi bi-download"></i></button>
         </div>
     `).join('');
 }
@@ -264,6 +267,133 @@ function printLabels() {
     };
     iframe.onload = fire;
     setTimeout(fire, 500);
+}
+
+// ===== PNG export =====
+// Browser print-to-physical-printer relies on the printer's own driver
+// having a matching custom paper size registered — without it the OS/driver
+// silently falls back to its default (A4/Letter) and rescales, which is why
+// "Save as PDF" always came out correct (it honors @page directly) but real
+// printers gave inconsistent sizes depending on what paper sizes that
+// specific driver happened to have configured. Exporting a PNG at print
+// resolution sidesteps the whole browser-print pipeline — the user's own
+// historical Phomemo label archive was always PNGs imported into Phomemo's
+// own app, so this matches their already-proven workflow instead of
+// fighting print-driver configuration. Drawn natively on canvas (not an
+// SVG/foreignObject screenshot) so there's no font-loading or
+// cross-browser rendering risk in the exported file — every shape/coordinate
+// mirrors the CSS reference-design layout in labelHtml()/pyramidSvg()/
+// xCircleSvg() exactly, just re-expressed as canvas path/text calls.
+const PRINT_DPI = 300;
+const PX_PER_MM = PRINT_DPI / 25.4;
+
+function drawLabelCanvas(m, wMM, hMM) {
+    const scale = wMM / 50; // same ratio labelHtml() uses for its CSS transform
+    const px = refMM => refMM * scale * PX_PER_MM;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(wMM * PX_PER_MM);
+    canvas.height = Math.round(hMM * PX_PER_MM);
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const borderRefMM = 1;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = px(borderRefMM);
+    ctx.strokeRect(px(borderRefMM) / 2, px(borderRefMM) / 2, canvas.width - px(borderRefMM), canvas.height - px(borderRefMM));
+
+    const topCat = topOlfactiveCategory(m);
+    const catLabel = topCat ? OLF_LABELS[OLF_CATS.indexOf(topCat)] : '';
+
+    if (catLabel) {
+        const boxLeft = 2, boxTop = 1.5, boxSize = 6;
+        const toRefMM = (x, y) => ({ x: boxLeft + x / 40 * boxSize, y: boxTop + y / 40 * boxSize });
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = px(3 / 40 * boxSize);
+        const c = toRefMM(20, 20);
+        ctx.beginPath();
+        ctx.arc(px(c.x), px(c.y), px(17 / 40 * boxSize), 0, Math.PI * 2);
+        ctx.stroke();
+        [[11, 11, 29, 29], [29, 11, 11, 29]].forEach(([x1, y1, x2, y2]) => {
+            const p1 = toRefMM(x1, y1), p2 = toRefMM(x2, y2);
+            ctx.beginPath();
+            ctx.moveTo(px(p1.x), px(p1.y));
+            ctx.lineTo(px(p2.x), px(p2.y));
+            ctx.stroke();
+        });
+
+        ctx.fillStyle = '#000';
+        ctx.font = `800 ${px(6)}px Arial`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(catLabel, px(boxLeft + boxSize + 1.2), px(boxTop + boxSize / 2));
+    }
+
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = `700 ${px(3.2)}px Arial`;
+    ctx.fillText(m.name, canvas.width / 2, px(9));
+    if (m.cas_number) {
+        ctx.fillText(`CAS N° :${m.cas_number}`, canvas.width / 2, px(13.5));
+    }
+
+    const pyLeft = 2, pyBottom = 1.5, pySize = 8;
+    const pyTop = 30 - pyBottom - pySize; // 30 = reference design height
+    const pyToRefMM = (x, y) => ({ x: pyLeft + x / 40 * pySize, y: pyTop + y / 40 * pySize });
+    const activeIdx = { 'Top': 0, 'Heart': 1, 'Base': 2 }[m.profile];
+    const polys = [
+        [[20, 1], [27, 14], [13, 14]],
+        [[13, 14], [27, 14], [34, 27], [6, 27]],
+        [[6, 27], [34, 27], [40, 39], [0, 39]]
+    ];
+    polys.forEach((poly, i) => {
+        ctx.beginPath();
+        poly.forEach(([x, y], idx) => {
+            const p = pyToRefMM(x, y);
+            if (idx === 0) ctx.moveTo(px(p.x), px(p.y)); else ctx.lineTo(px(p.x), px(p.y));
+        });
+        ctx.closePath();
+        ctx.fillStyle = i === activeIdx ? '#000' : '#fff';
+        ctx.fill();
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = px(1.6 / 40 * pySize);
+        ctx.stroke();
+    });
+
+    const mw = m.molecular_weight ? `${m.molecular_weight} g/mol` : '? g/mol';
+    const fp = m.flash_point ? `Flash Point : ${m.flash_point}°C` : 'Flash Point : ?°C';
+    ctx.fillStyle = '#000';
+    ctx.font = `700 ${px(2.6)}px Arial`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    const metaRight = 50 - 2, metaBottom = 30 - 1.5, lineGap = 2.6 * 1.3;
+    ctx.fillText(fp, px(metaRight), px(metaBottom));
+    ctx.fillText(mw, px(metaRight), px(metaBottom - lineGap));
+
+    return canvas;
+}
+
+function downloadLabelPng(m) {
+    const canvas = drawLabelCanvas(m, labelW, labelH);
+    canvas.toBlob(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(m.name || 'label').replace(/[\\/:*?"<>|]/g, '_')}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }, 'image/png');
+}
+
+// Small stagger between downloads — firing several a.click() downloads in
+// the same tick can trip some browsers' "multiple downloads" prompt/blocker.
+function downloadAllPng() {
+    printQueue.forEach((m, i) => setTimeout(() => downloadLabelPng(m), i * 300));
 }
 
 $(document).ready(function() {
