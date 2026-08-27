@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}My Perfumery - ليبلات المواد{% endblock %}
+
+{% block content %}
+<style id="labelCss">
+/* Shared between the on-page preview and the print iframe (read via
+   textContent at print time) so the two never drift apart. */
+.ph-label-frame { overflow:hidden; page-break-after: always; box-sizing:border-box; background:#fff; }
+.ph-label-inner {
+    width: 50mm; height: 30mm; box-sizing: border-box;
+    border: 1mm solid #000; padding: 1.5mm 2mm;
+    display: flex; flex-direction: column;
+    font-family: Arial, 'Tajawal', sans-serif; color:#000; background:#fff;
+    direction: ltr;
+}
+.ph-top-row { display:flex; align-items:center; justify-content:flex-start; gap:1.2mm; }
+.ph-x-icon { width:6mm; height:6mm; flex-shrink:0; }
+.ph-family { font-weight:800; font-size:6.5mm; line-height:1; white-space:nowrap; }
+.ph-name { font-weight:700; font-size:3.4mm; text-align:center; margin-top:1mm; line-height:1.15; }
+.ph-cas { font-weight:700; font-size:3.4mm; text-align:center; }
+.ph-bottom-row { flex:1; display:flex; align-items:flex-end; justify-content:space-between; }
+.ph-pyramid { width:9mm; height:9mm; flex-shrink:0; }
+.ph-meta { text-align:left; font-weight:700; font-size:2.8mm; line-height:1.35; }
+</style>
+<div class="mb-4">
+    <h2><i class="bi bi-tag"></i> ليبلات المواد</h2>
+    <p class="text-muted mb-0">اطبع ستيكر لكل مادة بنفس تصميم ليبلات Phomemo — العائلة العطرية، الاسم، رقم CAS، هرم Top/Heart/Base، الوزن الجزيئي، ونقطة الوميض.</p>
+</div>
+
+<div class="row">
+    <div class="col-lg-4 mb-4">
+        <div class="card mb-3">
+            <div class="card-header"><i class="bi bi-rulers"></i> مقاس الليبل</div>
+            <div class="card-body">
+                <div class="btn-group w-100 mb-3" role="group">
+                    <button type="button" class="btn btn-outline-primary size-preset-btn active" data-w="50" data-h="30" onclick="setSizePreset(this)">5×3 سم</button>
+                    <button type="button" class="btn btn-outline-primary size-preset-btn" data-w="60" data-h="38" onclick="setSizePreset(this)">6×4 سم</button>
+                </div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label" style="font-size:0.8rem;">العرض (mm)</label>
+                        <input type="number" id="labelWidth" class="form-control form-control-sm" value="50" min="20" max="150" step="1" oninput="onCustomSizeChange()">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" style="font-size:0.8rem;">الارتفاع (mm)</label>
+                        <input type="number" id="labelHeight" class="form-control form-control-sm" value="30" min="15" max="150" step="1" oninput="onCustomSizeChange()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><i class="bi bi-search"></i> إضافة مادة</div>
+            <div class="card-body">
+                <select id="labelMaterialPicker" class="w-100" style="width:100%;"></select>
+                <div class="form-text">اختر مادة لإضافتها لقائمة الطباعة — تقدر تضيف أكثر من مادة وتطبعهم دفعة وحدة.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-eye"></i> المعاينة (<span id="queueCount">0</span> ليبل)</span>
+                <div>
+                    <button class="btn btn-sm btn-outline-danger" onclick="clearQueue()"><i class="bi bi-trash"></i> إفراغ القائمة</button>
+                    <button class="btn btn-sm btn-primary" onclick="printLabels()" id="printLabelsBtn" disabled><i class="bi bi-printer-fill"></i> طباعة</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="labelPreviewArea" class="d-flex flex-wrap gap-3" style="background:#e9e4d8;padding:16px;border-radius:8px;min-height:120px;">
+                    <div class="text-muted w-100 text-center py-4" id="emptyQueueMsg">أضف مادة من القائمة على اليسار لبدء المعاينة</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const OLF_CATS = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal'];
+const OLF_LABELS = ['Citrus','Aldehydic','Aromatic','Green','Marine','Floral','Fruity','Spicy','Balsamic','Woody','Ambery','Musky','Leathery','Animal'];
+
+let printQueue = [];
+let labelW = 50, labelH = 30;
+
+function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function setSizePreset(btn) {
+    document.querySelectorAll('.size-preset-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('labelWidth').value = btn.dataset.w;
+    document.getElementById('labelHeight').value = btn.dataset.h;
+    labelW = parseFloat(btn.dataset.w);
+    labelH = parseFloat(btn.dataset.h);
+    renderPreview();
+}
+
+function onCustomSizeChange() {
+    document.querySelectorAll('.size-preset-btn').forEach(b => b.classList.remove('active'));
+    labelW = parseFloat(document.getElementById('labelWidth').value) || 50;
+    labelH = parseFloat(document.getElementById('labelHeight').value) || 30;
+    renderPreview();
+}
+
+// Highest-scoring olfactive category, matching the same "top note" logic
+// materials.html's card view already uses for its topNotes chips — just
+// reduced to a single winner instead of the top 4, since the label only
+// has room for one family name at the top.
+function topOlfactiveCategory(m) {
+    if (!m.olfactive) return null;
+    let best = null, bestVal = 0;
+    OLF_CATS.forEach(c => {
+        const v = m.olfactive[c] || 0;
+        if (v > bestVal) { bestVal = v; best = c; }
+    });
+    return best;
+}
+
+// 3-band pyramid — top/middle/bottom bands correspond to materials.profile
+// (Top/Heart/Base), filled black to mark which one this material is,
+// matching the pyramid icon on the user's own printed label archive.
+function pyramidSvg(profile) {
+    const activeIdx = { 'Top': 0, 'Heart': 1, 'Base': 2 }[profile];
+    const polys = [
+        '20,1 27,14 13,14',
+        '13,14 27,14 34,27 6,27',
+        '6,27 34,27 40,39 0,39'
+    ];
+    return `<svg viewBox="0 0 40 40" style="width:100%;height:100%;">${polys.map((p, i) =>
+        `<polygon points="${p}" fill="${i === activeIdx ? '#000' : '#fff'}" stroke="#000" stroke-width="1.6"/>`
+    ).join('')}</svg>`;
+}
+
+function xCircleSvg() {
+    return `<svg viewBox="0 0 40 40" style="width:100%;height:100%;">
+        <circle cx="20" cy="20" r="17" fill="none" stroke="#000" stroke-width="3"/>
+        <line x1="11" y1="11" x2="29" y2="29" stroke="#000" stroke-width="3"/>
+        <line x1="29" y1="11" x2="11" y2="29" stroke="#000" stroke-width="3"/>
+    </svg>`;
+}
+
+// The label's own internal layout is fixed at a 50x30mm reference design
+// (matching the size ~90% of the user's printed archive uses) and scaled
+// via CSS transform to whatever width the user picked — keeps proportions
+// identical to the reference regardless of chosen physical size, instead
+// of trying to re-flow the layout at every possible size.
+function labelHtml(m, w, h) {
+    const topCat = topOlfactiveCategory(m);
+    const catLabel = topCat ? OLF_LABELS[OLF_CATS.indexOf(topCat)] : '';
+    const mw = m.molecular_weight ? `${m.molecular_weight} g/mol` : '? g/mol';
+    const fp = m.flash_point ? `Flash Point : ${m.flash_point}°C` : 'Flash Point : ?°C';
+    const scale = w / 50;
+    const inner = `
+        <div class="ph-label-inner">
+            ${catLabel ? `<div class="ph-top-row">
+                <div class="ph-x-icon">${xCircleSvg()}</div>
+                <div class="ph-family">${escapeHtml(catLabel)}</div>
+            </div>` : ''}
+            <div class="ph-name">${escapeHtml(m.name)}</div>
+            ${m.cas_number ? `<div class="ph-cas">CAS N° :${escapeHtml(m.cas_number)}</div>` : ''}
+            <div class="ph-bottom-row">
+                <div class="ph-pyramid">${pyramidSvg(m.profile)}</div>
+                <div class="ph-meta">
+                    <div>${mw}</div>
+                    <div>${fp}</div>
+                </div>
+            </div>
+        </div>`;
+    return `<div class="ph-label-frame" style="width:${w}mm;height:${h}mm;">
+        <div style="transform:scale(${scale});transform-origin:top left;width:50mm;height:30mm;">${inner}</div>
+    </div>`;
+}
+
+function renderPreview() {
+    const area = document.getElementById('labelPreviewArea');
+    document.getElementById('queueCount').textContent = printQueue.length;
+    document.getElementById('printLabelsBtn').disabled = printQueue.length === 0;
+    if (!printQueue.length) {
+        area.innerHTML = '<div class="text-muted w-100 text-center py-4" id="emptyQueueMsg">أضف مادة من القائمة على اليسار لبدء المعاينة</div>';
+        return;
+    }
+    area.innerHTML = printQueue.map((m, i) => `
+        <div style="position:relative;">
+            ${labelHtml(m, labelW, labelH)}
+            <button class="btn btn-sm btn-outline-danger" style="position:absolute;top:-10px;left:-10px;border-radius:50%;width:26px;height:26px;padding:0;line-height:1;" title="إزالة" onclick="removeFromQueue(${i})"><i class="bi bi-x"></i></button>
+        </div>
+    `).join('');
+}
+
+function addMaterialToQueue(id) {
+    fetch(`/api/materials?action=get&id=${id}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { showAlert(data.message || 'تعذر جلب بيانات المادة', 'danger'); return; }
+            printQueue.push(data.data);
+            renderPreview();
+        })
+        .catch(err => showAlert('خطأ: ' + err.message, 'danger'));
+}
+
+function removeFromQueue(idx) {
+    printQueue.splice(idx, 1);
+    renderPreview();
+}
+
+function clearQueue() {
+    printQueue = [];
+    renderPreview();
+}
+
+function printLabels() {
+    if (!printQueue.length) return;
+    const pagesHtml = printQueue.map(m => labelHtml(m, labelW, labelH)).join('');
+    // Reuses the exact same CSS the on-page preview renders with (read
+    // live from #labelCss) plus @page/body resets only relevant to the
+    // print document, so preview and print can never visually drift apart.
+    const css = document.getElementById('labelCss').textContent;
+    const printHtml = `<!doctype html><html><head><meta charset="utf-8"><style>@page{margin:0;}body{margin:0;padding:0;}${css}</style></head><body>${pagesHtml}</body></html>`;
+
+    // Hidden iframe — window.open is blocked inside the pywebview/WebView2
+    // desktop shell, this pattern already works there (see formula.html's
+    // Scale-modal print).
+    let iframe = document.getElementById('labelsPrintFrame');
+    if (iframe) iframe.remove();
+    iframe = document.createElement('iframe');
+    iframe.id = 'labelsPrintFrame';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:-10000px;bottom:0;width:400px;height:300px;border:0;visibility:hidden;';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(printHtml);
+    doc.close();
+
+    const fire = () => {
+        try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        } catch (e) { console.error('print failed:', e); }
+    };
+    iframe.onload = fire;
+    setTimeout(fire, 500);
+}
+
+$(document).ready(function() {
+    $('#labelMaterialPicker').select2({
+        theme: 'bootstrap-5',
+        dir: 'rtl',
+        placeholder: '-- ابحث عن مادة --',
+        allowClear: true,
+        ajax: {
+            url: '/api/materials/search',
+            dataType: 'json',
+            delay: 200,
+            data: params => ({ q: params.term || '' }),
+            processResults: data => ({ results: data.results })
+        },
+        language: {
+            noResults: function() { return "لا توجد نتائج"; },
+            searching: function() { return "جاري البحث..."; }
+        }
+    });
+    $('#labelMaterialPicker').on('select2:select', function(e) {
+        addMaterialToQueue(e.params.data.id);
+        $(this).val(null).trigger('change');
+    });
+    renderPreview();
+});
+</script>
+{% endblock %}

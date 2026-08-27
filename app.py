@@ -821,6 +821,14 @@ def _ensure_db_migrated(conn):
     # "expiring soon" (within 60 days) with a badge, nothing more automated.
     if 'expiry_date' not in mat_cols:
         conn.execute("ALTER TABLE materials ADD COLUMN expiry_date TEXT DEFAULT NULL")
+    # PubChem/Scentree both already return a molecular weight from every CAS
+    # lookup, but nothing ever persisted it — added specifically because the
+    # user's printed sample labels (Phomemo label archive) always show a
+    # literal "? g/mol" placeholder for it, having never had anywhere to
+    # come from. Now in _DATA_FILLABLE_FIELDS so the normal "تحديث البيانات"
+    # pipeline fills it like any other field.
+    if 'molecular_weight' not in mat_cols:
+        conn.execute("ALTER TABLE materials ADD COLUMN molecular_weight TEXT DEFAULT NULL")
     # Same tags, pre-extracted from the offline reference file's "Uses"
     # column, so _lookup_local_reference() can merge them into new materials.
     ref_cols = [row[1] for row in conn.execute("PRAGMA table_info(materials_reference)").fetchall()]
@@ -1838,6 +1846,19 @@ def msds_generator():
     return render_template('msds_generator.html', formulas=formulas, materials=materials, company=company,
                           h_codes=GHS_H_CODES, p_codes=GHS_P_CODES, pictograms=GHS_PICTOGRAMS,
                           signal_words=GHS_SIGNAL_WORDS, classifications=GHS_CLASSIFICATIONS)
+
+@app.route('/labels')
+@login_required
+def labels_page():
+    """Sticker/label printing for materials — modeled on the user's own
+    Phomemo label archive (thermal-printer label design app): a bordered
+    label with the material's top olfactive category + a decorative
+    circle-X mark, the name, CAS number, a 3-band pyramid icon marking
+    Top/Heart/Base position, and molecular weight / flash point in the
+    corner. No server-side data needed — materials are searched/fetched
+    client-side via the existing /api/materials/search and
+    /api/materials?action=get endpoints, same as the formula ingredient pickers."""
+    return render_template('labels.html')
 
 @app.route('/settings')
 @login_required
@@ -2884,7 +2905,7 @@ def api_materials():
                         color=?, physical_state=?, ph=?, melting_point=?, boiling_point=?,
                         solubility=?, vapor_density=?, appearance=?, refractive_index=?,
                         synonyms=?, lot=?, strength_odor=?, vapor_pressure=?,
-                        effect=?, recommended_smell_pct=?, properties=?, in_stock=?, uses=?, expiry_date=? WHERE id=?''',
+                        effect=?, recommended_smell_pct=?, properties=?, in_stock=?, uses=?, expiry_date=?, molecular_weight=? WHERE id=?''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
@@ -2901,7 +2922,8 @@ def api_materials():
                          request.form.get('effect'), request.form.get('recommended_smell_pct'),
                          request.form.get('properties'),
                          float(request.form.get('in_stock') or 0), uses_json,
-                         request.form.get('expiry_date') or None, id))
+                         request.form.get('expiry_date') or None,
+                         request.form.get('molecular_weight'), id))
                     mat_id = id
                     msg = 'تم التحديث'
                 else:
@@ -2909,8 +2931,8 @@ def api_materials():
                         supplier_id, ifra_limit, manual_ifra_cats, purchase_price, purchase_quantity, price_per_gram,
                         odor_description, notes, flash_point, specific_gravity, color, physical_state,
                         ph, melting_point, boiling_point, solubility, vapor_density, appearance, refractive_index,
-                        synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock, uses, expiry_date)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        synonyms, lot, strength_odor, vapor_pressure, effect, recommended_smell_pct, properties, in_stock, uses, expiry_date, molecular_weight)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (name, request.form.get('name_ar'), request.form.get('cas_number'),
                          request.form.get('family_id') or None, request.form.get('profile', 'Heart'),
                          request.form.get('supplier_id') or None, request.form.get('ifra_limit') or None,
@@ -2927,7 +2949,8 @@ def api_materials():
                          request.form.get('effect'), request.form.get('recommended_smell_pct'),
                          request.form.get('properties'),
                          float(request.form.get('in_stock') or 0), uses_json,
-                         request.form.get('expiry_date') or None))
+                         request.form.get('expiry_date') or None,
+                         request.form.get('molecular_weight')))
                     mat_id = cur.lastrowid
                     msg = f'تم الإضافة (ID: {mat_id})'
                 
@@ -3557,6 +3580,7 @@ _DATA_FILLABLE_FIELDS = (
     'odor_description', 'flash_point', 'specific_gravity', 'refractive_index',
     'color', 'appearance', 'melting_point', 'boiling_point', 'ph', 'solubility',
     'vapor_density', 'synonyms', 'vapor_pressure', 'strength_odor', 'recommended_smell_pct',
+    'molecular_weight',
 )
 
 _CAS_RE = re.compile(r'\d{2,7}-\d{2}-\d\b')

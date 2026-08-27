@@ -652,6 +652,14 @@
                             <div class="row">
                                 <div class="col-md-3">
                                     <div class="mb-3">
+                                        <label class="form-label">Molecular Weight (g/mol)</label>
+                                        <input type="text" name="molecular_weight" id="mat_molecular_weight" class="form-control">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="mb-3">
                                         <label class="form-label">Specific Gravity</label>
                                         <input type="text" name="specific_gravity" id="mat_sg" class="form-control">
                                     </div>
@@ -2384,6 +2392,7 @@ function editMaterial(id) {
                 document.getElementById('mat_notes').value = m.notes || '';
                 // Physical
                 document.getElementById('mat_flash').value = m.flash_point || '';
+                document.getElementById('mat_molecular_weight').value = m.molecular_weight || '';
                 document.getElementById('mat_sg').value = m.specific_gravity || '';
                 document.getElementById('mat_color').value = m.color || '';
                 document.getElementById('mat_appearance').value = m.appearance || '';
@@ -2607,6 +2616,7 @@ function fetchCASData() {
 
             fillIfEmpty('mat_odor', d.odor_description);
             fillIfEmpty('mat_flash', d.flash_point);
+            fillIfEmpty('mat_molecular_weight', d.molecular_weight);
             fillIfEmpty('mat_sg', d.specific_gravity);
             fillIfEmpty('mat_color', d.color);
             fillIfEmpty('mat_appearance', d.appearance);
@@ -2668,6 +2678,7 @@ function fetchScentreeData() {
             };
 
             fillIfEmpty('mat_flash', d.flash_point);
+            fillIfEmpty('mat_molecular_weight', d.molecular_weight);
             fillIfEmpty('mat_sg', d.specific_gravity);
             fillIfEmpty('mat_refractive', d.refractive_index);
             fillIfEmpty('mat_appearance', d.appearance);
@@ -2752,6 +2763,7 @@ function fetchTGSCData() {
             fillIfEmpty('mat_odor', d.odor_description);
             fillIfEmpty('mat_strength_odor', d.strength_odor);
             fillIfEmpty('mat_flash', d.flash_point);
+            fillIfEmpty('mat_molecular_weight', d.molecular_weight);
             fillIfEmpty('mat_sg', d.specific_gravity);
             fillIfEmpty('mat_refractive', d.refractive_index);
             fillIfEmpty('mat_appearance', d.appearance);
