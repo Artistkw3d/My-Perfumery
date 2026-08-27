@@ -4409,7 +4409,7 @@ def _find_diluted_by_name_candidates(conn):
     substance they're diluting might be regulated. Returns a list of dicts
     describing what was found, without changing anything — the caller
     decides what to actually do with each entry."""
-    rows = conn.execute("SELECT id, name, cas_number FROM materials").fetchall()
+    rows = conn.execute("SELECT id, name, cas_number, family_id, profile, supplier_id FROM materials").fetchall()
     has_composition = {r[0] for r in conn.execute(
         "SELECT DISTINCT parent_material_id FROM material_composition"
     ).fetchall()}
@@ -4451,6 +4451,7 @@ def _find_diluted_by_name_candidates(conn):
 
         results.append({
             'id': r['id'], 'name': r['name'], 'cas_number': r['cas_number'] or '',
+            'family_id': r['family_id'], 'profile': r['profile'] or 'Heart', 'supplier_id': r['supplier_id'],
             'pct': pct, 'solvent_token': solvent_token, 'base_name': base_name,
             'sibling': dict(sibling) if sibling else None,
             'solvent': dict(solvent) if solvent else None,
@@ -4468,17 +4469,46 @@ def api_materials_fix_diluted_names():
     diluted material's own cas_number if it matched the sibling's, so the
     IFRA calc engine falls through to the (correct) composition-derived
     limit instead of treating the full weight as 100% pure substance.
-    Synchronous (pure local DB matching, no network calls needed) unlike
-    the PubChem/TGSC/Scentree bulk jobs. Entries with no findable pure
-    sibling are reported as skipped rather than guessed at."""
+    Synchronous (pure local DB matching for the sibling search; a
+    newly-created sibling still goes through the normal CAS-based
+    enrichment pipeline, same as any other material). Entries with
+    genuinely no way to identify the pure substance (no matching name AND
+    no cas_number to fall back on) are reported as skipped rather than
+    guessed at."""
     conn = get_db()
     candidates = _find_diluted_by_name_candidates(conn)
     fixed, skipped = [], []
     for c in candidates:
-        if not c['sibling']:
-            skipped.append({'id': c['id'], 'name': c['name'], 'reason': 'لا توجد مادة نقية بنفس الاسم لمطابقتها'})
-            continue
         sib = c['sibling']
+        created_sibling = False
+        if not sib:
+            if not c['cas_number']:
+                skipped.append({
+                    'id': c['id'], 'name': c['name'],
+                    'reason': 'لا توجد مادة نقية بنفس الاسم، ولا رقم CAS على هذه المادة لإنشاء واحدة'
+                })
+                continue
+            # The diluted material's OWN cas_number is the pure substance's
+            # real CAS — the user already entered it, just on the wrong row
+            # structurally (the diluted blend, not its pure component). Move
+            # it to a proper new "pure" material instead of leaving this one
+            # permanently stuck needing hand entry, then run it through the
+            # exact same CAS-based enrichment every other material uses so
+            # it isn't a bare empty row.
+            cur = conn.execute('''INSERT INTO materials
+                (name, cas_number, family_id, profile, supplier_id,
+                 purchase_price, purchase_quantity, price_per_gram, in_stock)
+                VALUES (?,?,?,?,?,?,?,?,?)''',
+                (c['base_name'], c['cas_number'], c['family_id'], c['profile'], c['supplier_id'],
+                 0, 1, 0, 0))
+            new_sib_id = cur.lastrowid
+            try:
+                _enrich_material_data(conn, new_sib_id, c['cas_number'])
+            except Exception as e:
+                log(f"[fix-diluted-names] enrichment failed for new sibling {new_sib_id}: {e}")
+            sib = {'id': new_sib_id, 'name': c['base_name'], 'cas_number': c['cas_number']}
+            created_sibling = True
+
         conn.execute('''INSERT INTO material_composition
             (parent_material_id, component_material_id, pct, note)
             VALUES (?,?,?,?)''', (c['id'], sib['id'], c['pct'], 'مخفف (تلقائي من الاسم)'))
@@ -4489,16 +4519,18 @@ def api_materials_fix_diluted_names():
                 VALUES (?,?,?,?)''', (c['id'], c['solvent']['id'], 100 - c['pct'], 'مذيب (تلقائي)'))
             solvent_used = c['solvent']['name']
         # Only clear the diluted material's own CAS if it's the exact CAS
-        # that caused the bug (matches the pure sibling's) — never blindly
-        # wipe a CAS that came from matching by name alone and differs.
+        # that caused the bug (matches the pure sibling's — true both when
+        # an existing sibling was matched by CAS and when we just created
+        # one from this same CAS) — never blindly wipe a CAS that came from
+        # a name-only match and actually differs.
         cas_cleared = False
         if c['cas_number'] and sib.get('cas_number') and c['cas_number'] == sib['cas_number']:
             conn.execute("UPDATE materials SET cas_number=NULL WHERE id=?", (c['id'],))
             cas_cleared = True
         fixed.append({
             'id': c['id'], 'name': c['name'], 'pct': c['pct'],
-            'sibling_name': sib['name'], 'solvent_used': solvent_used,
-            'cas_cleared': cas_cleared,
+            'sibling_name': sib['name'], 'sibling_created': created_sibling,
+            'solvent_used': solvent_used, 'cas_cleared': cas_cleared,
         })
     conn.commit()
     conn.close()
