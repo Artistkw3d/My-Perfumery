@@ -1278,10 +1278,13 @@ function runBulkJob(startUrl, confirmMsg, title, resultRenderer) {
             }
             if (data.total === 0) {
                 document.getElementById('photoBulkCloseBtn').style.display = '';
-                _bulkJobSetBody('<div class="text-muted">لا توجد مواد بحاجة لتحديث حالياً</div>');
+                const wheelMsg = data.wheel_backfilled
+                    ? `<div class="mt-2 text-success" style="font-size:0.85rem;">تم تحديث عجلة الروائح لـ ${data.wheel_backfilled} مادة كانت بياناتها موجودة من قبل</div>` : '';
+                _bulkJobSetBody(`<div class="text-muted">لا توجد مواد جديدة بحاجة لبحث CAS حالياً</div>${wheelMsg}`);
+                if (data.wheel_backfilled) loadMaterials();
                 return;
             }
-            pollBulkJob(data.job_id, data.total, resultRenderer);
+            pollBulkJob(data.job_id, data.total, resultRenderer, { wheel_backfilled: data.wheel_backfilled });
         })
         .catch(() => {
             document.getElementById('photoBulkCloseBtn').style.display = '';
@@ -1289,7 +1292,7 @@ function runBulkJob(startUrl, confirmMsg, title, resultRenderer) {
         });
 }
 
-function pollBulkJob(jobId, total, resultRenderer) {
+function pollBulkJob(jobId, total, resultRenderer, extra) {
     fetch(`/api/materials/bulk-job-status?job_id=${encodeURIComponent(jobId)}`)
         .then(r => r.json())
         .then(data => {
@@ -1300,7 +1303,7 @@ function pollBulkJob(jobId, total, resultRenderer) {
             }
             if (data.status === 'done') {
                 document.getElementById('photoBulkCloseBtn').style.display = '';
-                resultRenderer(data);
+                resultRenderer(Object.assign({}, data, extra || {}));
                 loadMaterials();
                 return;
             }
@@ -1312,9 +1315,9 @@ function pollBulkJob(jobId, total, resultRenderer) {
                 <div class="text-muted" style="font-size:0.85rem;">
                     ${data.processed} / ${total}${data.current ? ' — ' + escapeHtml(data.current) : ''}
                 </div>`);
-            setTimeout(() => pollBulkJob(jobId, total, resultRenderer), 1000);
+            setTimeout(() => pollBulkJob(jobId, total, resultRenderer, extra), 1000);
         })
-        .catch(() => { setTimeout(() => pollBulkJob(jobId, total, resultRenderer), 2000); });
+        .catch(() => { setTimeout(() => pollBulkJob(jobId, total, resultRenderer, extra), 2000); });
 }
 
 function startBulkPhotoUpdate() {
@@ -1363,6 +1366,7 @@ function renderBulkDataResults(data) {
             <div class="mb-1"><b>${data.updated_count}</b> مادة تم تحديث بياناتها</div>
             <div class="mb-1 text-muted"><b>${data.not_found_count}</b> مادة لم يُعثر على بيانات إضافية لها</div>
             ${data.skipped_no_identifier ? `<div class="mb-1 text-muted"><b>${data.skipped_no_identifier}</b> مادة بدون رقم CAS (تم تجاوزها)</div>` : ''}
+            ${data.wheel_backfilled ? `<div class="mb-1 text-success"><b>${data.wheel_backfilled}</b> مادة أخرى تم تحديث عجلة الروائح لها (كانت بياناتها موجودة من قبل)</div>` : ''}
         </div>
         ${notFoundList ? `
         <div class="mt-3 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#faf7f0;border-radius:8px;padding:8px 12px;">

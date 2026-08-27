@@ -3716,6 +3716,35 @@ def _enrich_material_data(conn, mid, cas):
     conn.commit()
     return len(updates) + extra_filled
 
+def _backfill_olfactive_wheels(conn):
+    """Sweeps every material with an odor_description but no wheel data yet
+    and classifies it — a standalone catch-all pass, separate from the
+    inline classify inside _enrich_material_data(), specifically so it can
+    run unconditionally on every bulk-update click instead of only for
+    materials still eligible for a fresh CAS search. Pure local computation
+    (auto_classify_odor is keyword matching, no network calls), so there's
+    no cost to running it every time. Returns how many materials it fixed."""
+    rows = conn.execute(
+        "SELECT id, odor_description FROM materials WHERE odor_description IS NOT NULL AND TRIM(odor_description) != ''"
+    ).fetchall()
+    fixed = 0
+    for r in rows:
+        existing_olf = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (r['id'],)).fetchone()
+        has_real_olf = existing_olf and any((existing_olf[c] or 0) > 0 for c in OLFACTIVE_CATEGORIES)
+        if has_real_olf:
+            continue
+        scores = auto_classify_odor(r['odor_description'])
+        if any(v > 0 for v in scores.values()):
+            conn.execute(
+                f"INSERT OR REPLACE INTO material_olfactive (material_id, {', '.join(OLFACTIVE_CATEGORIES)}) "
+                f"VALUES (?, {', '.join('?' for _ in OLFACTIVE_CATEGORIES)})",
+                (r['id'], *[scores[c] for c in OLFACTIVE_CATEGORIES])
+            )
+            fixed += 1
+    if fixed:
+        conn.commit()
+    return fixed
+
 def _run_data_bulk_job(job_id, materials):
     conn = get_db()
     updated, not_found = [], []
@@ -3760,6 +3789,15 @@ def api_materials_data_bulk_update():
     instead of re-hitting the same three sources for materials that were
     already resolved (or already confirmed to have nothing available)."""
     conn = get_db()
+    # Olfactive-wheel backfill is pure local computation (no PubChem/TGSC/
+    # Scentree calls), so it runs synchronously here on every click,
+    # regardless of data_searched_at — otherwise a material whose
+    # odor_description was already filled in an EARLIER run (before wheel
+    # auto-classification existed, or via any other path) would be
+    # permanently stuck with a blank wheel: the CAS-search loop below now
+    # correctly skips it forever since it's already marked searched, so
+    # nothing else would ever give it a chance to be classified.
+    wheel_backfilled = _backfill_olfactive_wheels(conn)
     rows = conn.execute(
         "SELECT id, name, cas_number FROM materials "
         "WHERE cas_number IS NOT NULL AND TRIM(cas_number) != '' AND data_searched_at IS NULL"
@@ -3768,7 +3806,7 @@ def api_materials_data_bulk_update():
     materials = [{'id': m['id'], 'name': m['name'], 'cas': m['cas_number']} for m in rows]
     job_id = _bulk_job_start(len(materials))
     threading.Thread(target=_run_data_bulk_job, args=(job_id, materials), daemon=True).start()
-    return jsonify({'success': True, 'job_id': job_id, 'total': len(materials)})
+    return jsonify({'success': True, 'job_id': job_id, 'total': len(materials), 'wheel_backfilled': wheel_backfilled})
 
 @app.route('/api/use-tags', methods=['POST'])
 @login_required
