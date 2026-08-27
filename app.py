@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ET
 import tempfile
 import uuid
 import threading
+import base64
 from datetime import datetime
 from functools import wraps
 
@@ -1859,6 +1860,50 @@ def labels_page():
     client-side via the existing /api/materials/search and
     /api/materials?action=get endpoints, same as the formula ingredient pickers."""
     return render_template('labels.html')
+
+# Client-rendered label PNGs (canvas.toBlob) need a real file-download prompt,
+# but a blob: URL + synthetic <a download> click isn't reliable inside the
+# pywebview/WebView2 desktop shell. The pattern that's already proven to work
+# there in this app is a same-origin GET navigation (see downloadBackup() in
+# settings.html) — so the browser-generated PNG gets stashed here first, then
+# fetched back via a plain URL the frontend can window.location.href to.
+_LABEL_PNG_DOWNLOADS = {}
+_LABEL_PNG_DOWNLOADS_LOCK = threading.Lock()
+
+def _purge_stale_label_png_downloads():
+    cutoff = datetime.now().timestamp() - 600  # 10 minutes — plenty for a same-page download
+    stale = [t for t, e in _LABEL_PNG_DOWNLOADS.items() if e['created'] < cutoff]
+    for t in stale:
+        _LABEL_PNG_DOWNLOADS.pop(t, None)
+
+@app.route('/api/labels/render-png', methods=['POST'])
+@login_required
+def api_labels_render_png():
+    data_url = request.form.get('image_data', '')
+    filename = (request.form.get('filename') or 'label.png').strip()
+    if not data_url.startswith('data:image/png;base64,'):
+        return jsonify({'success': False, 'message': 'صيغة بيانات غير صحيحة'}), 400
+    try:
+        png_bytes = base64.b64decode(data_url.split(',', 1)[1])
+    except Exception:
+        return jsonify({'success': False, 'message': 'تعذر قراءة الصورة'}), 400
+    token = uuid.uuid4().hex
+    with _LABEL_PNG_DOWNLOADS_LOCK:
+        _purge_stale_label_png_downloads()
+        _LABEL_PNG_DOWNLOADS[token] = {'data': png_bytes, 'filename': filename, 'created': datetime.now().timestamp()}
+    return jsonify({'success': True, 'token': token})
+
+@app.route('/api/labels/download-png/<token>')
+@login_required
+def api_labels_download_png(token):
+    with _LABEL_PNG_DOWNLOADS_LOCK:
+        entry = _LABEL_PNG_DOWNLOADS.pop(token, None)
+    if not entry:
+        return 'Not found', 404
+    safe_name = re.sub(r'[\\/:*?"<>|]', '_', entry['filename']) or 'label.png'
+    return Response(entry['data'], mimetype='image/png', headers={
+        'Content-Disposition': f'attachment; filename="{safe_name}"'
+    })
 
 @app.route('/settings')
 @login_required
