@@ -806,6 +806,14 @@ def _ensure_db_migrated(conn):
     if 'uses' not in mat_cols:
         conn.execute("ALTER TABLE materials ADD COLUMN uses TEXT DEFAULT ''")
         conn.execute("UPDATE materials SET uses='[\"silage\"]' WHERE physical_state='Crystal'")
+    # Tracks whether a material has already been through the "تحديث
+    # البيانات" bulk enrichment pass, so a repeat click only searches
+    # materials that have never been attempted instead of re-hitting
+    # PubChem/TGSC/Scentree for ones already resolved (or already known
+    # to have no data available). Set once per material regardless of
+    # outcome — see _run_data_bulk_job.
+    if 'data_searched_at' not in mat_cols:
+        conn.execute("ALTER TABLE materials ADD COLUMN data_searched_at TEXT DEFAULT NULL")
     # Same tags, pre-extracted from the offline reference file's "Uses"
     # column, so _lookup_local_reference() can merge them into new materials.
     ref_cols = [row[1] for row in conn.execute("PRAGMA table_info(materials_reference)").fetchall()]
@@ -3693,6 +3701,11 @@ def _run_data_bulk_job(job_id, materials):
             updated.append({'id': m['id'], 'name': name, 'filled': filled})
         else:
             not_found.append({'id': m['id'], 'name': name})
+        # Mark as attempted regardless of outcome — a repeat run of this
+        # bulk job should never re-search the same material twice, whether
+        # or not the last attempt actually found anything.
+        conn.execute("UPDATE materials SET data_searched_at=datetime('now') WHERE id=?", (m['id'],))
+        conn.commit()
     conn.close()
     _bulk_job_update(job_id, status='done', processed=len(materials), current='',
                       updated=updated, updated_count=len(updated),
@@ -3703,13 +3716,19 @@ def _run_data_bulk_job(job_id, materials):
 @login_required
 def api_materials_data_bulk_update():
     """يبدأ مهمة خلفية تملأ الحقول الفارغة (وصف الرائحة، نقطة الوميض،
-    الكثافة، ...) لكل مادة لديها رقم CAS، من PubChem ثم TGSC ثم Scentree.
-    مواد بدون CAS خارج نطاق هذه الميزة عمداً (تُدار يدوياً). لا يستبدل
-    أي قيمة موجودة مسبقاً. يرجع job_id فوراً؛ التقدم يُتابع عبر
-    /api/materials/bulk-job-status."""
+    الكثافة، ...) لكل مادة لديها رقم CAS ولم يسبق البحث عنها، من PubChem
+    ثم TGSC ثم Scentree. مواد بدون CAS خارج نطاق هذه الميزة عمداً (تُدار
+    يدوياً). لا يستبدل أي قيمة موجودة مسبقاً. يرجع job_id فوراً؛ التقدم
+    يُتابع عبر /api/materials/bulk-job-status.
+    Once a material has been through this job (successfully or not) it's
+    marked via data_searched_at and excluded from future runs — clicking
+    the button again only searches materials that were never attempted,
+    instead of re-hitting the same three sources for materials that were
+    already resolved (or already confirmed to have nothing available)."""
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, name, cas_number FROM materials WHERE cas_number IS NOT NULL AND TRIM(cas_number) != ''"
+        "SELECT id, name, cas_number FROM materials "
+        "WHERE cas_number IS NOT NULL AND TRIM(cas_number) != '' AND data_searched_at IS NULL"
     ).fetchall()
     conn.close()
     materials = [{'id': m['id'], 'name': m['name'], 'cas': m['cas_number']} for m in rows]
@@ -4368,6 +4387,125 @@ def api_material_quick_dilute():
         conn.close()
         return jsonify({'success': False, 'message': str(e)}), 500
 
+# Same diluent vocabulary as the formula-ingredient diluent dropdown
+# (formula.html's diluentOptions) — reused here so name-detection only
+# matches a real, known diluent token, not any stray "%" in a name.
+_DILUENT_NAME_TOKENS = ('Ethanol', 'DPG', 'IPM', 'TEC', 'MMB', 'BB', 'DEP')
+_DILUTED_NAME_RE = re.compile(
+    r'(\d+(?:\.\d+)?)\s*%\s*(?:in\s+)?(' + '|'.join(_DILUENT_NAME_TOKENS) + r')\b',
+    re.I
+)
+
+def _find_diluted_by_name_candidates(conn):
+    """Materials whose own name encodes a dilution ("Ambroxan 10% in DPG",
+    "Civettone 1% in DPG") but aren't structurally modeled as a mixture
+    (no material_composition row of their own) — found by user audit:
+    several of these still carry the SAME cas_number as the pure/undiluted
+    substance, which means the IFRA calc's direct-CAS lookup (which takes
+    priority over composition-derived limits — see api_formula_ingredients)
+    treats the material's full weight as 100% pure substance, ignoring the
+    dilution the name itself states. Others have no cas_number at all,
+    meaning they get NO IFRA limit whatsoever even though the pure
+    substance they're diluting might be regulated. Returns a list of dicts
+    describing what was found, without changing anything — the caller
+    decides what to actually do with each entry."""
+    rows = conn.execute("SELECT id, name, cas_number FROM materials").fetchall()
+    has_composition = {r[0] for r in conn.execute(
+        "SELECT DISTINCT parent_material_id FROM material_composition"
+    ).fetchall()}
+
+    results = []
+    for r in rows:
+        if r['id'] in has_composition:
+            continue  # already structurally modeled — nothing to fix
+        m = _DILUTED_NAME_RE.search(r['name'] or '')
+        if not m:
+            continue
+        pct = float(m.group(1))
+        solvent_token = m.group(2)
+        base_name = (r['name'][:m.start()] + r['name'][m.end():]).strip(' -–()%').strip()
+        if not base_name:
+            continue
+
+        # Pure/undiluted sibling: prefer an exact (case-insensitive) name
+        # match after stripping the dilution phrase; fall back to matching
+        # this material's own cas_number against another material's,
+        # excluding rows that themselves look diluted-by-name (so a diluted
+        # variant never gets matched as another diluted variant's "pure" base).
+        sibling = conn.execute(
+            "SELECT id, name, cas_number FROM materials WHERE id != ? AND TRIM(LOWER(name)) = TRIM(LOWER(?))",
+            (r['id'], base_name)
+        ).fetchone()
+        if not sibling and r['cas_number']:
+            for cand in conn.execute(
+                "SELECT id, name, cas_number FROM materials WHERE id != ? AND cas_number = ?",
+                (r['id'], r['cas_number'])
+            ).fetchall():
+                if not _DILUTED_NAME_RE.search(cand['name'] or ''):
+                    sibling = cand
+                    break
+
+        solvent = conn.execute(
+            "SELECT id, name FROM materials WHERE TRIM(LOWER(name)) = ?", (solvent_token.lower(),)
+        ).fetchone()
+
+        results.append({
+            'id': r['id'], 'name': r['name'], 'cas_number': r['cas_number'] or '',
+            'pct': pct, 'solvent_token': solvent_token, 'base_name': base_name,
+            'sibling': dict(sibling) if sibling else None,
+            'solvent': dict(solvent) if solvent else None,
+        })
+    return results
+
+@app.route('/api/materials/fix-diluted-names', methods=['POST'])
+@login_required
+def api_materials_fix_diluted_names():
+    """Detects materials whose name states a dilution ("X% in DPG") but
+    aren't modeled as a composition-based mixture, and — only where a
+    pure/undiluted sibling material can actually be found in the catalog —
+    fixes them: adds material_composition rows (sibling @ X%, solvent @
+    100-X% if that solvent exists as its own material) and clears the
+    diluted material's own cas_number if it matched the sibling's, so the
+    IFRA calc engine falls through to the (correct) composition-derived
+    limit instead of treating the full weight as 100% pure substance.
+    Synchronous (pure local DB matching, no network calls needed) unlike
+    the PubChem/TGSC/Scentree bulk jobs. Entries with no findable pure
+    sibling are reported as skipped rather than guessed at."""
+    conn = get_db()
+    candidates = _find_diluted_by_name_candidates(conn)
+    fixed, skipped = [], []
+    for c in candidates:
+        if not c['sibling']:
+            skipped.append({'id': c['id'], 'name': c['name'], 'reason': 'لا توجد مادة نقية بنفس الاسم لمطابقتها'})
+            continue
+        sib = c['sibling']
+        conn.execute('''INSERT INTO material_composition
+            (parent_material_id, component_material_id, pct, note)
+            VALUES (?,?,?,?)''', (c['id'], sib['id'], c['pct'], 'مخفف (تلقائي من الاسم)'))
+        solvent_used = None
+        if c['solvent'] and c['pct'] < 100:
+            conn.execute('''INSERT INTO material_composition
+                (parent_material_id, component_material_id, pct, note)
+                VALUES (?,?,?,?)''', (c['id'], c['solvent']['id'], 100 - c['pct'], 'مذيب (تلقائي)'))
+            solvent_used = c['solvent']['name']
+        # Only clear the diluted material's own CAS if it's the exact CAS
+        # that caused the bug (matches the pure sibling's) — never blindly
+        # wipe a CAS that came from matching by name alone and differs.
+        cas_cleared = False
+        if c['cas_number'] and sib.get('cas_number') and c['cas_number'] == sib['cas_number']:
+            conn.execute("UPDATE materials SET cas_number=NULL WHERE id=?", (c['id'],))
+            cas_cleared = True
+        fixed.append({
+            'id': c['id'], 'name': c['name'], 'pct': c['pct'],
+            'sibling_name': sib['name'], 'solvent_used': solvent_used,
+            'cas_cleared': cas_cleared,
+        })
+    conn.commit()
+    conn.close()
+    return jsonify({
+        'success': True, 'fixed': fixed, 'fixed_count': len(fixed),
+        'skipped': skipped, 'skipped_count': len(skipped),
+    })
 
 @app.route('/api/formula/<int:fid>/convert-to-material', methods=['POST'])
 @login_required

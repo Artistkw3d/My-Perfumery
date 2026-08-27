@@ -212,11 +212,14 @@
         <button class="btn btn-outline-primary btn-sm" onclick="startBulkPhotoUpdate()" title="يجلب صوراً تلقائياً لكل مادة بدون صورة، عبر Perfumer Supply House / Bioland / Fraterworks — لا يمس المواد التي لديها صورة مسبقاً">
             <i class="bi bi-images"></i> تحديث صور المواد
         </button>
-        <button class="btn btn-outline-info btn-sm" onclick="startBulkDataUpdate()" title="يملأ الحقول الفارغة (وصف الرائحة، نقطة الوميض، الكثافة، ...) لكل مادة لديها CAS، من PubChem / TGSC / Scentree — لا يستبدل أي بيانات موجودة">
+        <button class="btn btn-outline-info btn-sm" onclick="startBulkDataUpdate()" title="يملأ الحقول الفارغة (وصف الرائحة، نقطة الوميض، الكثافة، ...) لكل مادة لديها CAS ولم يُبحث عنها من قبل، من PubChem / TGSC / Scentree — لا يستبدل أي بيانات موجودة، ولا يعيد البحث لمادة تم البحث عنها سابقاً">
             <i class="bi bi-cloud-download"></i> تحديث بيانات المواد
         </button>
         <button class="btn btn-outline-warning btn-sm" onclick="startDecimalRepair()" title="يصلح قيم الكثافة (specific gravity) ومعامل الانكسار اللي انقطعت عند الفاصلة العشرية بسبب تنسيق Scentree الأوروبي (0,878 بدل 0.878) — يمسح القيمة الخاطئة فقط ثم يعيد جلبها صحيحة">
             <i class="bi bi-wrench-adjustable"></i> إصلاح بيانات تالفة
+        </button>
+        <button class="btn btn-outline-warning btn-sm" onclick="startFixDilutedNames()" title="يبحث عن مواد اسمها يقول انها مخففة (مثل «Ambroxan 10% in DPG») لكن غير مسجلة كتركيب — يربطها بالمادة النقية + المذيب تلقائياً عشان حدود IFRA تُحسب على النسبة الحقيقية مو على كامل الوزن">
+            <i class="bi bi-droplet"></i> إصلاح المواد المخففة بالاسم
         </button>
         <button class="btn btn-primary btn-sm" onclick="showMaterialModal()">
             <i class="bi bi-plus-circle"></i> إضافة مادة
@@ -1306,6 +1309,64 @@ function renderDecimalRepairResults(data) {
         <div class="mt-3 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#faf7f0;border-radius:8px;padding:8px 12px;">
             <div class="text-muted mb-1">مواد لم تُصلح تلقائياً:</div>
             <ul class="mb-0" style="padding-inline-start:18px;">${unchangedList}</ul>
+        </div>` : ''}`);
+}
+
+// Synchronous (pure local DB matching, no PubChem/TGSC/Scentree calls), so
+// unlike the other bulk actions this doesn't need runBulkJob's job/poll
+// cycle — reuses the same modal shell for a consistent look, but calls the
+// endpoint directly and renders the result in one shot.
+function startFixDilutedNames() {
+    if (!confirm('سيتم فحص كل مادة اسمها يقول إنها مخففة (مثل "Ambroxan 10% in DPG") وربطها بالمادة النقية + المذيب كتركيب — فقط إذا وُجدت المادة النقية بنفس الاسم في مكتبتك. لن يتم تخمين أي شيء. متابعة؟')) return;
+    document.getElementById('photoBulkTitle').textContent = 'إصلاح المواد المخففة بالاسم';
+    document.getElementById('photoBulkCloseBtn').style.display = 'none';
+    _bulkJobSetBody(`
+        <div class="spinner-border text-secondary" role="status"></div>
+        <div class="mt-2 text-muted" style="font-size:0.85rem;">جاري الفحص...</div>`);
+    photoBulkModal.show();
+    fetch('/api/materials/fix-diluted-names', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('photoBulkCloseBtn').style.display = '';
+            if (!data.success) {
+                _bulkJobSetBody(`<div class="text-danger">${escapeHtml(data.message || 'حدث خطأ')}</div>`);
+                return;
+            }
+            renderFixDilutedNamesResults(data);
+            if (data.fixed_count > 0) loadMaterials();
+        })
+        .catch(() => {
+            document.getElementById('photoBulkCloseBtn').style.display = '';
+            _bulkJobSetBody('<div class="text-danger">خطأ في الاتصال</div>');
+        });
+}
+
+function renderFixDilutedNamesResults(data) {
+    const fixedList = (data.fixed || []).map(m => {
+        const solventTxt = m.solvent_used ? ` + ${escapeHtml(m.solvent_used)} ${100 - m.pct}%` : ' (بدون مذيب معروف — الباقي غير محدد)';
+        const casTxt = m.cas_cleared ? ' — تم إفراغ CAS الخاص بها (كان مطابقاً للمادة النقية، فكان يسبب حساب IFRA خطأ)' : '';
+        return `<li><b>${escapeHtml(m.name)}</b>: ${escapeHtml(m.sibling_name)} ${m.pct}%${solventTxt}${casTxt}</li>`;
+    }).join('');
+    const skippedList = (data.skipped || []).map(m =>
+        `<li>${escapeHtml(m.name)} <span class="text-muted">— ${escapeHtml(m.reason)}</span></li>`
+    ).join('');
+    _bulkJobSetBody(`
+        <div class="text-center mb-3">
+            <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
+        </div>
+        <div style="font-size:0.9rem;text-align:right;">
+            <div class="mb-1"><b>${data.fixed_count}</b> مادة تم ربطها بتركيب صحيح</div>
+            <div class="mb-1 text-muted"><b>${data.skipped_count}</b> مادة مخففة بالاسم لكن ما لقينا لها مادة نقية بنفس الاسم</div>
+        </div>
+        ${fixedList ? `
+        <div class="mt-3 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#faf7f0;border-radius:8px;padding:8px 12px;">
+            <div class="text-muted mb-1">تم إصلاحها:</div>
+            <ul class="mb-0" style="padding-inline-start:18px;">${fixedList}</ul>
+        </div>` : ''}
+        ${skippedList ? `
+        <div class="mt-2 text-start" style="font-size:0.8rem;max-height:160px;overflow-y:auto;background:#fff8f0;border-radius:8px;padding:8px 12px;">
+            <div class="text-muted mb-1">تحتاج مراجعة يدوية (أضف المادة النقية أولاً ثم أعد التشغيل):</div>
+            <ul class="mb-0" style="padding-inline-start:18px;">${skippedList}</ul>
         </div>` : ''}`);
 }
 
