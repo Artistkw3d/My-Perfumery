@@ -21,7 +21,7 @@
     font-family: Arial, 'Tajawal', sans-serif; color:#000; background:#fff;
     direction: ltr; overflow: hidden;
 }
-.ph-top-row { position:absolute; display:flex; align-items:center; gap:1.2mm; }
+.ph-top-row { position:absolute; display:flex; align-items:center; justify-content:center; gap:1.2mm; }
 .ph-x-icon { flex-shrink:0; display:block; }
 .ph-x-icon svg { display:block; }
 .ph-family { font-weight:800; line-height:1; white-space:nowrap; }
@@ -239,7 +239,6 @@ function computeLayout(wMM, hMM, fonts) {
         iconSize: wMM * 0.12,
         pyramidSize: wMM * 0.16,
         topRowTop: hMM * 0.05,
-        topRowLeft: wMM * 0.04,
         nameTop: hMM * 0.30,
         casTop: hMM * 0.45,
         textInset: wMM * 0.02,
@@ -273,7 +272,7 @@ function labelHtml(m, w, h) {
     const fp = formatFlashPoint(m);
     return `<div class="ph-label-frame" style="width:${w}mm;height:${h}mm;">
         <div class="ph-label-inner" style="border-width:${L.border}mm;">
-            ${catLabel ? `<div class="ph-top-row" style="top:${L.topRowTop}mm;left:${L.topRowLeft}mm;">
+            ${catLabel ? `<div class="ph-top-row" style="top:${L.topRowTop}mm;left:0;right:0;">
                 <div class="ph-x-icon" style="width:${L.iconSize}mm;height:${L.iconSize}mm;">${xCircleSvg()}</div>
                 <div class="ph-family" style="font-size:${L.family}mm;">${escapeHtml(catLabel)}</div>
             </div>` : ''}
@@ -342,7 +341,7 @@ function printLabels() {
     // registered in its own OS driver, which this app can't configure from
     // here. downloadLabelPng()/downloadAllPng() below are the reliable path
     // for real printers, matching the user's proven Phomemo-app workflow.
-    const printHtml = `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:${labelW}mm ${labelH}mm;margin:0;}body{margin:0;padding:0;}${css}</style></head><body>${pagesHtml}</body></html>`;
+    const printHtml = `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:${labelW}mm ${labelH}mm;margin:0;}html,body{margin:0;padding:0;}${css}</style></head><body>${pagesHtml}</body></html>`;
 
     // Hidden iframe — window.open is blocked inside the pywebview/WebView2
     // desktop shell, this pattern already works there (see formula.html's
@@ -405,7 +404,18 @@ function drawLabelCanvas(m, wMM, hMM) {
     const catLabel = topCat ? OLF_LABELS[OLF_CATS.indexOf(topCat)] : '';
 
     if (catLabel) {
-        const boxLeft = L.topRowLeft, boxTop = L.topRowTop, boxSize = L.iconSize;
+        // Icon + family text center as one group across the full label width
+        // (matches the CSS .ph-top-row's justify-content:center) — canvas has
+        // no flexbox, so the group's total width is measured manually via
+        // ctx.measureText() first, then the icon/text start positions are
+        // derived from that, instead of a fixed left offset.
+        ctx.font = `800 ${px(L.family)}px Arial`;
+        const iconSizePx = px(L.iconSize);
+        const gapPx = px(1.2);
+        const textWidthPx = ctx.measureText(catLabel).width;
+        const startXPx = (canvas.width - (iconSizePx + gapPx + textWidthPx)) / 2;
+        const boxLeft = startXPx / PX_PER_MM, boxTop = L.topRowTop, boxSize = L.iconSize;
+
         const toMM = (x, y) => ({ x: boxLeft + x / 40 * boxSize, y: boxTop + y / 40 * boxSize });
         ctx.strokeStyle = '#000';
         ctx.lineWidth = px(3 / 40 * boxSize);
@@ -422,10 +432,9 @@ function drawLabelCanvas(m, wMM, hMM) {
         });
 
         ctx.fillStyle = '#000';
-        ctx.font = `800 ${px(L.family)}px Arial`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(catLabel, px(boxLeft + boxSize + 1.2), px(boxTop + boxSize / 2));
+        ctx.fillText(catLabel, startXPx + iconSizePx + gapPx, px(boxTop + boxSize / 2));
     }
 
     ctx.fillStyle = '#000';
