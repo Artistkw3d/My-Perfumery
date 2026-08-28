@@ -1972,8 +1972,19 @@ def _label_png_to_tspl(png_bytes, width_mm, height_mm, dpi, gap_mm=2.0):
     directly after the command line (not hex-encoded like ZPL's ^GFA), so
     the job is built as real bytes throughout rather than a text string.
     GAP is the physical gap between die-cut labels on the roll — wrong for
-    continuous/gapless stock, which is why it's user-adjustable in the UI."""
+    continuous/gapless stock, which is why it's user-adjustable in the UI.
+
+    Bit polarity found inverted on real hardware (2026-08-28): the shared
+    packer's convention is bit=1 for black (matches genuine TSC BITMAP spec,
+    and matches what actually printed correctly on the Zebra's ZPL path) —
+    but the user's cheap-clone printer (X4p1/YXQPOR driver, TSPL mode)
+    printed with colors reversed against that same bitmap: a well-known
+    quirk of some budget TSPL-clone firmwares interpreting BITMAP mode 0 as
+    bit=1-means-white instead of the spec's bit=1-means-black. Only the
+    TSPL path is flipped — the ZPL path already prints correctly as-is, so
+    it's left untouched."""
     dots_w, dots_h, bytes_per_row, total_bytes, packed = _label_png_to_dots(png_bytes, width_mm, height_mm, dpi)
+    packed = bytes(b ^ 0xFF for b in packed)
     header = (
         f'SIZE {width_mm:.2f} mm,{height_mm:.2f} mm\r\n'
         f'GAP {gap_mm:.2f} mm,0 mm\r\n'
