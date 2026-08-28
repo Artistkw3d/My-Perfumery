@@ -93,17 +93,21 @@
                 <select id="zplPrinterLang" class="form-select form-select-sm mb-2" onchange="onZplLangChange()">
                     <option value="zpl">ZPL — طابعات Zebra</option>
                     <option value="tspl">TSPL — طابعات صينية رخيصة (TSC وما شابه)</option>
+                    <option value="gdi">درايفر ويندوز عادي (GDI) — طابعات بدرايفر مثبت (مثل YXQPOR/X4)</option>
                 </select>
-                <label class="form-label" style="font-size:0.78rem;">دقة الطابعة (DPI)</label>
-                <select id="zplPrinterDpi" class="form-select form-select-sm mb-2" onchange="onZplSettingChange()">
-                    <option value="203">203 dpi (الأشيع)</option>
-                    <option value="300">300 dpi</option>
-                </select>
+                <div id="zplDpiRow">
+                    <label class="form-label" style="font-size:0.78rem;">دقة الطابعة (DPI)</label>
+                    <select id="zplPrinterDpi" class="form-select form-select-sm mb-2" onchange="onZplSettingChange()">
+                        <option value="203">203 dpi (الأشيع)</option>
+                        <option value="300">300 dpi</option>
+                    </select>
+                </div>
                 <div id="zplGapRow" style="display:none;">
                     <label class="form-label" style="font-size:0.78rem;">الفجوة بين الليبلات GAP (مم)</label>
                     <input type="number" id="zplGapMm" class="form-control form-control-sm mb-2" step="0.5" min="0" value="2" oninput="onZplSettingChange()">
                     <div class="form-text mb-2">خاص بطابعات TSPL فقط — لو الليبل يطلع فاضي أو الورق ينزلق بدون طباعة، جرّب تغيّر هالقيمة (القياسي غالبًا 2مم للليبلات المفصولة، أو 0 لو الورق متواصل بدون فواصل).</div>
                 </div>
+                <div id="zplGdiNote" class="form-text mb-2" style="display:none;">للطابعات المثبتة بدرايفر ويندوز عادي (مو Zebra/TSPL) — يستخدم الدرايفر نفسه ويختار أقرب مقاس ليبل مسجّل فيه لمقاسك الحالي. لو المقاس المتوفر مو مطابق تمامًا، بترجع رسالة توضح الفرق بعد الطباعة.</div>
                 <div class="form-text mb-2">ترسل الليبل مباشرة كأوامر طباعة خام للطابعة عبر منفذ الطباعة — بدون المرور بمعاينة أو حوار طباعة المتصفح، ودقة مطابقة لمقاس الليبل الفعلي بالملم.</div>
                 <div id="zplStatusMsg" class="small text-muted mb-2"></div>
             </div>
@@ -591,8 +595,10 @@ function downloadAllPng() {
 // same drawLabelCanvas() the PNG export already uses, so the printed layout
 // can't drift from the on-screen preview.
 function onZplLangChange() {
-    const isTspl = document.getElementById('zplPrinterLang').value === 'tspl';
-    document.getElementById('zplGapRow').style.display = isTspl ? '' : 'none';
+    const lang = document.getElementById('zplPrinterLang').value;
+    document.getElementById('zplGapRow').style.display = lang === 'tspl' ? '' : 'none';
+    document.getElementById('zplDpiRow').style.display = lang === 'gdi' ? 'none' : '';
+    document.getElementById('zplGdiNote').style.display = lang === 'gdi' ? '' : 'none';
     onZplSettingChange();
 }
 
@@ -609,7 +615,10 @@ async function loadZplPrinters() {
     if (savedLang) document.getElementById('zplPrinterLang').value = savedLang;
     const savedGap = localStorage.getItem('zplGapMm');
     if (savedGap) document.getElementById('zplGapMm').value = savedGap;
-    document.getElementById('zplGapRow').style.display = document.getElementById('zplPrinterLang').value === 'tspl' ? '' : 'none';
+    const lang = document.getElementById('zplPrinterLang').value;
+    document.getElementById('zplGapRow').style.display = lang === 'tspl' ? '' : 'none';
+    document.getElementById('zplDpiRow').style.display = lang === 'gdi' ? 'none' : '';
+    document.getElementById('zplGdiNote').style.display = lang === 'gdi' ? '' : 'none';
     try {
         const resp = await fetch('/api/labels/list-printers');
         const data = await resp.json();
@@ -668,6 +677,7 @@ async function printDirect() {
         const data = await resp.json();
         if (data.success) {
             showAlert(`تم إرسال ${data.printed} ليبل للطابعة "${printerName}"`, 'success');
+            if (data.message) showAlert(data.message, 'warning');
         } else {
             showAlert(data.message || 'فشلت الطباعة المباشرة', 'danger');
         }

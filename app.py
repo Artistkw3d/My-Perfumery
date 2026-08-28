@@ -1984,6 +1984,98 @@ def _label_png_to_tspl(png_bytes, width_mm, height_mm, dpi, gap_mm=2.0):
     footer = b'\r\nPRINT 1,1\r\n'
     return header + packed + footer
 
+# GDI printing (added 2026-08-28) — for printers installed with a real
+# Windows GDI/Unidriver driver package (e.g. the user's "X4 (Bluetooth)"
+# printer, driven by a YXQPOR/X4p1 minidriver — confirmed via
+# win32print.GetPrinter()['pDriverName'] == 'X4p1', a proper .GPD-based
+# Unidrv minidriver, not a raw ZPL/TSPL pass-through printer like the Zebra).
+# Sending raw ZPL/TSPL text to a driver like this wouldn't be understood —
+# the driver expects real GDI drawing calls, which it then translates into
+# whatever the physical printer actually needs. This path instead selects
+# the driver's own closest built-in label paper size via DEVMODE (queried
+# fresh every call — see below) and draws the rendered label bitmap onto a
+# real printer DC at that paper's exact pixel dimensions.
+#
+# IMPORTANT, found via live inspection against the user's own driver: this
+# particular driver's DeviceCapabilities(DC_PAPERS)/(DC_PAPERNAMES)/
+# (DC_PAPERSIZE) triplet is NOT stably ordered between separate process
+# runs — paper id 332 meant "50 x 30 mm" in one run and "40 x 30 mm" in the
+# next. The three arrays stay mutually consistent *within* one query batch
+# (verified: matching a size found in one batch's DC_PAPERSIZE back to that
+# same batch's DC_PAPERS index reliably points at a DC whose real
+# HORZRES/VERTRES matches, checked live without spooling an actual job).
+# So paper ids must NEVER be cached or hardcoded — always re-resolve by
+# matching real physical size within a single fresh query, every call.
+def _gdi_pick_paper(printer_name, width_mm, height_mm):
+    """Returns (paper_id, paper_name, diff_mm) for the closest built-in paper
+    size to the requested label, or (None, None, None) if the driver
+    reports no selectable paper sizes at all (falls back to its current
+    default paper in that case)."""
+    import win32print
+    DC_PAPERNAMES, DC_PAPERS, DC_PAPERSIZE = 16, 2, 3
+    try:
+        names = win32print.DeviceCapabilities(printer_name, printer_name, DC_PAPERNAMES)
+        ids = win32print.DeviceCapabilities(printer_name, printer_name, DC_PAPERS)
+        sizes = win32print.DeviceCapabilities(printer_name, printer_name, DC_PAPERSIZE)
+    except Exception:
+        return None, None, None
+    if not ids or not sizes or len(ids) != len(sizes):
+        return None, None, None
+    target_x, target_y = round(width_mm * 10), round(height_mm * 10)
+    best = None
+    for i, (pid, sz) in enumerate(zip(ids, sizes)):
+        diff = abs(sz['x'] - target_x) + abs(sz['y'] - target_y)
+        if best is None or diff < best[0]:
+            name = names[i] if names and i < len(names) else ''
+            best = (diff, pid, name, sz)
+    diff, pid, name, sz = best
+    diff_mm = (abs(sz['x'] - target_x) / 10.0, abs(sz['y'] - target_y) / 10.0)
+    return pid, name, diff_mm
+
+def _print_labels_via_gdi(printer_name, pil_images, width_mm, height_mm):
+    """StartDoc once, StartPage/EndPage per label, EndDoc — a proper
+    multi-page batch in one spooler job, same as the ZPL/TSPL paths'
+    single-request-per-batch behavior. Returns (matched_paper_name, diff_mm)
+    for the caller to relay back to the user (e.g. "closest available size
+    is 60x40mm, off by 2mm in height" instead of failing silently)."""
+    import win32print
+    import win32con
+    import win32gui
+    import win32ui
+    from PIL import ImageWin
+
+    paper_id, paper_name, diff_mm = _gdi_pick_paper(printer_name, width_mm, height_mm)
+
+    hprinter = win32print.OpenPrinter(printer_name)
+    try:
+        props = win32print.GetPrinter(hprinter, 2)
+        devmode = props['pDevMode']
+        if paper_id is not None:
+            devmode.PaperSize = paper_id
+            devmode.Fields |= win32con.DM_PAPERSIZE
+            win32print.DocumentProperties(0, hprinter, printer_name, devmode, devmode,
+                                           win32con.DM_IN_BUFFER | win32con.DM_OUT_BUFFER)
+    finally:
+        win32print.ClosePrinter(hprinter)
+
+    hdc_handle = win32gui.CreateDC('WINSPOOL', printer_name, devmode)
+    dc = win32ui.CreateDCFromHandle(hdc_handle)
+    try:
+        horz = dc.GetDeviceCaps(win32con.HORZRES)
+        vert = dc.GetDeviceCaps(win32con.VERTRES)
+        dc.StartDoc('My Perfumery Labels')
+        for img in pil_images:
+            dc.StartPage()
+            frame = img.convert('RGB').resize((horz, vert))
+            dib = ImageWin.Dib(frame)
+            dib.draw(dc.GetHandleOutput(), (0, 0, horz, vert))
+            dc.EndPage()
+        dc.EndDoc()
+    finally:
+        dc.DeleteDC()
+
+    return paper_name, diff_mm
+
 @app.route('/api/labels/list-printers')
 @login_required
 def api_labels_list_printers():
@@ -2017,7 +2109,7 @@ def api_labels_print_direct():
     labels = body.get('labels') or []
     printer_name = (body.get('printer') or '').strip()
     language = (body.get('language') or 'zpl').strip().lower()
-    if language not in ('zpl', 'tspl'):
+    if language not in ('zpl', 'tspl', 'gdi'):
         language = 'zpl'
     try:
         dpi = int(body.get('dpi') or 203)
@@ -2036,6 +2128,46 @@ def api_labels_print_direct():
             printer_name = win32print.GetDefaultPrinter()
         except Exception:
             return jsonify({'success': False, 'message': 'لم يتم تحديد طابعة ولا توجد طابعة افتراضية على الجهاز'}), 400
+
+    # GDI printers (real Windows driver, e.g. "X4p1") get real PIL Image
+    # objects drawn through win32ui; ZPL/TSPL printers get raw command bytes
+    # written straight to the spooler with datatype "RAW" — two genuinely
+    # different pipelines, so they're branched fully apart rather than
+    # forced through one shared code path.
+    if language == 'gdi':
+        try:
+            from PIL import Image
+        except ImportError:
+            return jsonify({'success': False, 'message': 'ميزة الطباعة المباشرة تحتاج مكتبة Pillow غير مثبتة على الخادم'}), 500
+
+        width_mm = height_mm = None
+        images = []
+        for lbl in labels:
+            data_url = (lbl or {}).get('image_data', '')
+            if not data_url.startswith('data:image/png;base64,'):
+                continue
+            try:
+                width_mm = float(lbl.get('width_mm'))
+                height_mm = float(lbl.get('height_mm'))
+                png_bytes = base64.b64decode(data_url.split(',', 1)[1])
+                images.append(Image.open(io.BytesIO(png_bytes)))
+            except Exception:
+                continue
+
+        if not images:
+            return jsonify({'success': False, 'message': 'تعذرت معالجة صور الليبلات المرسلة'}), 400
+
+        try:
+            paper_name, diff_mm = _print_labels_via_gdi(printer_name, images, width_mm, height_mm)
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'فشلت الطباعة عبر درايفر الطابعة: {e}'}), 500
+
+        message = None
+        if paper_name is None:
+            message = 'تمت الطباعة، لكن الطابعة ما تدعم اختيار مقاس ليبل محدد — استُخدم المقاس الافتراضي المضبوط بخصائص الطابعة بويندوز.'
+        elif diff_mm and (diff_mm[0] > 1 or diff_mm[1] > 1):
+            message = f'أقرب مقاس متوفر بالطابعة هو "{paper_name}" — يختلف عن المقاس المطلوب بحوالي {diff_mm[0]:.1f}×{diff_mm[1]:.1f}مم. اضبط مقاس الليبل هنا ليطابق أحد المقاسات المتوفرة بالطابعة للحصول على أدق نتيجة.'
+        return jsonify({'success': True, 'printed': len(images), 'message': message})
 
     job_blocks = []
     for lbl in labels:
@@ -2075,7 +2207,7 @@ def api_labels_print_direct():
     finally:
         win32print.ClosePrinter(hPrinter)
 
-    return jsonify({'success': True, 'printed': len(zpl_blocks)})
+    return jsonify({'success': True, 'printed': len(job_blocks)})
 
 @app.route('/settings')
 @login_required
