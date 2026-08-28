@@ -254,12 +254,23 @@ function computeLayout(wMM, hMM, fonts) {
     };
 }
 
+// Some flash_point values already carry a "°C" suffix baked in from
+// whichever source filled them (PubChem/TGSC/Scentree text scraping isn't
+// consistent about this) — appending our own unconditionally produced a
+// visible "110.0°C°C" on the label. Strips any existing trailing degree/C
+// before adding ours, so it's correct either way.
+function formatFlashPoint(m) {
+    const raw = (m.flash_point || '').toString().trim();
+    if (!raw) return 'Flash Point : ?°C';
+    return `Flash Point : ${raw.replace(/°?\s*C\s*$/i, '')}°C`;
+}
+
 function labelHtml(m, w, h) {
     const L = computeLayout(w, h, fontSizes);
     const topCat = topOlfactiveCategory(m);
     const catLabel = topCat ? OLF_LABELS[OLF_CATS.indexOf(topCat)] : '';
     const mw = m.molecular_weight ? `${m.molecular_weight} g/mol` : '? g/mol';
-    const fp = m.flash_point ? `Flash Point : ${m.flash_point}°C` : 'Flash Point : ?°C';
+    const fp = formatFlashPoint(m);
     return `<div class="ph-label-frame" style="width:${w}mm;height:${h}mm;">
         <div class="ph-label-inner" style="border-width:${L.border}mm;">
             ${catLabel ? `<div class="ph-top-row" style="top:${L.topRowTop}mm;left:${L.topRowLeft}mm;">
@@ -450,7 +461,7 @@ function drawLabelCanvas(m, wMM, hMM) {
     });
 
     const mw = m.molecular_weight ? `${m.molecular_weight} g/mol` : '? g/mol';
-    const fp = m.flash_point ? `Flash Point : ${m.flash_point}°C` : 'Flash Point : ?°C';
+    const fp = formatFlashPoint(m);
     ctx.fillStyle = '#000';
     ctx.font = `700 ${px(L.meta)}px Arial`;
     ctx.textAlign = 'right';
@@ -468,10 +479,14 @@ function drawLabelCanvas(m, wMM, hMM) {
 // a same-origin GET navigation — so the canvas PNG gets POSTed to the
 // server first (stashed in memory, one-time token), then the browser is
 // sent to a plain download URL for it.
-function downloadLabelPng(m) {
-    const canvas = drawLabelCanvas(m, labelW, labelH);
+// Server-mediated fallback: same same-origin-navigation pattern proven to
+// work inside the pywebview/WebView2 desktop shell (see downloadBackup() in
+// settings.html). This drops the file straight into the browser's default
+// download location with no path prompt — used when a real Save As dialog
+// isn't available (older WebView2, or a bulk multi-file download, since a
+// browser will only honor one native file picker per user click/gesture).
+function downloadLabelPngFallback(canvas, filename) {
     const dataUrl = canvas.toDataURL('image/png');
-    const filename = `${(m.name || 'label').replace(/[\\/:*?"<>|]/g, '_')}.png`;
     const fd = new FormData();
     fd.append('image_data', dataUrl);
     fd.append('filename', filename);
@@ -484,10 +499,48 @@ function downloadLabelPng(m) {
         .catch(err => showAlert('خطأ: ' + err.message, 'danger'));
 }
 
-// Small stagger between downloads — firing several downloads in the same
-// tick can trip some browsers'/webviews' "multiple downloads" prompt.
+// Single-label download: tries a real native "Save As" dialog first (File
+// System Access API — lets the user pick the folder/filename themselves,
+// which a plain auto-download can never do), falling back to the
+// server-mediated path above if the API isn't available in this browser/
+// webview, or if writing fails for a reason other than the user just
+// cancelling the dialog. showSaveFilePicker() needs a direct user gesture,
+// so it's called synchronously at the top before any other async work.
+async function downloadLabelPng(m, useFallbackOnly) {
+    const canvas = drawLabelCanvas(m, labelW, labelH);
+    const filename = `${(m.name || 'label').replace(/[\\/:*?"<>|]/g, '_')}.png`;
+
+    if (!useFallbackOnly && window.showSaveFilePicker) {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: filename,
+                types: [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }]
+            });
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            showAlert('تم حفظ الصورة', 'success');
+            return;
+        } catch (e) {
+            if (e.name === 'AbortError') return; // user cancelled the dialog — not an error
+            console.error('showSaveFilePicker failed, falling back to auto-download:', e);
+        }
+    }
+    downloadLabelPngFallback(canvas, filename);
+}
+
+// Bulk download always uses the auto-download fallback, never the Save As
+// dialog — a browser only honors one native file picker per user gesture,
+// so trying to prompt one per label in a loop would just silently fail
+// after the first. Small stagger between downloads since firing several in
+// the same tick can trip some browsers'/webviews' "multiple downloads" prompt.
 function downloadAllPng() {
-    printQueue.forEach((m, i) => setTimeout(() => downloadLabelPng(m), i * 500));
+    printQueue.forEach((m, i) => setTimeout(() => {
+        const canvas = drawLabelCanvas(m, labelW, labelH);
+        const filename = `${(m.name || 'label').replace(/[\\/:*?"<>|]/g, '_')}.png`;
+        downloadLabelPngFallback(canvas, filename);
+    }, i * 500));
 }
 
 $(document).ready(function() {
