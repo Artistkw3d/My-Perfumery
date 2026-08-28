@@ -17,6 +17,7 @@ import tempfile
 import uuid
 import threading
 import base64
+import io
 from datetime import datetime
 from functools import wraps
 
@@ -1904,6 +1905,177 @@ def api_labels_download_png(token):
     return Response(entry['data'], mimetype='image/png', headers={
         'Content-Disposition': f'attachment; filename="{safe_name}"'
     })
+
+# Direct-to-printer raw printing (added 2026-08-28, TSPL added same day) —
+# the user's real label printer is a Zebra ZD220 (speaks ZPL natively), and
+# they've also previously had a cheap Chinese thermal printer of the kind
+# that instead speaks TSPL/TSC — a different but structurally similar command
+# language (both wrap a raw 1-bit packed bitmap, just different framing).
+# Sending raw bytes via win32print's "RAW" datatype bypasses the Windows GDI
+# print pipeline (and the browser) entirely for either protocol, so there's
+# no driver-added margin/scaling to fight — the printer gets an exact
+# dot-for-dot bitmap sized from the label's real mm dimensions and the chosen
+# DPI. win32print/Pillow are optional — a server without them (e.g.
+# non-Windows dev environments) still serves the page fine; only these two
+# endpoints degrade to a clear error instead of the whole app failing.
+def _image_to_packed_bits(img_l_mode, dots_w, dots_h):
+    """Pack a thresholded 'L'-mode PIL image into a 1-bit-per-pixel raster,
+    MSB-first, each row padded to a whole byte — the raw bitmap format both
+    ZPL's ^GFA and TSPL's BITMAP command expect. bit=1 means black/print.
+    Packed by hand from raw pixel values rather than PIL's mode "1"
+    tobytes() — that packing's bit polarity isn't guaranteed stable across
+    PIL versions, so relying on it risks a silently inverted image."""
+    bytes_per_row = (dots_w + 7) // 8
+    total_bytes = bytes_per_row * dots_h
+    px = img_l_mode.load()
+    row_bytes = bytearray(total_bytes)
+    idx = 0
+    for y in range(dots_h):
+        byte = 0
+        bits = 0
+        for x in range(dots_w):
+            bit = 1 if px[x, y] < 128 else 0
+            byte = (byte << 1) | bit
+            bits += 1
+            if bits == 8:
+                row_bytes[idx] = byte
+                idx += 1
+                byte = 0
+                bits = 0
+        if bits:
+            row_bytes[idx] = byte << (8 - bits)
+            idx += 1
+    return bytes_per_row, total_bytes, bytes(row_bytes)
+
+def _label_png_to_dots(png_bytes, width_mm, height_mm, dpi):
+    """Shared PNG->raster step for both protocols: returns (dots_w, dots_h,
+    bytes_per_row, total_bytes, packed_bitmap_bytes)."""
+    from PIL import Image
+    img = Image.open(io.BytesIO(png_bytes)).convert('L')
+    dots_w = max(1, round(width_mm / 25.4 * dpi))
+    dots_h = max(1, round(height_mm / 25.4 * dpi))
+    img = img.resize((dots_w, dots_h), Image.LANCZOS)
+    bytes_per_row, total_bytes, packed = _image_to_packed_bits(img, dots_w, dots_h)
+    return dots_w, dots_h, bytes_per_row, total_bytes, packed
+
+def _label_png_to_zpl(png_bytes, width_mm, height_mm, dpi):
+    dots_w, dots_h, bytes_per_row, total_bytes, packed = _label_png_to_dots(png_bytes, width_mm, height_mm, dpi)
+    hex_data = packed.hex().upper()
+    return (
+        f'^XA^PW{dots_w}^LL{dots_h}^FO0,0'
+        f'^GFA,{total_bytes},{total_bytes},{bytes_per_row},{hex_data}^XZ'
+    ).encode('ascii')
+
+def _label_png_to_tspl(png_bytes, width_mm, height_mm, dpi, gap_mm=2.0):
+    """TSPL/TSC command set — used by most budget Chinese thermal label
+    printers instead of ZPL. BITMAP takes the raw packed bytes appended
+    directly after the command line (not hex-encoded like ZPL's ^GFA), so
+    the job is built as real bytes throughout rather than a text string.
+    GAP is the physical gap between die-cut labels on the roll — wrong for
+    continuous/gapless stock, which is why it's user-adjustable in the UI."""
+    dots_w, dots_h, bytes_per_row, total_bytes, packed = _label_png_to_dots(png_bytes, width_mm, height_mm, dpi)
+    header = (
+        f'SIZE {width_mm:.2f} mm,{height_mm:.2f} mm\r\n'
+        f'GAP {gap_mm:.2f} mm,0 mm\r\n'
+        f'DIRECTION 1\r\n'
+        f'CLS\r\n'
+        f'BITMAP 0,0,{bytes_per_row},{dots_h},0,'
+    ).encode('ascii')
+    footer = b'\r\nPRINT 1,1\r\n'
+    return header + packed + footer
+
+@app.route('/api/labels/list-printers')
+@login_required
+def api_labels_list_printers():
+    try:
+        import win32print
+    except ImportError:
+        return jsonify({'success': False, 'message': 'ميزة الطباعة المباشرة تحتاج مكتبة pywin32 غير مثبتة على الخادم', 'printers': [], 'default': None})
+    try:
+        printers = [p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'تعذر جلب قائمة الطابعات: {e}', 'printers': [], 'default': None})
+    try:
+        default = win32print.GetDefaultPrinter()
+    except Exception:
+        default = None
+    return jsonify({'success': True, 'printers': printers, 'default': default})
+
+@app.route('/api/labels/print-direct', methods=['POST'])
+@login_required
+def api_labels_print_direct():
+    try:
+        import win32print
+    except ImportError:
+        return jsonify({'success': False, 'message': 'ميزة الطباعة المباشرة تحتاج مكتبة pywin32 غير مثبتة على الخادم'}), 500
+    try:
+        import PIL  # noqa: F401 -- availability check; _label_png_to_zpl does the real import
+    except ImportError:
+        return jsonify({'success': False, 'message': 'ميزة الطباعة المباشرة تحتاج مكتبة Pillow غير مثبتة على الخادم'}), 500
+
+    body = request.get_json(silent=True) or {}
+    labels = body.get('labels') or []
+    printer_name = (body.get('printer') or '').strip()
+    language = (body.get('language') or 'zpl').strip().lower()
+    if language not in ('zpl', 'tspl'):
+        language = 'zpl'
+    try:
+        dpi = int(body.get('dpi') or 203)
+    except (TypeError, ValueError):
+        dpi = 203
+    try:
+        gap_mm = float(body.get('gap_mm') if body.get('gap_mm') is not None else 2.0)
+    except (TypeError, ValueError):
+        gap_mm = 2.0
+
+    if not labels:
+        return jsonify({'success': False, 'message': 'لا توجد ليبلات للطباعة'}), 400
+
+    if not printer_name:
+        try:
+            printer_name = win32print.GetDefaultPrinter()
+        except Exception:
+            return jsonify({'success': False, 'message': 'لم يتم تحديد طابعة ولا توجد طابعة افتراضية على الجهاز'}), 400
+
+    job_blocks = []
+    for lbl in labels:
+        data_url = (lbl or {}).get('image_data', '')
+        if not data_url.startswith('data:image/png;base64,'):
+            continue
+        try:
+            width_mm = float(lbl.get('width_mm'))
+            height_mm = float(lbl.get('height_mm'))
+            png_bytes = base64.b64decode(data_url.split(',', 1)[1])
+            if language == 'tspl':
+                job_blocks.append(_label_png_to_tspl(png_bytes, width_mm, height_mm, dpi, gap_mm))
+            else:
+                job_blocks.append(_label_png_to_zpl(png_bytes, width_mm, height_mm, dpi))
+        except Exception:
+            continue
+
+    if not job_blocks:
+        return jsonify({'success': False, 'message': 'تعذرت معالجة صور الليبلات المرسلة'}), 400
+
+    job_bytes = b''.join(job_blocks)
+
+    try:
+        hPrinter = win32print.OpenPrinter(printer_name)
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'تعذر فتح الطابعة "{printer_name}": {e}'}), 500
+    try:
+        win32print.StartDocPrinter(hPrinter, 1, ('My Perfumery Labels', None, 'RAW'))
+        try:
+            win32print.StartPagePrinter(hPrinter)
+            win32print.WritePrinter(hPrinter, job_bytes)
+            win32print.EndPagePrinter(hPrinter)
+        finally:
+            win32print.EndDocPrinter(hPrinter)
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'فشلت الطباعة: {e}'}), 500
+    finally:
+        win32print.ClosePrinter(hPrinter)
+
+    return jsonify({'success': True, 'printed': len(zpl_blocks)})
 
 @app.route('/settings')
 @login_required

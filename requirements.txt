@@ -2,3 +2,5 @@ flask
 pywebview
 pyinstaller
 cryptography
+pywin32
+Pillow

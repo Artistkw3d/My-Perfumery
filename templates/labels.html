@@ -84,6 +84,31 @@
             </div>
         </div>
 
+        <div class="card mb-3">
+            <div class="card-header"><i class="bi bi-printer"></i> الطباعة المباشرة</div>
+            <div class="card-body">
+                <label class="form-label" style="font-size:0.78rem;">الطابعة</label>
+                <select id="zplPrinterSelect" class="form-select form-select-sm mb-2" onchange="onZplSettingChange()"></select>
+                <label class="form-label" style="font-size:0.78rem;">لغة الطابعة</label>
+                <select id="zplPrinterLang" class="form-select form-select-sm mb-2" onchange="onZplLangChange()">
+                    <option value="zpl">ZPL — طابعات Zebra</option>
+                    <option value="tspl">TSPL — طابعات صينية رخيصة (TSC وما شابه)</option>
+                </select>
+                <label class="form-label" style="font-size:0.78rem;">دقة الطابعة (DPI)</label>
+                <select id="zplPrinterDpi" class="form-select form-select-sm mb-2" onchange="onZplSettingChange()">
+                    <option value="203">203 dpi (الأشيع)</option>
+                    <option value="300">300 dpi</option>
+                </select>
+                <div id="zplGapRow" style="display:none;">
+                    <label class="form-label" style="font-size:0.78rem;">الفجوة بين الليبلات GAP (مم)</label>
+                    <input type="number" id="zplGapMm" class="form-control form-control-sm mb-2" step="0.5" min="0" value="2" oninput="onZplSettingChange()">
+                    <div class="form-text mb-2">خاص بطابعات TSPL فقط — لو الليبل يطلع فاضي أو الورق ينزلق بدون طباعة، جرّب تغيّر هالقيمة (القياسي غالبًا 2مم للليبلات المفصولة، أو 0 لو الورق متواصل بدون فواصل).</div>
+                </div>
+                <div class="form-text mb-2">ترسل الليبل مباشرة كأوامر طباعة خام للطابعة عبر منفذ الطباعة — بدون المرور بمعاينة أو حوار طباعة المتصفح، ودقة مطابقة لمقاس الليبل الفعلي بالملم.</div>
+                <div id="zplStatusMsg" class="small text-muted mb-2"></div>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card-header"><i class="bi bi-search"></i> إضافة مادة</div>
             <div class="card-body">
@@ -100,7 +125,8 @@
                 <div>
                     <button class="btn btn-sm btn-outline-danger" onclick="clearQueue()"><i class="bi bi-trash"></i> إفراغ القائمة</button>
                     <button class="btn btn-sm btn-outline-success" onclick="downloadAllPng()" id="downloadPngBtn" disabled><i class="bi bi-file-earmark-image"></i> تنزيل كصور PNG</button>
-                    <button class="btn btn-sm btn-primary" onclick="printLabels()" id="printLabelsBtn" disabled><i class="bi bi-printer-fill"></i> طباعة</button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="printLabels()" id="printLabelsBtn" disabled><i class="bi bi-printer-fill"></i> طباعة من المتصفح</button>
+                    <button class="btn btn-sm btn-primary" onclick="printDirect()" id="printDirectBtn" disabled><i class="bi bi-lightning-fill"></i> طباعة مباشرة</button>
                 </div>
             </div>
             <div class="card-body">
@@ -292,6 +318,7 @@ function renderPreview() {
     document.getElementById('queueCount').textContent = printQueue.length;
     document.getElementById('printLabelsBtn').disabled = printQueue.length === 0;
     document.getElementById('downloadPngBtn').disabled = printQueue.length === 0;
+    document.getElementById('printDirectBtn').disabled = printQueue.length === 0;
     if (!printQueue.length) {
         area.innerHTML = '<div class="text-muted w-100 text-center py-4" id="emptyQueueMsg">أضف مادة من القائمة على اليسار لبدء المعاينة</div>';
         return;
@@ -552,7 +579,108 @@ function downloadAllPng() {
     }, i * 500));
 }
 
+// Direct printing (added 2026-08-28, TSPL support added same day) — for a
+// real Zebra ZD220 installed as a normal Windows printer (ZPL), or a cheap
+// Chinese thermal label printer that speaks TSPL/TSC instead (a common
+// second protocol among budget printers — structurally similar to ZPL, both
+// send a raw 1-bit packed bitmap, just wrapped in different commands).
+// Sends raw bytes via the server's /api/labels/print-direct (win32print RAW
+// datatype), bypassing the browser print pipeline and its OS-driver
+// margin/scaling limitations entirely (see printLabels()'s comment above for
+// why that pipeline can't guarantee exact physical size). Uses the exact
+// same drawLabelCanvas() the PNG export already uses, so the printed layout
+// can't drift from the on-screen preview.
+function onZplLangChange() {
+    const isTspl = document.getElementById('zplPrinterLang').value === 'tspl';
+    document.getElementById('zplGapRow').style.display = isTspl ? '' : 'none';
+    onZplSettingChange();
+}
+
+function onZplSettingChange() {
+    localStorage.setItem('zplPrinterName', document.getElementById('zplPrinterSelect').value || '');
+    localStorage.setItem('zplPrinterLang', document.getElementById('zplPrinterLang').value || 'zpl');
+    localStorage.setItem('zplPrinterDpi', document.getElementById('zplPrinterDpi').value || '203');
+    localStorage.setItem('zplGapMm', document.getElementById('zplGapMm').value || '2');
+}
+
+async function loadZplPrinters() {
+    const statusEl = document.getElementById('zplStatusMsg');
+    const savedLang = localStorage.getItem('zplPrinterLang');
+    if (savedLang) document.getElementById('zplPrinterLang').value = savedLang;
+    const savedGap = localStorage.getItem('zplGapMm');
+    if (savedGap) document.getElementById('zplGapMm').value = savedGap;
+    document.getElementById('zplGapRow').style.display = document.getElementById('zplPrinterLang').value === 'tspl' ? '' : 'none';
+    try {
+        const resp = await fetch('/api/labels/list-printers');
+        const data = await resp.json();
+        const select = document.getElementById('zplPrinterSelect');
+        select.innerHTML = '';
+        if (!data.success && (!data.printers || !data.printers.length)) {
+            statusEl.textContent = data.message || 'تعذر جلب قائمة الطابعات';
+            statusEl.className = 'small text-danger mb-2';
+            return;
+        }
+        (data.printers || []).forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            select.appendChild(opt);
+        });
+        const savedName = localStorage.getItem('zplPrinterName');
+        if (savedName && data.printers.includes(savedName)) {
+            select.value = savedName;
+        } else if (data.default) {
+            select.value = data.default;
+        }
+        const savedDpi = localStorage.getItem('zplPrinterDpi');
+        if (savedDpi) document.getElementById('zplPrinterDpi').value = savedDpi;
+        statusEl.textContent = '';
+    } catch (e) {
+        statusEl.textContent = 'تعذر الاتصال بالخادم لجلب قائمة الطابعات';
+        statusEl.className = 'small text-danger mb-2';
+    }
+}
+
+async function printDirect() {
+    if (!printQueue.length) return;
+    const printerName = document.getElementById('zplPrinterSelect').value;
+    const language = document.getElementById('zplPrinterLang').value || 'zpl';
+    const dpi = parseInt(document.getElementById('zplPrinterDpi').value, 10) || 203;
+    const gapMm = parseFloat(document.getElementById('zplGapMm').value) || 0;
+    if (!printerName) {
+        showAlert('اختر طابعة أولاً', 'warning');
+        return;
+    }
+    const btn = document.getElementById('printDirectBtn');
+    btn.disabled = true;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> جاري الطباعة...';
+    try {
+        const labels = printQueue.map(m => {
+            const canvas = drawLabelCanvas(m, labelW, labelH);
+            return { image_data: canvas.toDataURL('image/png'), width_mm: labelW, height_mm: labelH };
+        });
+        const resp = await fetch('/api/labels/print-direct', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ labels, printer: printerName, dpi, language, gap_mm: gapMm })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            showAlert(`تم إرسال ${data.printed} ليبل للطابعة "${printerName}"`, 'success');
+        } else {
+            showAlert(data.message || 'فشلت الطباعة المباشرة', 'danger');
+        }
+    } catch (e) {
+        showAlert('تعذر الاتصال بالخادم للطباعة المباشرة', 'danger');
+    } finally {
+        btn.disabled = printQueue.length === 0;
+        btn.innerHTML = originalHtml;
+    }
+}
+
 $(document).ready(function() {
+    loadZplPrinters();
     syncFontInputs();
     $('#labelMaterialPicker').select2({
         theme: 'bootstrap-5',
