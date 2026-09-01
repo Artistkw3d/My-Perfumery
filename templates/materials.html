@@ -199,7 +199,7 @@
             <button class="btn btn-outline-secondary btn-sm active" onclick="setView('card')" id="btnCard"><i class="bi bi-grid-3x3-gap"></i></button>
             <button class="btn btn-outline-secondary btn-sm" onclick="setView('table')" id="btnTable"><i class="bi bi-list"></i></button>
         </div>
-        <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="بحث..." onkeyup="filterMaterials()" style="width:220px;">
+        <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="بحث..." onkeyup="filterMaterialsDebounced()" style="width:220px;">
         <button class="btn btn-outline-secondary btn-sm" onclick="toggleAdvFilter()" id="advFilterToggle" title="فلتر متقدم">
             <i class="bi bi-funnel"></i> فلتر متقدم
             <span id="advFilterCount" class="badge bg-warning text-dark" style="display:none;margin-right:4px;">0</span>
@@ -340,6 +340,13 @@
             </table>
         </div>
     </div>
+</div>
+
+<div id="listFooter" class="text-center my-3">
+    <div id="listCountInfo" class="text-muted" style="font-size:0.8rem;margin-bottom:6px;"></div>
+    <button id="loadMoreBtn" class="btn btn-outline-secondary btn-sm" style="display:none;" onclick="loadMoreMaterials()">
+        <i class="bi bi-arrow-down-circle"></i> عرض المزيد (<span id="loadMoreN"></span>)
+    </button>
 </div>
 
 <!-- Material Modal -->
@@ -1633,7 +1640,7 @@ function loadMaterials() {
         .then(data => {
             if (data.success) {
                 materials = data.data;
-                renderView();
+                filterMaterials();      // computes visibleMaterials + draws the first window
                 updateOverviewWheel();
                 maybeOpenFromQueryParam();
             }
@@ -1665,11 +1672,9 @@ function setView(view) {
 }
 
 function renderView() {
-    if (currentView === 'card') renderCards();
-    else renderTable();
-    // Re-apply any active filters after a re-render so refresh / view-toggle
-    // doesn't lose the user's filter state.
-    if (typeof filterMaterials === 'function') filterMaterials();
+    // Redraw the current window from the already-computed filtered set
+    // (used on view toggle — keeps the user's filters and scroll depth).
+    drawList();
 }
 
 // ===== Card View =====
@@ -1683,9 +1688,49 @@ function matPhotoHtml(m, sizeClass, phClass) {
     return `<div class="${phClass}" title="لا توجد صورة" onclick="event.stopPropagation();editMaterial(${m.id})"><i class="bi bi-image"></i></div>`;
 }
 
-function renderCards() {
+// ===== Windowed rendering =====
+// The catalog can hold thousands of materials; rendering every card + a
+// live Chart.js wheel per card at once locks the browser for tens of
+// seconds. We keep the full array in memory but only render a page at a
+// time (RENDER_PAGE), growing on "load more" / scroll-into-view.
+const RENDER_PAGE = 60;
+let visibleMaterials = [];    // materials passing the current search + filters
+let renderedCount = RENDER_PAGE;
+
+function drawList() {
+    const slice = visibleMaterials.slice(0, renderedCount);
+    if (currentView === 'card') renderCards(slice);
+    else renderTable(slice);
+    updateListFooter();
+}
+
+function loadMoreMaterials() {
+    if (renderedCount >= visibleMaterials.length) return;
+    renderedCount = Math.min(renderedCount + RENDER_PAGE, visibleMaterials.length);
+    drawList();
+}
+
+const _loadMoreObserver = new IntersectionObserver(entries => {
+    if (entries.some(e => e.isIntersecting)) loadMoreMaterials();
+}, { rootMargin: '600px' });
+
+function updateListFooter() {
+    const total = visibleMaterials.length;
+    const shown = Math.min(renderedCount, total);
+    const info = document.getElementById('listCountInfo');
+    const btn  = document.getElementById('loadMoreBtn');
+    const nEl  = document.getElementById('loadMoreN');
+    if (info) info.textContent = total ? `عرض ${shown} من ${total}` : 'لا نتائج مطابقة';
+    if (btn) {
+        btn.style.display = shown < total ? '' : 'none';
+        _loadMoreObserver.observe(btn);
+    }
+    if (nEl) nEl.textContent = Math.min(RENDER_PAGE, total - shown);
+}
+
+function renderCards(list) {
     const container = document.getElementById('cardView');
-    container.innerHTML = materials.map(m => {
+    container.innerHTML = (list || visibleMaterials.slice(0, renderedCount)).map(m => {
         const hasOlf = m.olfactive && OLF_CATS.some(c => m.olfactive[c] > 0);
         const topNotes = hasOlf ? OLF_CATS.filter(c => m.olfactive[c] >= 5)
             .sort((a, b) => m.olfactive[b] - m.olfactive[a])
@@ -1749,9 +1794,9 @@ function renderCards() {
 }
 
 // ===== Table View =====
-function renderTable() {
+function renderTable(list) {
     const tbody = document.getElementById('materialsBody');
-    tbody.innerHTML = materials.map(m => `
+    tbody.innerHTML = (list || visibleMaterials.slice(0, renderedCount)).map(m => `
         <tr data-mat-id="${m.id}">
             <td>${matPhotoHtml(m, 'tbl-photo', 'tbl-photo-placeholder')}</td>
             <td><canvas class="mini-canvas-tbl" data-id="${m.id}" width="50" height="50"
@@ -1841,19 +1886,18 @@ function _matchesTextSearch(m, q) {
 
 function filterMaterials() {
     const q = (document.getElementById('searchInput').value || '').toLowerCase();
-    // Visit each card / row and show/hide based on combined search + advanced filters.
-    materials.forEach(m => {
-        const visible = _matchesTextSearch(m, q) && _matchesAdvFilter(m);
-        // Card view
-        document.querySelectorAll(`.mat-card[data-mat-id="${m.id}"]`).forEach(c => {
-            c.style.display = visible ? '' : 'none';
-        });
-        // Table view
-        document.querySelectorAll(`#materialsBody tr[data-mat-id="${m.id}"]`).forEach(r => {
-            r.style.display = visible ? '' : 'none';
-        });
-    });
+    visibleMaterials = materials.filter(m => _matchesTextSearch(m, q) && _matchesAdvFilter(m));
+    renderedCount = Math.min(RENDER_PAGE, visibleMaterials.length);
+    drawList();
     updateAdvFilterChips();
+}
+
+// Debounced for the search box — each rebuild redraws up to RENDER_PAGE
+// cards + wheels, too heavy to run on every keystroke.
+let _filterDebounceT = null;
+function filterMaterialsDebounced() {
+    clearTimeout(_filterDebounceT);
+    _filterDebounceT = setTimeout(filterMaterials, 200);
 }
 
 function toggleAdvFilter() {
