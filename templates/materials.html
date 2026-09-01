@@ -118,6 +118,7 @@
     }
     .mat-card-name { font-weight: 700; font-size: 0.95rem; color: #2d2418; }
     .mat-card-cas { font-size: 0.78rem; color: #7a6b57; font-family: monospace; }
+    .mat-card-syn { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .mat-card-body {
         display: flex;
         align-items: center;
@@ -499,8 +500,8 @@
                             <div class="row">
                                 <div class="col-md-4">
                                     <div class="mb-3">
-                                        <label class="form-label">Synonyms (أسماء بديلة)</label>
-                                        <input type="text" name="synonyms" id="mat_synonyms" class="form-control" placeholder="Alternative names">
+                                        <label class="form-label">الأسماء الثانوية (Synonyms)</label>
+                                        <input type="text" name="synonyms" id="mat_synonyms" class="form-control" placeholder="أسماء تجارية / مرادفات — تُجلب تلقائياً من «تحديث البيانات»">
                                     </div>
                                 </div>
                                 <div class="col-md-4">
@@ -1122,6 +1123,35 @@ function setExpiryMonths(months) {
     document.getElementById('mat_expiry_date').value = iso;
 }
 
+// Tidy a raw synonyms string for display: strip HTML, drop "Synonyms:"
+// labels, split on ; // | ، , dedupe, drop pure identifiers (CAS-like /
+// registry codes), keep the first few readable names.
+function formatSynonyms(raw, limit) {
+    if (!raw) return '';
+    const parts = String(raw)
+        .replace(/&amp;/g, '&')
+        .split(/\s*(?:;|\/\/|\||،|<br\s*\/?>|synonyms?\s*:)\s*/i)
+        .map(x => x.replace(/<[^>]+>/g, ' '))
+        .map(x => x.trim().replace(/^[-–,\s]+|[-–,\s]+$/g, ''))
+        .filter(x => x && x.length <= 40)
+        .filter(x => !/^[\d\-\s.]+$/.test(x))
+        .filter(x => !/^(unii|einecs|ec|cid|fema|nsc|mfcd|dtxsid|chebi|hsdb|caswell|wln)\b/i.test(x));
+    const seen = new Set(), out = [];
+    for (const p of parts) {
+        const k = p.toLowerCase();
+        if (seen.has(k)) continue;
+        seen.add(k); out.push(p);
+        if (out.length >= (limit || 6)) break;
+    }
+    return out.join('، ');
+}
+
+function synonymsHtml(m, cls) {
+    const s = formatSynonyms(m.synonyms);
+    if (!s) return '';
+    return `<div class="${cls || ''} text-muted" style="font-size:0.68rem;line-height:1.3;" title="${escapeHtml(m.synonyms || '')}"><i class="bi bi-tags" style="opacity:0.6;"></i> ${escapeHtml(s)}</div>`;
+}
+
 function usesBadgesHtml(m) {
     if (!m.uses || !m.uses.length) return '';
     return `<div class="mat-card-uses">${m.uses.map(key => {
@@ -1672,6 +1702,7 @@ function renderCards() {
                         <div class="mat-card-name">${mixBadge}${m.name}</div>
                         ${m.name_ar ? `<small class="text-muted">${m.name_ar}</small>` : ''}
                         <div class="mat-card-cas">${m.cas_number || ''}</div>
+                        ${synonymsHtml(m, 'mat-card-syn mt-1')}
                     </div>
                 </div>
                 <span class="badge badge-profile badge-${(m.profile||'heart').toLowerCase()}">${m.profile||'Heart'}</span>
@@ -1729,6 +1760,7 @@ function renderTable() {
                 <strong>${m.name}</strong>
                 ${m.composition_count > 0 ? ` <span class="badge bg-success" style="font-size:0.62rem;" title="${m.composition_count} مكوّن"><i class="bi bi-diagram-3"></i> خليط</span>` : ''}
                 ${m.name_ar ? `<br><small class="text-muted">${m.name_ar}</small>` : ''}
+                ${synonymsHtml(m)}
                 ${usesBadgesHtml(m)}
                 ${expiryBadgeHtml(m)}
             </td>

@@ -2291,6 +2291,38 @@ def scentree_lookup():
         return jsonify({'success': False, 'message': err})
     return jsonify({'success': True, 'data': result})
 
+def _clean_synonym_list(raw, drop_terms=(), limit=8):
+    """Pick human-friendly secondary names out of a raw synonym dump.
+    PubChem/registry synonym lists mix in the CAS number, EC/registry
+    codes (UNII, EINECS, DTXSID, FEMA, NSC, MFCD...), and deprecated
+    systematic names — this keeps short, mostly-alphabetic names,
+    de-dupes case-insensitively, and drops anything matching a drop-term
+    (typically the material's own name / CAS). Accepts a list or a single
+    delimited string. Returns a '; '-joined string."""
+    if isinstance(raw, str):
+        raw = re.split(r'\s*(?:;|//|\||،|<br\s*/?>|synonyms?\s*:)\s*', raw, flags=re.IGNORECASE)
+    drop_norm = {re.sub(r'\s+', ' ', str(d)).strip().lower() for d in drop_terms if d}
+    seen, out = set(), []
+    for s in raw or []:
+        s = re.sub(r'<[^>]+>', ' ', str(s))
+        s = re.sub(r'\s+', ' ', s).strip().strip(';,-')
+        if not s or len(s) > 45:
+            continue
+        low = s.lower()
+        if low in seen or low in drop_norm:
+            continue
+        if re.fullmatch(r'[\d\-\s.]+', s):
+            continue
+        if re.match(r'(unii|einecs|ec|cid|fema|nsc|mfcd|dtxsid|chebi|hsdb|nsc|caswell|wln)\b', low):
+            continue
+        if sum(c.isalpha() for c in s) < max(3, len(s) * 0.45):
+            continue
+        seen.add(low)
+        out.append(s)
+        if len(out) >= limit:
+            break
+    return '; '.join(out)
+
 def _lookup_scentree(query):
     """Fetch perfumery data from Scentree.co using material name or CAS.
     Returns (result_dict, None) on success, or (None, error_message) on failure."""
@@ -2328,7 +2360,8 @@ def _lookup_scentree(query):
         result['name'] = (match.get('name', {}).get('text', '') or '').replace('\u00ae', '').replace('\u2122', '').strip()
         syn_text = match.get('synonyms', {}).get('text', '') or ''
         if syn_text:
-            result['synonyms'] = syn_text.replace(' ; ', '; ')
+            cleaned = _clean_synonym_list(syn_text, drop_terms=(result.get('name'),))
+            result['synonyms'] = cleaned or syn_text.replace(' ; ', '; ')
         cas_text = match.get('cas_number', {}).get('text', '') or ''
         if cas_text:
             result['cas_number'] = cas_text
@@ -2658,7 +2691,9 @@ def _lookup_pubchem_physical(cas):
             syn_data = json.loads(resp3.read().decode())
 
         syns = syn_data.get('InformationList', {}).get('Information', [{}])[0].get('Synonym', [])
-        result['synonyms'] = '; '.join(syns[:10])
+        # Raw PubChem synonym lists lead with the CAS + registry codes +
+        # systematic names — filter down to readable trade/common names.
+        result['synonyms'] = _clean_synonym_list(syns, drop_terms=(cas,), limit=8) or '; '.join(syns[:6])
 
         # Step 4: Get experimental properties
         url4 = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/{cid}/JSON?heading=Experimental+Properties"
@@ -3186,9 +3221,9 @@ def api_materials_search():
         like = f'%{q}%'
         rows = conn.execute('''
             SELECT id, name, name_ar, cas_number FROM materials
-            WHERE name LIKE ? OR name_ar LIKE ? OR cas_number LIKE ?
+            WHERE name LIKE ? OR name_ar LIKE ? OR cas_number LIKE ? OR synonyms LIKE ?
             ORDER BY name LIMIT 30
-        ''', (like, like, like)).fetchall()
+        ''', (like, like, like, like)).fetchall()
     else:
         rows = conn.execute(
             "SELECT id, name, name_ar, cas_number FROM materials ORDER BY name LIMIT 30"
