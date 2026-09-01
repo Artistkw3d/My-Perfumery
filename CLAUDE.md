@@ -298,6 +298,7 @@ Follow-up after the materials-page fix above — the user still felt the app was
 
 ## Formula Card (`formula_card.html`)
 - Customize panel persists to `formulas.card_settings` JSON: brand name, header/footer text, logo data URL, date, code, `customFamilies[]`, and `noteMode` (2026-09-01)
+- **Pyramid notes flow side-by-side (2026-09-01)** — `.pyramid-body` is a centered `flex-wrap` row of chip/card `.note-item`s instead of a stacked bordered list. `renderPyramidLevel()` toggles `.full` (card, `max-width:240px`, text wraps) vs `.compact` (rounded pill, `nowrap`) on the body per `noteMode`.
 - **`noteMode` — 3-way pyramid display, one toolbar button** (`cycleNoteMode()`, `#noteModeBtn`, `no-print`). 0 = full (name + Arabic name + family + odor + %); 1 = family + % only; 2 = family-only — collapsed to one row per **distinct** family per note level (no names, no percentages), a plain olfactive-family list. `renderPyramidLevel()` branches on `noteMode`; `applyNoteMode()` updates the button label + re-renders from cached `cardData.pyramid`. Saved as `card_settings.noteMode`; the earlier `hideMaterialNames` boolean is migrated to `noteMode = 1` on load.
 - Custom fragrance families are added via a dropdown sourced from the `families` table (icon + name imported automatically; only percentage is user-entered)
 - Total-weight stat was removed from the footer per user preference; only ingredient count remains

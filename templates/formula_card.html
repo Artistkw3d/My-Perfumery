@@ -178,24 +178,42 @@
     .pyramid-top .pyramid-header { background: linear-gradient(135deg, #f5f0eb, #e8ddd0); color: #5c4a32; }
     .pyramid-heart .pyramid-header { background: linear-gradient(135deg, #f2e4e2, #e8cfc9); color: #8b4f47; }
     .pyramid-base .pyramid-header { background: linear-gradient(135deg, #e6ede5, #d2e0d1); color: #4a6b48; }
-    .pyramid-body { padding: 12px 20px; background: rgba(255,255,255,0.8); }
+    /* Notes flow side-by-side and wrap, instead of one stacked list */
+    .pyramid-body {
+        padding: 16px 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        background: rgba(255,255,255,0.8);
+    }
     .pyramid-top .pyramid-body { background: rgba(245,240,235,0.3); }
     .pyramid-heart .pyramid-body { background: rgba(242,228,226,0.3); }
     .pyramid-base .pyramid-body { background: rgba(230,237,229,0.3); }
     .note-item {
         display: flex;
         align-items: center;
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(0,0,0,0.04);
+        gap: 8px;
+        padding: 9px 14px;
+        background: #fff;
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 14px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+        transition: transform 0.2s, box-shadow 0.2s;
     }
-    .note-item:last-child { border-bottom: none; }
-    .note-item .note-icon { font-size: 1.2rem; width: 35px; text-align: center; }
-    .note-item .note-info { flex: 1; }
+    .note-item:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    /* Compact modes (family+% / family-only): small rounded pills */
+    .pyramid-body.compact .note-item { border-radius: 999px; padding: 7px 14px; }
+    .pyramid-body.compact .note-name { white-space: nowrap; }
+    /* Full mode: card-like, text may wrap, capped width so they tile evenly */
+    .pyramid-body.full .note-item { align-items: flex-start; max-width: 240px; }
+    .note-item .note-icon { font-size: 1.15rem; width: auto; flex-shrink: 0; }
+    .note-item .note-info { min-width: 0; }
     .note-item .note-name { font-weight: 600; font-size: 0.9rem; color: #333; }
     .note-item .note-name-ar { font-size: 0.75rem; color: #999; }
     .note-item .note-family { font-size: 0.75rem; color: #8b7355; }
-    .note-item .note-odor { font-size: 0.75rem; color: #666; font-style: italic; }
-    .note-item .note-pct { font-size: 0.8rem; font-weight: 600; color: #555; min-width: 50px; text-align: left; }
+    .note-item .note-odor { font-size: 0.72rem; color: #666; font-style: italic; line-height: 1.35; }
+    .note-item .note-pct { font-size: 0.8rem; font-weight: 700; color: #555; margin-inline-start: 4px; flex-shrink: 0; }
 
     /* التذييل */
     .card-footer-section {
@@ -272,7 +290,8 @@
 
     @media print {
         .perfume-card { box-shadow: none !important; border: 1px solid #eee; border-radius: 0; }
-        .family-badge:hover, .pyramid-level:hover { transform: none; }
+        .family-badge:hover, .pyramid-level:hover, .note-item:hover { transform: none; box-shadow: none; }
+        .note-item { box-shadow: none; break-inside: avoid; }
         .no-print { display: none !important; }
         .main-content { padding: 0 !important; }
         .card-hero { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -732,6 +751,9 @@ function saveCardSettings() {
 function renderPyramidLevel(containerId, countId, notes) {
     const container = document.getElementById(containerId);
     const counter = document.getElementById(countId);
+
+    container.classList.toggle('full', noteMode === 0);
+    container.classList.toggle('compact', noteMode !== 0);
 
     if (!notes.length) {
         container.innerHTML = '<div class="empty-level">لا توجد مكونات</div>';
