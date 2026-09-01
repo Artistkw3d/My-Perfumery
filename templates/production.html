@@ -15,6 +15,79 @@
     </div>
 </div>
 
+<!-- ===== حاسبة الإنتاج: زيت + كحول ===== -->
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        <strong><i class="bi bi-calculator"></i> حاسبة الإنتاج — زيت + كحول</strong>
+        <span class="text-muted" style="font-size:0.8rem;"> — احسب كمية المركّز والكحول اللازمة لعدد قوارير بتركيز معيّن</span>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-6 col-md-3">
+                <label class="form-label" style="font-size:0.82rem;">عدد القوارير</label>
+                <input type="number" id="pcBottles" class="form-control" min="1" step="1" value="1000" oninput="pcCalc()">
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label" style="font-size:0.82rem;">حجم القارورة (مل)</label>
+                <input type="number" id="pcSize" class="form-control" min="0.1" step="0.1" value="50" list="pcSizes" oninput="pcCalc()">
+                <datalist id="pcSizes">
+                    <option value="3"></option><option value="5"></option><option value="10"></option>
+                    <option value="15"></option><option value="25"></option><option value="30"></option>
+                    <option value="50"></option><option value="75"></option><option value="100"></option><option value="200"></option>
+                </datalist>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label" style="font-size:0.82rem;">التركيز %</label>
+                <input type="number" id="pcConc" class="form-control" min="0" max="100" step="0.1" value="7" oninput="pcCalc()">
+            </div>
+            <div class="col-6 col-md-3">
+                <button class="btn btn-outline-secondary btn-sm" type="button" onclick="pcToggleAdv()">
+                    <i class="bi bi-sliders"></i> خيارات متقدمة
+                </button>
+            </div>
+        </div>
+
+        <div id="pcAdv" style="display:none;" class="mt-3 p-3 rounded" >
+            <div class="row g-3">
+                <div class="col-12 col-md-4">
+                    <label class="form-label" style="font-size:0.82rem;">طريقة الحساب</label>
+                    <div>
+                        <label class="me-3" style="font-size:0.85rem;"><input type="radio" name="pcMethod" value="ww" checked onchange="pcCalc()"> بالوزن (w/w)</label>
+                        <label style="font-size:0.85rem;"><input type="radio" name="pcMethod" value="vv" onchange="pcCalc()"> بالحجم (v/v)</label>
+                    </div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label" style="font-size:0.82rem;">كثافة الزيت (g/mL)</label>
+                    <input type="number" id="pcDoil" class="form-control form-control-sm" step="0.01" value="0.95" oninput="pcCalc()">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label" style="font-size:0.82rem;">كثافة الكحول (g/mL)</label>
+                    <input type="number" id="pcDalc" class="form-control form-control-sm" step="0.001" value="0.81" oninput="pcCalc()">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label" style="font-size:0.82rem;">فائض/هدر %</label>
+                    <input type="number" id="pcOver" class="form-control form-control-sm" min="0" step="0.5" value="0" oninput="pcCalc()">
+                </div>
+            </div>
+            <div class="row g-2 mt-1 align-items-end">
+                <div class="col-auto">
+                    <label style="font-size:0.85rem;"><input type="checkbox" id="pcSplitToggle" onchange="pcLoadFormula()"> فصّل الزيت حسب تركيبة</label>
+                </div>
+                <div class="col-12 col-md-5">
+                    <select id="pcFormula" class="form-select form-select-sm" onchange="pcLoadFormula()">
+                        <option value="">-- اختر تركيبة --</option>
+                        {% for f in formulas %}
+                        <option value="{{ f.id }}">{{ f.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="pcResults" class="mt-3"></div>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body">
         <table class="table table-hover" id="ordersTable">
@@ -107,6 +180,137 @@
 let currentOrderId = null;
 
 loadOrders();
+
+// ===== Production calculator (oil + alcohol) =====
+const pcV = id => parseFloat((document.getElementById(id) || {}).value);
+let pcFormulaData = null;   // cached {data, total_weight} of the chosen formula
+
+function pcToggleAdv() {
+    const el = document.getElementById('pcAdv');
+    el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function pcFmt(n, d = 2) {
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function pcLoadFormula() {
+    const on = document.getElementById('pcSplitToggle').checked;
+    const fid = document.getElementById('pcFormula').value;
+    if (!on || !fid) { pcFormulaData = null; pcCalc(); return; }
+    fetch(`/api/formula/${fid}/ingredients`)
+        .then(r => r.json())
+        .then(d => {
+            pcFormulaData = (d && d.success && d.total_weight > 0) ? d : null;
+            pcCalc();
+        })
+        .catch(() => { pcFormulaData = null; pcCalc(); });
+}
+
+function pcCalc() {
+    const bottles = pcV('pcBottles') || 0;
+    const size    = pcV('pcSize') || 0;              // mL per bottle
+    const conc    = (pcV('pcConc') || 0) / 100;      // fraction
+    const dOil    = pcV('pcDoil') || 0.95;
+    const dAlc    = pcV('pcDalc') || 0.81;
+    const overPct = pcV('pcOver') || 0;
+    const method  = (document.querySelector('input[name="pcMethod"]:checked') || {}).value || 'ww';
+    const out = document.getElementById('pcResults');
+
+    if (!bottles || !size || conc <= 0 || conc >= 1) {
+        out.innerHTML = '<div class="text-muted" style="font-size:0.85rem;">أدخل عدد القوارير والحجم وتركيزاً بين 0 و 100%.</div>';
+        return;
+    }
+
+    const totalVol_L = bottles * size / 1000;        // total juice volume (no overage)
+    let oilKg, alcKg, oilVol_L, alcVol_L, juiceKg;
+
+    if (method === 'vv') {
+        oilVol_L = totalVol_L * conc;
+        alcVol_L = totalVol_L * (1 - conc);
+        oilKg = oilVol_L * dOil;
+        alcKg = alcVol_L * dAlc;
+        juiceKg = oilKg + alcKg;
+    } else {  // w/w — total juice weight from a blended density, then split by mass %
+        const dJuice = conc * dOil + (1 - conc) * dAlc;
+        juiceKg  = totalVol_L * dJuice;
+        oilKg    = juiceKg * conc;
+        alcKg    = juiceKg * (1 - conc);
+        oilVol_L = oilKg / dOil;
+        alcVol_L = alcKg / dAlc;
+    }
+
+    const over = 1 + overPct / 100;
+    const perBottleOilG = oilKg * 1000 / bottles;
+    const perBottleAlcG = alcKg * 1000 / bottles;
+
+    let html = `
+    <div class="row g-3">
+        <div class="col-12 col-md-4">
+            <div class="p-3 rounded border h-100">
+                <div class="text-muted" style="font-size:0.78rem;">إجمالي السائل (${method === 'vv' ? 'حجم/حجم' : 'وزن/وزن'})</div>
+                <div style="font-size:1.15rem;font-weight:700;">${pcFmt(totalVol_L)} لتر</div>
+                <div class="text-muted" style="font-size:0.85rem;">≈ ${pcFmt(juiceKg)} كجم — ${bottles.toLocaleString('en-US')} قارورة × ${pcFmt(size,1)} مل</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4">
+            <div class="p-3 rounded border h-100" style="background:#fff6e9;">
+                <div class="text-muted" style="font-size:0.78rem;">🧪 الزيت (المركّز) — ${pcFmt(conc*100,1)}%</div>
+                <div style="font-size:1.35rem;font-weight:800;color:#8a5a00;">${pcFmt(oilKg)} كجم</div>
+                <div class="text-muted" style="font-size:0.82rem;">${pcFmt(oilKg*1000,0)} غ &nbsp;•&nbsp; ${pcFmt(oilVol_L)} لتر</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4">
+            <div class="p-3 rounded border h-100" style="background:#eef4ff;">
+                <div class="text-muted" style="font-size:0.78rem;">🧴 الكحول — ${pcFmt((1-conc)*100,1)}%</div>
+                <div style="font-size:1.35rem;font-weight:800;color:#254a9c;">${pcFmt(alcKg)} كجم</div>
+                <div class="text-muted" style="font-size:0.82rem;">${pcFmt(alcVol_L)} لتر</div>
+            </div>
+        </div>
+    </div>
+    <div class="mt-2" style="font-size:0.85rem;">
+        <strong>لكل قارورة:</strong> زيت ${pcFmt(perBottleOilG)} غ + كحول ${pcFmt(perBottleAlcG)} غ
+        <span class="text-muted">(إجمالي ${pcFmt(perBottleOilG + perBottleAlcG)} غ / قارورة)</span>
+    </div>`;
+
+    if (overPct > 0) {
+        html += `<div class="mt-1 p-2 rounded" style="background:#f3f7f3;font-size:0.85rem;">
+            <strong>للشراء مع فائض ${pcFmt(overPct,1)}%:</strong>
+            زيت <strong>${pcFmt(oilKg*over)} كجم</strong> &nbsp;•&nbsp; كحول <strong>${pcFmt(alcKg*over)} كجم</strong></div>`;
+    }
+
+    if (pcFormulaData) {
+        const tw = pcFormulaData.total_weight;
+        const buyOilKg = oilKg * over;
+        const rows = pcFormulaData.data.map(i => {
+            const frac = (i.weight || 0) / tw;
+            const kg = buyOilKg * frac;
+            return `<tr><td>${i.name || '-'}</td><td><code>${i.cas_number || '-'}</code></td>
+                <td class="text-end">${pcFmt(kg, 3)}</td><td class="text-end">${pcFmt(kg*1000, 1)}</td></tr>`;
+        }).join('');
+        html += `
+        <div class="mt-3">
+            <div style="font-size:0.85rem;font-weight:700;margin-bottom:4px;">
+                <i class="bi bi-list-check"></i> تفصيل الزيت حسب التركيبة ${overPct > 0 ? '(شامل الفائض)' : ''} — إجمالي ${pcFmt(buyOilKg)} كجم
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered" style="font-size:0.82rem;">
+                    <thead><tr><th>المادة</th><th>CAS</th><th class="text-end">كجم</th><th class="text-end">غ</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+    }
+
+    html += `<div class="text-muted mt-2" style="font-size:0.75rem;">
+        تقدير — الكثافات افتراضية (زيت ${pcFmt(dOil,2)} / كحول ${pcFmt(dAlc,3)} g/mL) وقابلة للتعديل من «خيارات متقدمة».
+        الكحول هنا هو كحول العطور (إيثانول). لا يشمل حجم ماء أو مثبّتات إضافية.</div>`;
+
+    out.innerHTML = html;
+}
+
+pcCalc();
 
 function loadOrders() {
     fetch('/api/production?action=list')
