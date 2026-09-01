@@ -209,7 +209,7 @@
         <button class="btn btn-outline-success btn-sm" onclick="showQuickDiluteModal()" title="إنشاء مادة مخفّفة جاهزة (مثل Vanillin 10% في DPG) — IFRA يُحسب تلقائياً من التركيب">
             <i class="bi bi-droplet-half"></i> تخفيف سريع
         </button>
-        <button class="btn btn-outline-primary btn-sm" onclick="startBulkPhotoUpdate()" title="يجلب صوراً تلقائياً لكل مادة بدون صورة، عبر Perfumer Supply House / Bioland / Fraterworks — لا يمس المواد التي لديها صورة مسبقاً">
+        <button class="btn btn-outline-primary btn-sm" onclick="startBulkPhotoUpdate()" title="يجلب صوراً تلقائياً لكل مادة بدون صورة من مصادر خارجية — لا يمس المواد التي لديها صورة مسبقاً">
             <i class="bi bi-images"></i> تحديث صور المواد
         </button>
         <button class="btn btn-outline-info btn-sm" onclick="startBulkDataUpdate()" title="يملأ الحقول الفارغة (وصف الرائحة، نقطة الوميض، الكثافة، ...) لكل مادة لديها CAS ولم يُبحث عنها من قبل، من PubChem / TGSC / Scentree — لا يستبدل أي بيانات موجودة، ولا يعيد البحث لمادة تم البحث عنها سابقاً">
@@ -513,6 +513,17 @@
                                     <div class="mb-3">
                                         <label class="form-label">تاريخ انتهاء الصلاحية</label>
                                         <input type="date" name="expiry_date" id="mat_expiry_date" class="form-control">
+                                        <div class="d-flex flex-wrap gap-1 mt-1">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.72rem;" onclick="setExpiryMonths(6)"><i class="bi bi-hourglass-split"></i> ٦ أشهر</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.72rem;" onclick="setExpiryMonths(12)"><i class="bi bi-calendar-check"></i> سنة</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.72rem;" onclick="setExpiryMonths(18)"><i class="bi bi-calendar-check"></i> ١٨ شهر</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.72rem;" onclick="setExpiryMonths(24)"><i class="bi bi-calendar2-check"></i> سنتان</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.72rem;" onclick="setExpiryMonths(36)"><i class="bi bi-calendar3"></i> ٣ سنوات</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.72rem;" onclick="setExpiryMonths(48)"><i class="bi bi-calendar3"></i> ٤ سنوات</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.72rem;" onclick="setExpiryMonths(60)"><i class="bi bi-calendar3"></i> ٥ سنوات</button>
+                                            <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" style="font-size:0.72rem;" onclick="document.getElementById('mat_expiry_date').value='';"><i class="bi bi-x-circle"></i> مسح</button>
+                                        </div>
+                                        <small class="text-muted" style="font-size:0.7rem;">تُحسب من تاريخ اليوم</small>
                                     </div>
                                 </div>
                             </div>
@@ -969,7 +980,7 @@
     </div>
 </div>
 
-<!-- Photo Search Modal: find/confirm a material photo from Fraterworks -->
+<!-- Photo Search Modal: find/confirm a material photo from external sources -->
 <div class="modal fade" id="photoSearchModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -1099,6 +1110,16 @@ function expiryBadgeHtml(m) {
         return `<span class="badge bg-warning text-dark" style="font-size:0.62rem;margin-right:2px;" title="تنتهي الصلاحية بتاريخ ${m.expiry_date}"><i class="bi bi-hourglass-split"></i> تنتهي خلال ${days} يوم</span>`;
     }
     return '';
+}
+
+// Preset shelf-life buttons next to the expiry-date input: set the date to
+// today + N months (local time, no UTC drift). Month overflow (e.g. 31 Jan
+// + 1mo) rolls into the next month — fine for a shelf-life estimate.
+function setExpiryMonths(months) {
+    const d = new Date();
+    d.setMonth(d.getMonth() + months);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    document.getElementById('mat_expiry_date').value = iso;
 }
 
 function usesBadgesHtml(m) {
@@ -2065,7 +2086,7 @@ function deleteMaterialFile(matId, fileId) {
         .then(() => loadMaterialFiles(matId));
 }
 
-// ===== Material photo (primary image — fetched from Fraterworks or reused from an uploaded file) =====
+// ===== Material photo (primary image — fetched from an external source or reused from an uploaded file) =====
 let _photoMatId = null;
 
 function togglePhotoBox(matId, photoFileId) {
@@ -2110,7 +2131,7 @@ function openPhotoSearchModal() {
         .then(r => r.json())
         .then(data => {
             if (data.success) renderPhotoCandidate(data.data);
-            else renderPhotoNotFound(data.message, data.search_url);
+            else renderPhotoNotFound(data.message);
         })
         .catch(() => { body.innerHTML = '<div class="text-danger">خطأ في الاتصال</div>'; });
 }
@@ -2119,23 +2140,19 @@ function renderPhotoCandidate(d) {
     const body = document.getElementById('photoSearchBody');
     body.innerHTML = `
         <img src="${d.image_url}" style="max-height:220px;max-width:100%;border-radius:10px;border:1px solid rgba(139,115,85,0.25);">
-        <div class="mt-2" style="font-size:0.9rem;font-weight:600;">${escapeHtml(d.title)}</div>
-        ${d.source_label ? `<div class="text-muted" style="font-size:0.75rem;">المصدر: ${escapeHtml(d.source_label)}</div>` : ''}
         <div class="mt-3 d-flex justify-content-center gap-2">
             <button class="btn btn-primary btn-sm" onclick="useFetchedPhoto(this)" data-image-url="${escapeHtml(d.image_url)}"><i class="bi bi-check-circle"></i> استخدام هذه الصورة</button>
-            <a class="btn btn-outline-secondary btn-sm" href="${d.product_url}" target="_blank"><i class="bi bi-box-arrow-up-left"></i> فتح صفحة المنتج</a>
         </div>`;
 }
 
-function renderPhotoNotFound(message, searchUrl) {
+function renderPhotoNotFound(message) {
     const body = document.getElementById('photoSearchBody');
     body.innerHTML = `
-        <div class="text-muted mb-3"><i class="bi bi-search fs-2 d-block mb-2"></i>${escapeHtml(message || 'لم يتم إيجاد تطابق تلقائي')}</div>
-        ${searchUrl ? `<a class="btn btn-outline-primary btn-sm mb-3" href="${searchUrl}" target="_blank"><i class="bi bi-box-arrow-up-left"></i> افتح بحث Fraterworks بالمتصفح</a>` : ''}
+        <div class="text-muted mb-3"><i class="bi bi-search fs-2 d-block mb-2"></i>${escapeHtml(message || 'لم يتم إيجاد صورة تلقائياً')}</div>
         <div class="text-start" style="font-size:0.82rem;">
-            <label class="form-label">أو الصق رابط منتج Fraterworks هنا:</label>
+            <label class="form-label">أو الصق رابط صورة المنتج هنا:</label>
             <div class="input-group input-group-sm">
-                <input type="text" id="photoProductUrlInput" class="form-control" placeholder="https://fraterworks.com/products/...">
+                <input type="text" id="photoProductUrlInput" class="form-control" placeholder="https://...">
                 <button class="btn btn-outline-success" onclick="resolveMaterialPhotoUrl()"><i class="bi bi-download"></i> جلب</button>
             </div>
         </div>`;
@@ -2153,7 +2170,7 @@ function resolveMaterialPhotoUrl() {
         .then(r => r.json())
         .then(data => {
             if (data.success) renderPhotoCandidate(data.data);
-            else renderPhotoNotFound(data.message, null);
+            else renderPhotoNotFound(data.message);
         })
         .catch(() => { body.innerHTML = '<div class="text-danger">خطأ في الاتصال</div>'; });
 }
@@ -2871,18 +2888,28 @@ function fetchMSDSData() {
         });
 }
 
-function saveMaterial() {
+function saveMaterial(dupOverride) {
     const form = document.getElementById('materialForm');
     const formData = new FormData(form);
     formData.set('pictograms', $('#mat_pictograms').val().join(','));
     formData.set('h_codes', $('#mat_h_codes').val().join(','));
     formData.set('p_codes', $('#mat_p_codes').val().join(','));
     formData.set('ghs_classification', $('#mat_ghs_class').val().join(','));
+    if (dupOverride) formData.set('dup_override', '1');
 
     fetch('/api/materials', { method: 'POST', body: formData })
     .then(r => r.json())
     .then(data => {
         if (!data.success) {
+            if (data.duplicate) {
+                const lines = (data.matches || []).map(m =>
+                    '• ' + m.name + (m.name_ar ? ' / ' + m.name_ar : '') + (m.cas_number ? '  [CAS ' + m.cas_number + ']' : '')
+                ).join('\n');
+                if (confirm('هذه المادة موجودة مسبقاً:\n\n' + lines + '\n\nهل تريد إضافتها على أي حال؟')) {
+                    saveMaterial(true);
+                }
+                return;
+            }
             showAlert(data.message || 'خطأ', 'danger');
             return;
         }

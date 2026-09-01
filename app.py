@@ -3258,6 +3258,37 @@ def api_materials():
                     uses_selected.add('silage')
                 uses_json = json.dumps(sorted(uses_selected))
 
+                # Duplicate guard (new materials only): warn if another
+                # material already carries the same CAS number, or the same
+                # name (English or Arabic). The client re-submits the same
+                # form with dup_override=1 to save it anyway.
+                if not (id and id != '') and not request.form.get('dup_override'):
+                    _name_ar_v = (request.form.get('name_ar') or '').strip()
+                    _cas_v = (request.form.get('cas_number') or '').strip()
+                    _dup_clauses, _dup_params = [], []
+                    if _cas_v:
+                        _dup_clauses.append("LOWER(TRIM(COALESCE(cas_number,''))) = ?")
+                        _dup_params.append(_cas_v.lower())
+                    if (name or '').strip():
+                        _dup_clauses.append("LOWER(TRIM(COALESCE(name,''))) = ?")
+                        _dup_params.append(name.strip().lower())
+                    if _name_ar_v:
+                        _dup_clauses.append("LOWER(TRIM(COALESCE(name_ar,''))) = ?")
+                        _dup_params.append(_name_ar_v.lower())
+                    if _dup_clauses:
+                        _dup_rows = conn.execute(
+                            "SELECT id, name, name_ar, cas_number FROM materials "
+                            f"WHERE {' OR '.join(_dup_clauses)} LIMIT 5", _dup_params
+                        ).fetchall()
+                        if _dup_rows:
+                            conn.close()
+                            return jsonify({
+                                'success': False,
+                                'duplicate': True,
+                                'message': 'هذه المادة موجودة مسبقاً',
+                                'matches': [dict(r) for r in _dup_rows],
+                            })
+
                 if id and id != '':
                     conn.execute('''UPDATE materials SET name=?, name_ar=?, cas_number=?, family_id=?,
                         profile=?, supplier_id=?, ifra_limit=?, manual_ifra_cats=?, purchase_price=?, purchase_quantity=?,
@@ -3618,7 +3649,8 @@ def api_materials_bulk_job_status():
 _FRATERWORKS_HOSTS = ('fraterworks.com', 'www.fraterworks.com')
 _PSH_HOSTS = ('perfumersupplyhouse.com', 'www.perfumersupplyhouse.com')
 _BIOLAND_HOSTS = ('biolandes.com', 'www.biolandes.com')
-_PHOTO_VENDOR_HOSTS = _FRATERWORKS_HOSTS + ('cdn.shopify.com',) + _PSH_HOSTS + _BIOLAND_HOSTS
+_PUBCHEM_PHOTO_HOSTS = ('pubchem.ncbi.nlm.nih.gov',)
+_PHOTO_VENDOR_HOSTS = _FRATERWORKS_HOSTS + ('cdn.shopify.com',) + _PSH_HOSTS + _BIOLAND_HOSTS + _PUBCHEM_PHOTO_HOSTS
 
 def _slugify_for_fraterworks(text):
     text = (text or '').strip().lower()
@@ -3731,12 +3763,39 @@ def _fetch_psh_by_cas(cas):
         return None
     return {'title': title, 'image_url': img_m.group(1), 'product_url': product_url}
 
+def _fetch_pubchem_structure_by_cas(cas):
+    """Resolve a CAS number to a PubChem CID and return its 2-D structure
+    depiction PNG. Strictly CAS-based (no name guessing), and PubChem
+    resolves virtually every registered CAS — so this is a reliable
+    fallback when the product-photo vendors don't carry the material. The
+    image is a molecular-structure diagram, not a bottle/jar photo."""
+    import urllib.request, urllib.parse
+    cas = (cas or '').strip()
+    if not cas:
+        return None
+    try:
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{urllib.parse.quote(cas)}/cids/JSON"
+        req = urllib.request.Request(url, headers={'User-Agent': 'MyPerfumery/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        cid = data['IdentifierList']['CID'][0]
+    except Exception:
+        return None
+    return {
+        'title': f'CID {cid}',
+        'image_url': f'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG',
+        'product_url': f'https://pubchem.ncbi.nlm.nih.gov/compound/{cid}',
+    }
+
 # (source_key, arabic_label, host_allowlist, lookup_fn(name, cas))
-# CAS-based sources first (unambiguous match), Fraterworks last (name-based
-# guess — the only one that can misfire on a similarly-named material).
+# CAS-based sources first (unambiguous match): the two product-photo
+# vendors, then PubChem's structure diagram as a CAS-only fallback.
+# Fraterworks is last — the only name-based guess, which can misfire on a
+# similarly-named material.
 _PHOTO_SOURCES = (
     ('psh', 'Perfumer Supply House', _PSH_HOSTS, lambda name, cas: _fetch_psh_by_cas(cas)),
     ('bioland', 'Bioland', _BIOLAND_HOSTS, lambda name, cas: _fetch_bioland_by_cas(cas)),
+    ('pubchem', 'مصدر خارجي', _PUBCHEM_PHOTO_HOSTS, lambda name, cas: _fetch_pubchem_structure_by_cas(cas)),
     ('fraterworks', 'Fraterworks', _FRATERWORKS_HOSTS + ('cdn.shopify.com',), lambda name, cas: _fetch_fraterworks_by_name(name)),
 )
 
@@ -3769,11 +3828,9 @@ def api_material_photo_search():
     result = _find_material_photo(name, cas)
     if result:
         return jsonify({'success': True, 'data': result})
-    query = name or cas
     return jsonify({
         'success': False,
-        'message': f'لم يتم إيجاد تطابق تلقائي لـ "{query}" في المواقع المدعومة',
-        'search_url': f'https://fraterworks.com/search?q={urllib.parse.quote(query)}',
+        'message': 'لم يتم إيجاد صورة تلقائياً — يمكنك لصق رابط صورة يدوياً',
     })
 
 @app.route('/api/materials/photo-search/resolve', methods=['POST'])
@@ -3787,7 +3844,7 @@ def api_material_photo_search_resolve():
     except Exception:
         parsed = None
     if not parsed or parsed.hostname not in _FRATERWORKS_HOSTS or not parsed.path.startswith('/products/'):
-        return jsonify({'success': False, 'message': 'الرابط لازم يكون رابط منتج من fraterworks.com'})
+        return jsonify({'success': False, 'message': 'تعذر جلب صورة من هذا الرابط'})
     base = f'https://{parsed.hostname}{parsed.path.rstrip("/")}'
     json_url = base if base.endswith('.json') else base + '.json'
     try:
