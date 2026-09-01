@@ -339,6 +339,14 @@
         </div>
         <div class="col-md-12">
             <hr class="my-2">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="hideMaterialNames" onchange="updateCard()">
+                <label class="form-check-label fw-bold" for="hideMaterialNames">
+                    <i class="bi bi-eye-slash"></i> إخفاء أسماء المواد في البطاقة (تبقى العائلة العطرية والنسبة)
+                </label>
+            </div>
+        </div>
+        <div class="col-md-12">
             <label class="form-label fw-bold"><i class="bi bi-flower1"></i> إضافة عائلة عطرية</label>
             <div class="d-flex gap-2 align-items-start flex-wrap mb-2">
                 <select id="newFamilySelect" class="form-select" style="flex:1; min-width:220px;">
@@ -504,6 +512,13 @@ function updateCard() {
     } else {
         footerEl.style.display = 'none';
     }
+
+    // Re-render the pyramid so the "hide material names" toggle takes effect
+    if (cardData && cardData.pyramid) {
+        renderPyramidLevel('topNotes', 'topCount', cardData.pyramid.Top || []);
+        renderPyramidLevel('heartNotes', 'heartCount', cardData.pyramid.Heart || []);
+        renderPyramidLevel('baseNotes', 'baseCount', cardData.pyramid.Base || []);
+    }
 }
 
 function loadCard() {
@@ -594,6 +609,12 @@ function loadCard() {
                     renderFamilies();
                     renderCustomFamiliesList();
                 }
+                if (cs.hideMaterialNames) {
+                    document.getElementById('hideMaterialNames').checked = true;
+                    renderPyramidLevel('topNotes', 'topCount', data.pyramid.Top || []);
+                    renderPyramidLevel('heartNotes', 'heartCount', data.pyramid.Heart || []);
+                    renderPyramidLevel('baseNotes', 'baseCount', data.pyramid.Base || []);
+                }
             }
 
             // إظهار المحتوى
@@ -682,7 +703,8 @@ function saveCardSettings() {
         code: document.getElementById('customCode').value,
         date: document.getElementById('customDate').value,
         logoData: logoImg.style.display !== 'none' ? logoImg.src : '',
-        customFamilies: customFamilies
+        customFamilies: customFamilies,
+        hideMaterialNames: document.getElementById('hideMaterialNames').checked
     };
     const fd = new FormData();
     fd.append('card_settings', JSON.stringify(settings));
@@ -705,18 +727,24 @@ function renderPyramidLevel(containerId, countId, notes) {
 
     counter.textContent = notes.length + ' مكون';
 
-    container.innerHTML = notes.map(n => `
+    const hideNames = document.getElementById('hideMaterialNames') &&
+                      document.getElementById('hideMaterialNames').checked;
+
+    container.innerHTML = notes.map(n => {
+        const family = `${n.family_icon || ''} ${n.family_name_ar || n.family_name || ''}`.trim();
+        const nameBlock = hideNames
+            ? `<div class="note-name">${family || 'عائلة عطرية'}</div>`
+            : `<div class="note-name">${n.name}</div>
+               ${n.name_ar ? `<div class="note-name-ar">${n.name_ar}</div>` : ''}
+               <div class="note-family">${family}</div>
+               ${n.odor_description ? `<div class="note-odor">${n.odor_description}</div>` : ''}`;
+        return `
         <div class="note-item">
             <div class="note-icon">${n.family_icon || '🔮'}</div>
-            <div class="note-info">
-                <div class="note-name">${n.name}</div>
-                ${n.name_ar ? `<div class="note-name-ar">${n.name_ar}</div>` : ''}
-                <div class="note-family">${n.family_icon || ''} ${n.family_name_ar || n.family_name || ''}</div>
-                ${n.odor_description ? `<div class="note-odor">${n.odor_description}</div>` : ''}
-            </div>
+            <div class="note-info">${nameBlock}</div>
             <div class="note-pct">${n.percentage}%</div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 renderCustomFamiliesList();

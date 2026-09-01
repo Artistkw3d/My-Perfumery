@@ -297,7 +297,8 @@ Follow-up after the materials-page fix above — the user still felt the app was
 - Desktop sidebar (right nav) has a chevron button on its inner edge that collapses it entirely; state persists under `localStorage.sidebarCollapsed`.
 
 ## Formula Card (`formula_card.html`)
-- Customize panel persists to `formulas.card_settings` JSON: brand name, header/footer text, logo data URL, date, code, and `customFamilies[]`
+- Customize panel persists to `formulas.card_settings` JSON: brand name, header/footer text, logo data URL, date, code, `customFamilies[]`, and `hideMaterialNames` (2026-09-01)
+- **`hideMaterialNames` toggle** — for a client-facing card: when on, each pyramid note shows only its olfactive family (icon + `family_name_ar`) + percentage; the English name, Arabic name, and odor description are dropped. `renderPyramidLevel()` reads the checkbox; `updateCard()` re-renders the three levels from the cached `cardData.pyramid` so the toggle is live, and `loadCard()` re-applies it after restoring settings.
 - Custom fragrance families are added via a dropdown sourced from the `families` table (icon + name imported automatically; only percentage is user-entered)
 - Total-weight stat was removed from the footer per user preference; only ingredient count remains
 
