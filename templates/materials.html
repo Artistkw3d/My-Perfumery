@@ -1568,22 +1568,16 @@ function createPolarChart(canvas, data, size='large') {
 }
 
 // ===== Overview Wheel =====
-function updateOverviewWheel() {
-    const avgScores = {};
-    const familyCounts = {};
-    OLF_CATS.forEach(c => { avgScores[c] = 0; familyCounts[c] = 0; });
-    let counted = 0;
-    materials.forEach(m => {
-        if (m.olfactive) {
-            counted++;
-            OLF_CATS.forEach(c => {
-                const v = m.olfactive[c] || 0;
-                avgScores[c] += v;
-                if (v > 0) familyCounts[c]++;
-            });
-        }
+// Fed by GET /api/materials?action=stats (server-side aggregate over the
+// whole catalog) so the page never needs every material loaded to draw it.
+let matStats = { total: 0, olf_avg: {}, olf_positive: {} };
+function updateOverviewWheel(stats) {
+    if (stats) matStats = stats;
+    const avgScores = {}, familyCounts = {};
+    OLF_CATS.forEach(c => {
+        avgScores[c] = (matStats.olf_avg && matStats.olf_avg[c]) || 0;
+        familyCounts[c] = (matStats.olf_positive && matStats.olf_positive[c]) || 0;
     });
-    if (counted > 0) OLF_CATS.forEach(c => avgScores[c] = Math.round(avgScores[c] / counted * 10) / 10);
 
     if (overviewChart) overviewChart.destroy();
     const canvas = document.getElementById('overviewWheel');
@@ -1630,34 +1624,44 @@ function updateOverviewWheel() {
         </div>`;
     }).join('');
 
-    document.getElementById('matCount').textContent = materials.length;
+    document.getElementById('matCount').textContent = matStats.total || 0;
 }
 
 // ===== Load Materials =====
+// The list is paginated + filtered server-side now. `materials` holds only
+// the pages loaded so far (server already applied the search + filters);
+// `materialOptions` is a lightweight full id/name list for the dropdowns
+// that genuinely need every material.
+let materialOptions = [];
+
 function loadMaterials() {
-    return fetch('/api/materials?action=list')
+    return Promise.all([reloadMaterialsList(), loadMaterialStats(), loadMaterialOptions()])
+        .then(() => { maybeOpenFromQueryParam(); });
+}
+
+function loadMaterialStats() {
+    return fetch('/api/materials?action=stats')
         .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                materials = data.data;
-                filterMaterials();      // computes visibleMaterials + draws the first window
-                updateOverviewWheel();
-                maybeOpenFromQueryParam();
-            }
-        });
+        .then(s => { if (s.success) updateOverviewWheel(s); })
+        .catch(() => {});
+}
+
+function loadMaterialOptions() {
+    return fetch('/api/materials?action=options')
+        .then(r => r.json())
+        .then(d => { if (d.success) materialOptions = d.data; })
+        .catch(() => {});
 }
 
 // Lets other pages deep-link straight into a material's edit modal, e.g.
-// "تحويل إلى مادة" on the formula page opens /materials?edit=<new_id> so
-// the user lands directly on the material it just created instead of
-// having to find it themselves in the list.
+// "تحويل إلى مادة" on the formula page opens /materials?edit=<new_id>.
 let _openedFromQueryParam = false;
 function maybeOpenFromQueryParam() {
     if (_openedFromQueryParam) return;
     const id = new URLSearchParams(window.location.search).get('edit');
-    if (id && materials.some(m => m.id == id)) {
+    if (id) {
         _openedFromQueryParam = true;
-        editMaterial(parseInt(id, 10));
+        editMaterial(parseInt(id, 10));   // editMaterial fetches its own row
     }
 }
 
@@ -1688,26 +1692,70 @@ function matPhotoHtml(m, sizeClass, phClass) {
     return `<div class="${phClass}" title="لا توجد صورة" onclick="event.stopPropagation();editMaterial(${m.id})"><i class="bi bi-image"></i></div>`;
 }
 
-// ===== Windowed rendering =====
-// The catalog can hold thousands of materials; rendering every card + a
-// live Chart.js wheel per card at once locks the browser for tens of
-// seconds. We keep the full array in memory but only render a page at a
-// time (RENDER_PAGE), growing on "load more" / scroll-into-view.
-const RENDER_PAGE = 60;
-let visibleMaterials = [];    // materials passing the current search + filters
-let renderedCount = RENDER_PAGE;
+// ===== Server-paginated list =====
+// The server applies the search + advanced filters and returns one page
+// at a time; `materials` accumulates the pages loaded so far. "Load more"
+// (button + scroll) fetches the next page and appends it.
+const MAT_PER_PAGE = 60;
+let matPage = 0;        // highest page loaded (1-based); 0 = none yet
+let matTotal = 0;       // total rows matching the current filters
+let matLoading = false;
 
-function drawList() {
-    const slice = visibleMaterials.slice(0, renderedCount);
-    if (currentView === 'card') renderCards(slice);
-    else renderTable(slice);
-    updateListFooter();
+function buildListParams() {
+    const p = new URLSearchParams({ action: 'list', per_page: String(MAT_PER_PAGE) });
+    const q = (document.getElementById('searchInput').value || '').trim();
+    if (q) p.set('q', q);
+    const fam = document.getElementById('advFilterFamily');
+    const famIds = fam ? Array.from(fam.selectedOptions).map(o => o.value).filter(Boolean) : [];
+    if (famIds.length) p.set('family_ids', famIds.join(','));
+    const profs = Array.from(document.querySelectorAll('.adv-profile:checked')).map(c => c.value);
+    if (profs.length) p.set('profiles', profs.join(','));
+    const val = id => (document.getElementById(id) || {}).value || '';
+    if (val('advFilterSupplier')) p.set('supplier_id', val('advFilterSupplier'));
+    if (val('advFilterStock'))    p.set('stock',       val('advFilterStock'));
+    if (val('advFilterPpgMin') !== '') p.set('ppg_min', val('advFilterPpgMin'));
+    if (val('advFilterPpgMax') !== '') p.set('ppg_max', val('advFilterPpgMax'));
+    if (val('advFilterIfra'))     p.set('ifra',        val('advFilterIfra'));
+    if (val('advFilterMixture'))  p.set('mixture',     val('advFilterMixture'));
+    if (val('advFilterCas'))      p.set('cas',         val('advFilterCas'));
+    return p;
+}
+
+// Reset to page 1 with the current filter state (search box / adv filters).
+function reloadMaterialsList() {
+    matPage = 0; matTotal = 0; materials = [];
+    return fetchMaterialsPage(1).then(() => updateAdvFilterChips());
+}
+
+let _matReqSeq = 0;
+function fetchMaterialsPage(page) {
+    const seq = ++_matReqSeq;   // newer requests supersede older in-flight ones
+    matLoading = true;
+    const params = buildListParams();
+    params.set('page', String(page));
+    return fetch('/api/materials?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            if (seq !== _matReqSeq) return;   // a newer filter/page request won
+            matLoading = false;
+            if (!data.success) return;
+            materials = page <= 1 ? data.data : materials.concat(data.data);
+            matPage = data.page || page;
+            matTotal = (data.total != null) ? data.total : materials.length;
+            drawList();
+        })
+        .catch(() => { if (seq === _matReqSeq) matLoading = false; });
 }
 
 function loadMoreMaterials() {
-    if (renderedCount >= visibleMaterials.length) return;
-    renderedCount = Math.min(renderedCount + RENDER_PAGE, visibleMaterials.length);
-    drawList();
+    if (matLoading || materials.length >= matTotal) return;
+    fetchMaterialsPage(matPage + 1);
+}
+
+function drawList() {
+    if (currentView === 'card') renderCards(materials);
+    else renderTable(materials);
+    updateListFooter();
 }
 
 const _loadMoreObserver = new IntersectionObserver(entries => {
@@ -1715,8 +1763,7 @@ const _loadMoreObserver = new IntersectionObserver(entries => {
 }, { rootMargin: '600px' });
 
 function updateListFooter() {
-    const total = visibleMaterials.length;
-    const shown = Math.min(renderedCount, total);
+    const shown = materials.length, total = matTotal;
     const info = document.getElementById('listCountInfo');
     const btn  = document.getElementById('loadMoreBtn');
     const nEl  = document.getElementById('loadMoreN');
@@ -1725,12 +1772,12 @@ function updateListFooter() {
         btn.style.display = shown < total ? '' : 'none';
         _loadMoreObserver.observe(btn);
     }
-    if (nEl) nEl.textContent = Math.min(RENDER_PAGE, total - shown);
+    if (nEl) nEl.textContent = Math.min(MAT_PER_PAGE, total - shown);
 }
 
 function renderCards(list) {
     const container = document.getElementById('cardView');
-    container.innerHTML = (list || visibleMaterials.slice(0, renderedCount)).map(m => {
+    container.innerHTML = (list || materials).map(m => {
         const hasOlf = m.olfactive && OLF_CATS.some(c => m.olfactive[c] > 0);
         const topNotes = hasOlf ? OLF_CATS.filter(c => m.olfactive[c] >= 5)
             .sort((a, b) => m.olfactive[b] - m.olfactive[a])
@@ -1796,7 +1843,7 @@ function renderCards(list) {
 // ===== Table View =====
 function renderTable(list) {
     const tbody = document.getElementById('materialsBody');
-    tbody.innerHTML = (list || visibleMaterials.slice(0, renderedCount)).map(m => `
+    tbody.innerHTML = (list || materials).map(m => `
         <tr data-mat-id="${m.id}">
             <td>${matPhotoHtml(m, 'tbl-photo', 'tbl-photo-placeholder')}</td>
             <td><canvas class="mini-canvas-tbl" data-id="${m.id}" width="50" height="50"
@@ -1834,70 +1881,18 @@ function renderTable(list) {
 }
 
 // ===== Filter (search + advanced) =====
-function _matchesAdvFilter(m) {
-    // Family multi-select
-    const famSel = document.getElementById('advFilterFamily');
-    const famVals = famSel ? Array.from(famSel.selectedOptions).map(o => parseInt(o.value, 10)) : [];
-    if (famVals.length && !famVals.includes(m.family_id)) return false;
-    // Profile multi-select (checkboxes)
-    const profVals = Array.from(document.querySelectorAll('.adv-profile:checked')).map(c => c.value);
-    if (profVals.length && !profVals.includes(m.profile || 'Heart')) return false;
-    // Supplier
-    const sup = (document.getElementById('advFilterSupplier') || {}).value;
-    if (sup && parseInt(sup, 10) !== m.supplier_id) return false;
-    // Stock
-    const stock = (document.getElementById('advFilterStock') || {}).value;
-    if (stock === 'in'  && !((m.in_stock || 0) > 0)) return false;
-    if (stock === 'out' && ((m.in_stock || 0) > 0))  return false;
-    // ppg range
-    const ppg = m.price_per_gram || 0;
-    const ppgMin = parseFloat((document.getElementById('advFilterPpgMin') || {}).value || '');
-    const ppgMax = parseFloat((document.getElementById('advFilterPpgMax') || {}).value || '');
-    if (!isNaN(ppgMin) && ppg < ppgMin) return false;
-    if (!isNaN(ppgMax) && ppg > ppgMax) return false;
-    // IFRA presence (own ifra_limit OR any manual_ifra_cats value OR has CAS lookup hits — we treat ifra_limit as the proxy for "regulated")
-    const ifra = (document.getElementById('advFilterIfra') || {}).value;
-    if (ifra) {
-        const hasOwnIfra = (m.ifra_limit && m.ifra_limit > 0) || (m.manual_ifra_cats && Object.keys(m.manual_ifra_cats || {}).length > 0);
-        // Use cas_number presence as a soft proxy too — most CAS-bearing materials match an IFRA standard.
-        const hasIfra = hasOwnIfra || !!m.cas_number;
-        if (ifra === 'has'  && !hasIfra) return false;
-        if (ifra === 'none' && hasIfra)  return false;
-    }
-    // Mixture
-    const mix = (document.getElementById('advFilterMixture') || {}).value;
-    if (mix === 'mix'  && !((m.composition_count || 0) > 0)) return false;
-    if (mix === 'atom' && ((m.composition_count || 0) > 0))  return false;
-    // CAS presence
-    const cas = (document.getElementById('advFilterCas') || {}).value;
-    if (cas === 'has'  && !m.cas_number) return false;
-    if (cas === 'none' && m.cas_number)  return false;
-
-    return true;
-}
-
-function _matchesTextSearch(m, q) {
-    if (!q) return true;
-    const hay = [m.name, m.name_ar, m.cas_number, m.synonyms, m.odor_description,
-                 m.family_name, m.supplier_name, m.profile]
-                .filter(Boolean).join(' ').toLowerCase();
-    return hay.includes(q);
-}
-
+// Filtering + pagination are done server-side now (see buildListParams /
+// reloadMaterialsList). filterMaterials() just re-requests page 1 with the
+// current search box + advanced-filter state.
 function filterMaterials() {
-    const q = (document.getElementById('searchInput').value || '').toLowerCase();
-    visibleMaterials = materials.filter(m => _matchesTextSearch(m, q) && _matchesAdvFilter(m));
-    renderedCount = Math.min(RENDER_PAGE, visibleMaterials.length);
-    drawList();
-    updateAdvFilterChips();
+    reloadMaterialsList();
 }
 
-// Debounced for the search box — each rebuild redraws up to RENDER_PAGE
-// cards + wheels, too heavy to run on every keystroke.
+// Debounced for the search box — each change is a network round-trip.
 let _filterDebounceT = null;
 function filterMaterialsDebounced() {
     clearTimeout(_filterDebounceT);
-    _filterDebounceT = setTimeout(filterMaterials, 200);
+    _filterDebounceT = setTimeout(filterMaterials, 250);
 }
 
 function toggleAdvFilter() {
@@ -2336,7 +2331,7 @@ function toggleCompositionTab(matId) {
 
 function _componentOptionsHtml(currentMatId, selectedId) {
     const opts = ['<option value="">— اختر مكوّن —</option>'];
-    materials.forEach(m => {
+    materialOptions.forEach(m => {
         if (m.id === currentMatId) return;  // can't add self as component
         const sel = String(m.id) === String(selectedId) ? ' selected' : '';
         const label = m.name + (m.cas_number ? ` (${m.cas_number})` : '');
@@ -3046,13 +3041,13 @@ function duplicateMaterial(id) {
 
 // ===== Quick-Dilute (create a pre-diluted material in one shot) =====
 function showQuickDiluteModal() {
-    if (!Array.isArray(materials) || !materials.length) {
+    if (!Array.isArray(materialOptions) || !materialOptions.length) {
         showAlert('أضف مواد أولاً قبل استخدام التخفيف السريع', 'warning');
         return;
     }
     const parentSel  = document.getElementById('qd_parent');
     const solventSel = document.getElementById('qd_solvent');
-    const opts = materials
+    const opts = materialOptions
         .slice()
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
         .map(m => {
@@ -3066,11 +3061,11 @@ function showQuickDiluteModal() {
 
     // Try to default the solvent to a common one if it exists
     const lower = s => (s || '').toLowerCase();
-    const preferredSolvent = materials.find(m => {
+    const preferredSolvent = materialOptions.find(m => {
         const n = lower(m.name) + ' ' + lower(m.name_ar);
         return /\bdpg\b|dipropylene\s*glycol|بروبيلين/.test(n);
-    }) || materials.find(m => /\bipm\b|isopropyl\s*myristate|ميريستات/.test(lower(m.name) + ' ' + lower(m.name_ar)))
-       || materials.find(m => /ethanol|كحول/.test(lower(m.name) + ' ' + lower(m.name_ar)));
+    }) || materialOptions.find(m => /\bipm\b|isopropyl\s*myristate|ميريستات/.test(lower(m.name) + ' ' + lower(m.name_ar)))
+       || materialOptions.find(m => /ethanol|كحول/.test(lower(m.name) + ' ' + lower(m.name_ar)));
     if (preferredSolvent) solventSel.value = preferredSolvent.id;
 
     document.getElementById('qd_concentration').value = '10';
@@ -3097,8 +3092,8 @@ function qdRefreshNamePreview() {
         document.getElementById('qdNamePreview').textContent = '—';
         return;
     }
-    const p = materials.find(m => m.id === parentId);
-    const s = solventId ? materials.find(m => m.id === solventId) : null;
+    const p = materialOptions.find(m => m.id === parentId);
+    const s = solventId ? materialOptions.find(m => m.id === solventId) : null;
     const pName = p ? (p.name || p.name_ar || `#${parentId}`) : '?';
     let preview = `${pName} ${conc}%`;
     if (s) preview += ` in ${s.name || s.name_ar}`;

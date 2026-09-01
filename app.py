@@ -3255,6 +3255,74 @@ def api_materials_search():
     } for r in rows]
     return jsonify({'results': results})
 
+def _materials_list_where(args):
+    """Build the WHERE fragment + params for the materials list from the
+    search box + advanced-filter query params sent by materials.html.
+    Mirrors the old client-side `_matchesAdvFilter` / `_matchesTextSearch`."""
+    where, params = [], []
+
+    q = (args.get('q') or '').strip()
+    if q:
+        like = f'%{q}%'
+        where.append("(m.name LIKE ? OR m.name_ar LIKE ? OR m.cas_number LIKE ? OR "
+                     "m.synonyms LIKE ? OR m.odor_description LIKE ? OR f.name LIKE ? OR s.name LIKE ?)")
+        params += [like] * 7
+
+    fam_ids = [x for x in (args.get('family_ids') or '').split(',') if x.strip().isdigit()]
+    if fam_ids:
+        where.append(f"m.family_id IN ({','.join('?' * len(fam_ids))})")
+        params += [int(x) for x in fam_ids]
+
+    profs = [p for p in (args.get('profiles') or '').split(',') if p.strip()]
+    if profs:
+        where.append(f"COALESCE(NULLIF(m.profile, ''), 'Heart') IN ({','.join('?' * len(profs))})")
+        params += profs
+
+    sup = args.get('supplier_id')
+    if sup and sup.isdigit():
+        where.append("m.supplier_id = ?")
+        params.append(int(sup))
+
+    stock = args.get('stock')
+    if stock == 'in':
+        where.append("COALESCE(m.in_stock, 0) > 0")
+    elif stock == 'out':
+        where.append("COALESCE(m.in_stock, 0) <= 0")
+
+    def _num(name):
+        try:
+            return float(args.get(name))
+        except (TypeError, ValueError):
+            return None
+    pmin, pmax = _num('ppg_min'), _num('ppg_max')
+    if pmin is not None:
+        where.append("COALESCE(m.price_per_gram, 0) >= ?")
+        params.append(pmin)
+    if pmax is not None:
+        where.append("COALESCE(m.price_per_gram, 0) <= ?")
+        params.append(pmax)
+
+    ifra = args.get('ifra')
+    if ifra in ('has', 'none'):
+        cond = ("((m.ifra_limit IS NOT NULL AND m.ifra_limit > 0) OR "
+                "(TRIM(COALESCE(m.manual_ifra_cats, '')) NOT IN ('', '{}')) OR "
+                "(m.cas_number IS NOT NULL AND TRIM(m.cas_number) != ''))")
+        where.append(cond if ifra == 'has' else f"NOT {cond}")
+
+    mix = args.get('mixture')
+    if mix == 'mix':
+        where.append("EXISTS (SELECT 1 FROM material_composition mc WHERE mc.parent_material_id = m.id)")
+    elif mix == 'atom':
+        where.append("NOT EXISTS (SELECT 1 FROM material_composition mc WHERE mc.parent_material_id = m.id)")
+
+    cas = args.get('cas')
+    if cas == 'has':
+        where.append("m.cas_number IS NOT NULL AND TRIM(m.cas_number) != ''")
+    elif cas == 'none':
+        where.append("(m.cas_number IS NULL OR TRIM(m.cas_number) = '')")
+
+    return where, params
+
 @app.route('/api/materials', methods=['GET', 'POST'])
 @login_required
 def api_materials():
@@ -3263,22 +3331,58 @@ def api_materials():
     if request.method == 'GET':
         action = request.args.get('action', 'list')
         if action == 'list':
-            data = conn.execute('''
-                SELECT m.*, f.name as family_name, f.icon as family_icon, s.name as supplier_name
-                FROM materials m
-                LEFT JOIN families f ON m.family_id = f.id
-                LEFT JOIN suppliers s ON m.supplier_id = s.id
-                ORDER BY m.name
-            ''').fetchall()
-            # جلب البروفايل العطري لكل مادة
-            olfactive_data = conn.execute("SELECT * FROM material_olfactive").fetchall()
-            olf_map = {row['material_id']: {cat: row[cat] or 0 for cat in OLFACTIVE_CATEGORIES} for row in olfactive_data}
-            # عدد مكوّنات كل خلطة (لإظهار شارة "خليط")
-            comp_counts = {r['parent_material_id']: r['n'] for r in conn.execute(
-                "SELECT parent_material_id, COUNT(*) as n FROM material_composition GROUP BY parent_material_id"
-            ).fetchall()}
+            # Server-side filtering + pagination. The materials page sends
+            # its search box + advanced-filter state as query params and
+            # pulls one page at a time ("load more" appends the next).
+            # Without a `page` param the whole (filtered) list is returned,
+            # preserving the old behaviour for any other caller.
+            where, params = _materials_list_where(request.args)
+            where_sql = (' WHERE ' + ' AND '.join(where)) if where else ''
+            sort_sql = {
+                'name': 'm.name COLLATE NOCASE',
+                'ppg': 'COALESCE(m.price_per_gram,0) ASC, m.name COLLATE NOCASE',
+                'ppg_desc': 'COALESCE(m.price_per_gram,0) DESC, m.name COLLATE NOCASE',
+                'newest': 'm.id DESC',
+            }.get(request.args.get('sort'), 'm.name COLLATE NOCASE')
+
+            base_from = ('FROM materials m '
+                         'LEFT JOIN families f ON m.family_id = f.id '
+                         'LEFT JOIN suppliers s ON m.supplier_id = s.id')
+
+            total = conn.execute(f"SELECT COUNT(*) {base_from}{where_sql}", params).fetchone()[0]
+
+            page_arg = request.args.get('page')
+            limit_sql = ''
+            page = None
+            per_page = 60
+            if page_arg is not None:
+                try:
+                    page = max(1, int(page_arg))
+                except ValueError:
+                    page = 1
+                try:
+                    per_page = min(200, max(1, int(request.args.get('per_page') or 60)))
+                except ValueError:
+                    per_page = 60
+                limit_sql = f' LIMIT {per_page} OFFSET {(page - 1) * per_page}'
+
+            rows = conn.execute(
+                f"SELECT m.*, f.name as family_name, f.icon as family_icon, s.name as supplier_name "
+                f"{base_from}{where_sql} ORDER BY {sort_sql}{limit_sql}", params
+            ).fetchall()
+
+            ids = [r['id'] for r in rows]
+            olf_map, comp_counts = {}, {}
+            if ids:
+                ph = ','.join('?' * len(ids))
+                olf_map = {r['material_id']: {c: r[c] or 0 for c in OLFACTIVE_CATEGORIES}
+                           for r in conn.execute(f"SELECT * FROM material_olfactive WHERE material_id IN ({ph})", ids).fetchall()}
+                comp_counts = {r['parent_material_id']: r['n'] for r in conn.execute(
+                    f"SELECT parent_material_id, COUNT(*) as n FROM material_composition "
+                    f"WHERE parent_material_id IN ({ph}) GROUP BY parent_material_id", ids).fetchall()}
+
             result = []
-            for d in data:
+            for d in rows:
                 item = dict(d)
                 item['olfactive'] = olf_map.get(item['id'], None)
                 item['composition_count'] = comp_counts.get(item['id'], 0)
@@ -3288,7 +3392,36 @@ def api_materials():
                     item['uses'] = []
                 result.append(item)
             conn.close()
-            return jsonify({'success': True, 'data': result})
+            resp = {'success': True, 'data': result, 'total': total}
+            if page is not None:
+                resp['page'] = page
+                resp['per_page'] = per_page
+                resp['pages'] = (total + per_page - 1) // per_page
+            return jsonify(resp)
+        elif action == 'options':
+            # Lightweight full list for the composition-picker and
+            # quick-dilute dropdowns (they need every material, not just
+            # the current page).
+            rows = conn.execute(
+                "SELECT id, name, name_ar, cas_number FROM materials ORDER BY name COLLATE NOCASE"
+            ).fetchall()
+            conn.close()
+            return jsonify({'success': True, 'data': [dict(r) for r in rows]})
+        elif action == 'stats':
+            # Aggregates for the overview wheel + total badge, so the page
+            # doesn't need every material loaded to draw them.
+            total = conn.execute("SELECT COUNT(*) FROM materials").fetchone()[0]
+            sel = ['COUNT(*) AS n']
+            for c in OLFACTIVE_CATEGORIES:
+                sel.append(f"COALESCE(AVG({c}), 0) AS avg_{c}")
+                sel.append(f"SUM(CASE WHEN {c} > 0 THEN 1 ELSE 0 END) AS pos_{c}")
+            agg = conn.execute(f"SELECT {', '.join(sel)} FROM material_olfactive").fetchone()
+            counted = agg['n'] or 0
+            avg = {c: round(agg[f'avg_{c}'], 1) for c in OLFACTIVE_CATEGORIES}
+            pos = {c: (agg[f'pos_{c}'] or 0) for c in OLFACTIVE_CATEGORIES}
+            conn.close()
+            return jsonify({'success': True, 'total': total, 'olf_counted': counted,
+                            'olf_avg': avg, 'olf_positive': pos})
         elif action == 'get':
             mid = request.args.get('id')
             data = conn.execute("SELECT * FROM materials WHERE id=?", (mid,)).fetchone()
