@@ -1965,6 +1965,13 @@ function autoClassify() {
         .then(data => {
             if (data.success) {
                 setOlfactiveValues(data.scores);
+                // Also set the fragrance family — but only if it's still
+                // empty, so a family the user picked by hand is never
+                // overwritten by the keyword guess.
+                const famEl = document.getElementById('mat_family');
+                if (data.family_id && famEl && !famEl.value) {
+                    famEl.value = data.family_id;
+                }
                 showAlert('تم التصنيف التلقائي');
             }
         });

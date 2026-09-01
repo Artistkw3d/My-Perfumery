@@ -331,6 +331,56 @@ OLFACTIVE_LABELS = {
     'ambery': 'Ambery', 'musky': 'Musky', 'leathery': 'Leathery', 'animal': 'Animal'
 }
 
+# Olfactive-wheel axis -> fragrance family name (as seeded in the `families`
+# table). 'aldehydic' has no family of its own, so a material whose top axis
+# is aldehydic falls through to its next-strongest mapped axis.
+_OLF_AXIS_TO_FAMILY = {
+    'citrus': 'Citrus', 'aromatic': 'Aromatic', 'green': 'Green',
+    'marine': 'Aquatic', 'floral': 'Floral', 'fruity': 'Fruity',
+    'spicy': 'Spicy', 'balsamic': 'Balsamic', 'woody': 'Woody',
+    'ambery': 'Amber', 'musky': 'Musk', 'leathery': 'Leather', 'animal': 'Animalic',
+}
+
+# Normalises the free-text top-level olfactive-family label some sources
+# return (e.g. Scentree "Woods > ...", "Marine > ...") to a seeded family.
+_FAMILY_TEXT_ALIASES = {
+    'flower': 'Floral', 'flowers': 'Floral', 'fruit': 'Fruity', 'fruits': 'Fruity',
+    'marine': 'Aquatic', 'ocean': 'Aquatic', 'oceanic': 'Aquatic',
+    'wood': 'Woody', 'woods': 'Woody', 'spice': 'Spicy', 'spices': 'Spicy',
+    'balsam': 'Balsamic', 'anisic': 'Aromatic', 'mint': 'Aromatic',
+    'herbaceous': 'Herbal', 'herb': 'Herbal', 'agrestic': 'Green',
+    'ambery': 'Amber', 'gourmand': 'Gourmand', 'leathery': 'Leather',
+    'animalic': 'Animalic', 'mossy': 'Earthy', 'earthy': 'Earthy',
+    'smoky': 'Smoky', 'powdery': 'Powdery', 'musky': 'Musk',
+}
+
+def _family_id_by_name(conn, name):
+    if not name:
+        return None
+    row = conn.execute(
+        "SELECT id FROM families WHERE LOWER(name) = LOWER(?) LIMIT 1", (str(name).strip(),)
+    ).fetchone()
+    return row['id'] if row else None
+
+def _derive_family_id(conn, olfactive_family_text, wheel_scores):
+    """Best-effort fragrance family for a material: prefer a source's own
+    top-level olfactive-family label, else fall back to the strongest
+    mapped axis of the olfactive wheel. Returns a families.id or None."""
+    if olfactive_family_text:
+        head = re.split(r'[>/,|]', str(olfactive_family_text))[0].strip()
+        if head:
+            fid = _family_id_by_name(conn, _FAMILY_TEXT_ALIASES.get(head.lower(), head))
+            if fid:
+                return fid
+    if wheel_scores:
+        for axis, score in sorted(wheel_scores.items(), key=lambda kv: kv[1] or 0, reverse=True):
+            if (score or 0) <= 0:
+                break
+            fid = _family_id_by_name(conn, _OLF_AXIS_TO_FAMILY.get(axis))
+            if fid:
+                return fid
+    return None
+
 # ===== Material "Uses" tags =====
 # aroma/fixative/solvent/colourant come from the offline reference file's
 # "Uses" column (stored concatenated without delimiters there, e.g.
@@ -4135,11 +4185,14 @@ def _enrich_material_data(conn, mid, cas):
     # wheel score at all yet — never overwrites an existing profile, even a
     # partial hand-adjusted one.
     extra_filled = 0
+    wheel_scores = None
     odor_text = updates.get('odor_description') or existing.get('odor_description')
     if odor_text:
         existing_olf = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (mid,)).fetchone()
         has_real_olf = existing_olf and any((existing_olf[c] or 0) > 0 for c in OLFACTIVE_CATEGORIES)
-        if not has_real_olf:
+        if has_real_olf:
+            wheel_scores = {c: (existing_olf[c] or 0) for c in OLFACTIVE_CATEGORIES}
+        else:
             scores = auto_classify_odor(odor_text)
             if any(v > 0 for v in scores.values()):
                 conn.execute(
@@ -4148,6 +4201,22 @@ def _enrich_material_data(conn, mid, cas):
                     (mid, *[scores[c] for c in OLFACTIVE_CATEGORIES])
                 )
                 extra_filled = 1
+                wheel_scores = scores
+
+    # Fragrance family ("العائلة العطرية") — this CAS path never set it
+    # before, so a material added with just a name + CAS kept an empty
+    # family even after enrichment filled its odor and olfactive wheel.
+    # Derive it (fill only if still empty — never override a chosen family)
+    # from a source's own olfactive-family label, else the wheel's top axis.
+    if not existing.get('family_id') and 'family_id' not in updates:
+        olf_fam_text = ''
+        for src in (scentree_data, tgsc_data, local_data, pubchem_data):
+            if src and src.get('olfactive_family'):
+                olf_fam_text = src['olfactive_family']
+                break
+        fam_id = _derive_family_id(conn, olf_fam_text, wheel_scores)
+        if fam_id:
+            updates['family_id'] = fam_id
 
     if not updates and not extra_filled:
         return 0
@@ -4158,31 +4227,37 @@ def _enrich_material_data(conn, mid, cas):
     return len(updates) + extra_filled
 
 def _backfill_olfactive_wheels(conn):
-    """Sweeps every material with an odor_description but no wheel data yet
-    and classifies it — a standalone catch-all pass, separate from the
-    inline classify inside _enrich_material_data(), specifically so it can
-    run unconditionally on every bulk-update click instead of only for
+    """Sweeps every material with an odor_description and (a) classifies its
+    olfactive wheel if still blank, (b) sets its fragrance family if still
+    blank — a standalone catch-all pass, separate from the inline classify
+    inside _enrich_material_data(), specifically so it can run
+    unconditionally on every bulk-update click instead of only for
     materials still eligible for a fresh CAS search. Pure local computation
     (auto_classify_odor is keyword matching, no network calls), so there's
-    no cost to running it every time. Returns how many materials it fixed."""
+    no cost to running it every time. Returns how many wheels it filled."""
     rows = conn.execute(
-        "SELECT id, odor_description FROM materials WHERE odor_description IS NOT NULL AND TRIM(odor_description) != ''"
+        "SELECT id, family_id, odor_description FROM materials WHERE odor_description IS NOT NULL AND TRIM(odor_description) != ''"
     ).fetchall()
     fixed = 0
+    fam_changed = False
     for r in rows:
         existing_olf = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (r['id'],)).fetchone()
         has_real_olf = existing_olf and any((existing_olf[c] or 0) > 0 for c in OLFACTIVE_CATEGORIES)
-        if has_real_olf:
-            continue
         scores = auto_classify_odor(r['odor_description'])
-        if any(v > 0 for v in scores.values()):
+        if not has_real_olf and any(v > 0 for v in scores.values()):
             conn.execute(
                 f"INSERT OR REPLACE INTO material_olfactive (material_id, {', '.join(OLFACTIVE_CATEGORIES)}) "
                 f"VALUES (?, {', '.join('?' for _ in OLFACTIVE_CATEGORIES)})",
                 (r['id'], *[scores[c] for c in OLFACTIVE_CATEGORIES])
             )
             fixed += 1
-    if fixed:
+        if not r['family_id']:
+            wheel = {c: (existing_olf[c] or 0) for c in OLFACTIVE_CATEGORIES} if has_real_olf else scores
+            fam_id = _derive_family_id(conn, '', wheel)
+            if fam_id:
+                conn.execute("UPDATE materials SET family_id=? WHERE id=?", (fam_id, r['id']))
+                fam_changed = True
+    if fixed or fam_changed:
         conn.commit()
     return fixed
 
@@ -5207,7 +5282,10 @@ def api_formula_convert_to_material(fid):
 def api_auto_classify():
     description = request.form.get('description', '')
     scores = auto_classify_odor(description)
-    return jsonify({'success': True, 'scores': scores})
+    conn = get_db()
+    family_id = _derive_family_id(conn, '', scores)
+    conn.close()
+    return jsonify({'success': True, 'scores': scores, 'family_id': family_id})
 
 # ===== API التركيبات =====
 @app.route('/api/formulas', methods=['GET', 'POST'])
