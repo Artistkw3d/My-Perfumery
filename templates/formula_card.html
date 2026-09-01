@@ -776,7 +776,7 @@ function renderPyramidLevel(containerId, countId, notes) {
         container.innerHTML = fams.map(f => `
             <div class="note-item">
                 <div class="note-icon">${f.icon}</div>
-                <div class="note-info"><div class="note-name">${f.icon} ${f.label}</div></div>
+                <div class="note-info"><div class="note-name">${f.label}</div></div>
             </div>`).join('');
         return;
     }
@@ -784,15 +784,16 @@ function renderPyramidLevel(containerId, countId, notes) {
     counter.textContent = notes.length + ' مكون';
 
     container.innerHTML = notes.map(n => {
-        const family = `${n.family_icon || ''} ${n.family_name_ar || n.family_name || ''}`.trim() || 'عائلة عطرية';
+        // Icon lives once in .note-icon — the family label here is text-only
+        const familyLabel = (n.family_name_ar || n.family_name || 'عائلة عطرية').trim();
         let info, pct;
         if (noteMode === 1) {            // family + percentage
-            info = `<div class="note-name">${family}</div>`;
+            info = `<div class="note-name">${familyLabel}</div>`;
             pct = `<div class="note-pct">${n.percentage}%</div>`;
         } else {                         // full
             info = `<div class="note-name">${n.name}</div>
                 ${n.name_ar ? `<div class="note-name-ar">${n.name_ar}</div>` : ''}
-                <div class="note-family">${family}</div>
+                <div class="note-family">${familyLabel}</div>
                 ${n.odor_description ? `<div class="note-odor">${n.odor_description}</div>` : ''}`;
             pct = `<div class="note-pct">${n.percentage}%</div>`;
         }
