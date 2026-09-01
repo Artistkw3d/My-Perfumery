@@ -40,9 +40,12 @@
                 <label class="form-label" style="font-size:0.82rem;">التركيز %</label>
                 <input type="number" id="pcConc" class="form-control" min="0" max="100" step="0.1" value="7" oninput="pcCalc()">
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-12 col-md-3 d-flex gap-2">
                 <button class="btn btn-outline-secondary btn-sm" type="button" onclick="pcToggleAdv()">
                     <i class="bi bi-sliders"></i> خيارات متقدمة
+                </button>
+                <button class="btn btn-outline-primary btn-sm" type="button" onclick="pcPrint()">
+                    <i class="bi bi-printer"></i> طباعة
                 </button>
             </div>
         </div>
@@ -184,6 +187,82 @@ loadOrders();
 // ===== Production calculator (oil + alcohol) =====
 const pcV = id => parseFloat((document.getElementById(id) || {}).value);
 let pcFormulaData = null;   // cached {data, total_weight} of the chosen formula
+let pcLast = null;          // last computed result, for printing
+
+// Shared print helper — writes a self-contained RTL/A4 doc into a hidden
+// iframe and prints it. Same approach as the Scale-modal / labels print
+// paths: window.open is blocked inside the pywebview/WebView2 desktop shell.
+function printHtmlDoc(title, bodyHtml) {
+    let frame = document.getElementById('_prodPrintFrame');
+    if (!frame) {
+        frame = document.createElement('iframe');
+        frame.id = '_prodPrintFrame';
+        frame.style.cssText = 'position:fixed;right:-9999px;bottom:-9999px;width:0;height:0;border:0;';
+        document.body.appendChild(frame);
+    }
+    const today = new Date().toLocaleDateString('ar-KW');
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title>
+    <style>
+      @page { size: A4; margin: 14mm; }
+      * { font-family: 'Tajawal', Arial, sans-serif; }
+      body { color:#111; }
+      h1 { font-size:18px; margin:0 0 2px; }
+      .sub { color:#666; font-size:12px; margin-bottom:14px; }
+      table { border-collapse:collapse; width:100%; margin-top:8px; font-size:12px; }
+      th, td { border:1px solid #999; padding:5px 8px; text-align:right; }
+      th { background:#f0f0f0; }
+      .kv { font-size:13px; line-height:1.9; }
+      .kv b { display:inline-block; min-width:130px; }
+      .big { font-size:15px; font-weight:700; }
+      .num { text-align:left; font-variant-numeric:tabular-nums; }
+    </style></head><body>
+      <h1>${title}</h1>
+      <div class="sub">My Perfumery — ${today}</div>
+      ${bodyHtml}
+    </body></html>`);
+    doc.close();
+    frame.contentWindow.focus();
+    setTimeout(() => frame.contentWindow.print(), 150);
+}
+
+function pcPrint() {
+    if (!pcLast) { showAlert('أدخل بيانات صحيحة في الحاسبة أولاً', 'warning'); return; }
+    const L = pcLast;
+    const f2 = n => pcFmt(n, 2), f3 = n => pcFmt(n, 3);
+    let body = `
+      <div class="kv">
+        <div><b>عدد القوارير:</b> ${L.bottles.toLocaleString('en-US')}</div>
+        <div><b>حجم القارورة:</b> ${pcFmt(L.size,1)} مل</div>
+        <div><b>التركيز:</b> ${pcFmt(L.conc*100,1)}%</div>
+        <div><b>طريقة الحساب:</b> ${L.method === 'vv' ? 'بالحجم (v/v)' : 'بالوزن (w/w)'}</div>
+        <div><b>الكثافات:</b> زيت ${f2(L.dOil)} / كحول ${f3(L.dAlc)} g/mL</div>
+        ${L.overPct > 0 ? `<div><b>فائض/هدر:</b> ${pcFmt(L.overPct,1)}%</div>` : ''}
+      </div>
+      <table>
+        <tr><th>البند</th><th class="num">الكمية (كجم)</th><th class="num">الكمية (لتر)</th><th class="num">لكل قارورة</th></tr>
+        <tr><td class="big">🧪 الزيت (المركّز)</td><td class="num big">${f3(L.oilKg)}</td><td class="num">${f2(L.oilVol_L)}</td><td class="num">${f2(L.perBottleOilG)} غ</td></tr>
+        <tr><td class="big">🧴 الكحول</td><td class="num big">${f2(L.alcKg)}</td><td class="num">${f2(L.alcVol_L)}</td><td class="num">${f2(L.perBottleAlcG)} غ</td></tr>
+        <tr><td>إجمالي السائل</td><td class="num">${f2(L.juiceKg)}</td><td class="num">${f2(L.totalVol_L)}</td><td class="num">${f2(L.perBottleOilG + L.perBottleAlcG)} غ</td></tr>
+      </table>`;
+    if (L.overPct > 0) {
+        body += `<p class="big">للشراء مع فائض ${pcFmt(L.overPct,1)}%: زيت ${f3(L.oilKg*L.over)} كجم &nbsp;•&nbsp; كحول ${f2(L.alcKg*L.over)} كجم</p>`;
+    }
+    if (pcFormulaData) {
+        const tw = pcFormulaData.total_weight;
+        const buyOilKg = L.oilKg * L.over;
+        const fname = (document.getElementById('pcFormula').selectedOptions[0] || {}).text || '';
+        body += `<h1 style="margin-top:18px;">تفصيل الزيت حسب التركيبة${L.overPct > 0 ? ' (شامل الفائض)' : ''}</h1>
+          <div class="sub">${fname} — إجمالي المركّز ${f2(buyOilKg)} كجم</div>
+          <table><tr><th>المادة</th><th>CAS</th><th class="num">كجم</th><th class="num">غ</th></tr>
+          ${pcFormulaData.data.map(i => {
+              const kg = buyOilKg * ((i.weight || 0) / tw);
+              return `<tr><td>${i.name || '-'}</td><td>${i.cas_number || '-'}</td><td class="num">${f3(kg)}</td><td class="num">${pcFmt(kg*1000,1)}</td></tr>`;
+          }).join('')}</table>`;
+    }
+    printHtmlDoc('حاسبة الإنتاج — زيت + كحول', body);
+}
 
 function pcToggleAdv() {
     const el = document.getElementById('pcAdv');
@@ -244,6 +323,10 @@ function pcCalc() {
     const over = 1 + overPct / 100;
     const perBottleOilG = oilKg * 1000 / bottles;
     const perBottleAlcG = alcKg * 1000 / bottles;
+
+    pcLast = { bottles, size, conc, method, dOil, dAlc, overPct, over,
+               totalVol_L, juiceKg, oilKg, alcKg, oilVol_L, alcVol_L,
+               perBottleOilG, perBottleAlcG };
 
     let html = `
     <div class="row g-3">
@@ -368,6 +451,8 @@ function createOrder() {
     });
 }
 
+let currentOrder = null;   // last order loaded into the details modal, for printing
+
 function viewOrder(id) {
     currentOrderId = id;
     fetch(`/api/production?action=get&id=${id}`)
@@ -375,6 +460,7 @@ function viewOrder(id) {
         .then(data => {
             if (data.success) {
                 const o = data.data;
+                currentOrder = o;
                 document.getElementById('orderDetails').innerHTML = `
                     <div class="row mb-4">
                         <div class="col-md-6">
@@ -445,7 +531,24 @@ function deleteOrder(id) {
 }
 
 function printOrder() {
-    window.print();
+    const o = currentOrder;
+    if (!o) { window.print(); return; }
+    const body = `
+      <div class="kv">
+        <div><b>رقم الأمر:</b> ${o.order_number}</div>
+        <div><b>التركيبة:</b> ${o.formula_name || '-'}</div>
+        <div><b>الكمية المطلوبة:</b> ${o.target_quantity} جم</div>
+        <div><b>العميل:</b> ${o.customer_name || '-'}</div>
+        <div><b>رقم الدفعة:</b> ${o.batch_number || '-'}</div>
+        <div><b>معامل القياس:</b> ${(o.scale_factor || 0).toFixed(4)}</div>
+      </div>
+      <h1 style="margin-top:16px;">المكونات المطلوبة</h1>
+      <table>
+        <tr><th>المادة</th><th>CAS</th><th class="num">الكمية (جم)</th></tr>
+        ${(o.items || []).map(i => `<tr><td>${i.name || '-'}</td><td>${i.cas || '-'}</td><td class="num">${(i.weight || 0).toFixed(4)}</td></tr>`).join('')}
+      </table>
+      ${o.notes ? `<p style="margin-top:12px;"><b>ملاحظات:</b> ${o.notes}</p>` : ''}`;
+    printHtmlDoc(`أمر إنتاج — ${o.order_number}`, body);
 }
 </script>
 {% endblock %}
