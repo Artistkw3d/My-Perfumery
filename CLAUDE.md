@@ -297,8 +297,8 @@ Follow-up after the materials-page fix above — the user still felt the app was
 - Desktop sidebar (right nav) has a chevron button on its inner edge that collapses it entirely; state persists under `localStorage.sidebarCollapsed`.
 
 ## Formula Card (`formula_card.html`)
-- Customize panel persists to `formulas.card_settings` JSON: brand name, header/footer text, logo data URL, date, code, `customFamilies[]`, and `hideMaterialNames` (2026-09-01)
-- **`hideMaterialNames` toggle** — for a client-facing card: when on, each pyramid note shows only its olfactive family (icon + `family_name_ar`) + percentage; the English name, Arabic name, and odor description are dropped. `renderPyramidLevel()` reads the checkbox; `updateCard()` re-renders the three levels from the cached `cardData.pyramid` so the toggle is live, and `loadCard()` re-applies it after restoring settings.
+- Customize panel persists to `formulas.card_settings` JSON: brand name, header/footer text, logo data URL, date, code, `customFamilies[]`, and `noteMode` (2026-09-01)
+- **`noteMode` — 3-way pyramid display, one toolbar button** (`cycleNoteMode()`, `#noteModeBtn`, `no-print`). 0 = full (name + Arabic name + family + odor + %); 1 = family + % only; 2 = family-only — collapsed to one row per **distinct** family per note level (no names, no percentages), a plain olfactive-family list. `renderPyramidLevel()` branches on `noteMode`; `applyNoteMode()` updates the button label + re-renders from cached `cardData.pyramid`. Saved as `card_settings.noteMode`; the earlier `hideMaterialNames` boolean is migrated to `noteMode = 1` on load.
 - Custom fragrance families are added via a dropdown sourced from the `families` table (icon + name imported automatically; only percentage is user-entered)
 - Total-weight stat was removed from the footer per user preference; only ingredient count remains
 

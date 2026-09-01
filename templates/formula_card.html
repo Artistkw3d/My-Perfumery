@@ -290,6 +290,9 @@
         <h2 class="d-inline"><i class="bi bi-card-heading"></i> البطاقة التعريفية</h2>
     </div>
     <div>
+        <button class="btn btn-outline-secondary" id="noteModeBtn" onclick="cycleNoteMode()" title="بدّل عرض المكونات: كامل / عائلة + نسبة / عائلة فقط">
+            <i class="bi bi-eye"></i> <span id="noteModeLabel">العرض: كامل</span>
+        </button>
         <button class="btn btn-outline-secondary" onclick="toggleCustomize()">
             <i class="bi bi-palette"></i> تخصيص
         </button>
@@ -339,14 +342,6 @@
         </div>
         <div class="col-md-12">
             <hr class="my-2">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="hideMaterialNames" onchange="updateCard()">
-                <label class="form-check-label fw-bold" for="hideMaterialNames">
-                    <i class="bi bi-eye-slash"></i> إخفاء أسماء المواد في البطاقة (تبقى العائلة العطرية والنسبة)
-                </label>
-            </div>
-        </div>
-        <div class="col-md-12">
             <label class="form-label fw-bold"><i class="bi bi-flower1"></i> إضافة عائلة عطرية</label>
             <div class="d-flex gap-2 align-items-start flex-wrap mb-2">
                 <select id="newFamilySelect" class="form-select" style="flex:1; min-width:220px;">
@@ -456,6 +451,30 @@ let customFamilies = [];  // user-added families on top of auto-detected ones
 let autoFamilies = [];    // families computed from ingredients
 let allFamiliesDB = [];   // every family from the DB (for the picker)
 
+// Pyramid note display: 0 = full (name + family + odor + %),
+// 1 = family + % only, 2 = family only. Cycled by the toolbar button,
+// saved with the card settings.
+let noteMode = 0;
+const NOTE_MODE_LABELS = ['العرض: كامل', 'العرض: عائلة + نسبة', 'العرض: عائلة فقط'];
+
+function renderPyramid() {
+    if (!cardData || !cardData.pyramid) return;
+    renderPyramidLevel('topNotes', 'topCount', cardData.pyramid.Top || []);
+    renderPyramidLevel('heartNotes', 'heartCount', cardData.pyramid.Heart || []);
+    renderPyramidLevel('baseNotes', 'baseCount', cardData.pyramid.Base || []);
+}
+
+function applyNoteMode() {
+    const lbl = document.getElementById('noteModeLabel');
+    if (lbl) lbl.textContent = NOTE_MODE_LABELS[noteMode];
+    renderPyramid();
+}
+
+function cycleNoteMode() {
+    noteMode = (noteMode + 1) % 3;
+    applyNoteMode();
+}
+
 function toggleCustomize() {
     const panel = document.getElementById('customizePanel');
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
@@ -513,12 +532,7 @@ function updateCard() {
         footerEl.style.display = 'none';
     }
 
-    // Re-render the pyramid so the "hide material names" toggle takes effect
-    if (cardData && cardData.pyramid) {
-        renderPyramidLevel('topNotes', 'topCount', cardData.pyramid.Top || []);
-        renderPyramidLevel('heartNotes', 'heartCount', cardData.pyramid.Heart || []);
-        renderPyramidLevel('baseNotes', 'baseCount', cardData.pyramid.Base || []);
-    }
+    renderPyramid();
 }
 
 function loadCard() {
@@ -609,13 +623,13 @@ function loadCard() {
                     renderFamilies();
                     renderCustomFamiliesList();
                 }
-                if (cs.hideMaterialNames) {
-                    document.getElementById('hideMaterialNames').checked = true;
-                    renderPyramidLevel('topNotes', 'topCount', data.pyramid.Top || []);
-                    renderPyramidLevel('heartNotes', 'heartCount', data.pyramid.Heart || []);
-                    renderPyramidLevel('baseNotes', 'baseCount', data.pyramid.Base || []);
+                if ([0, 1, 2].includes(cs.noteMode)) {
+                    noteMode = cs.noteMode;
+                } else if (cs.hideMaterialNames) {   // migrate the old boolean
+                    noteMode = 1;
                 }
             }
+            applyNoteMode();
 
             // إظهار المحتوى
             document.getElementById('cardLoading').style.display = 'none';
@@ -704,7 +718,7 @@ function saveCardSettings() {
         date: document.getElementById('customDate').value,
         logoData: logoImg.style.display !== 'none' ? logoImg.src : '',
         customFamilies: customFamilies,
-        hideMaterialNames: document.getElementById('hideMaterialNames').checked
+        noteMode: noteMode
     };
     const fd = new FormData();
     fd.append('card_settings', JSON.stringify(settings));
@@ -725,24 +739,46 @@ function renderPyramidLevel(containerId, countId, notes) {
         return;
     }
 
+    // Family-only mode: collapse to one row per distinct family (no names,
+    // no percentages) — a plain olfactive-family list for that note level.
+    if (noteMode === 2) {
+        counter.textContent = '';
+        const seen = new Set(), fams = [];
+        notes.forEach(n => {
+            const label = `${n.family_name_ar || n.family_name || ''}`.trim() || 'عائلة عطرية';
+            const key = label.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            fams.push({ icon: n.family_icon || '🔮', label });
+        });
+        container.innerHTML = fams.map(f => `
+            <div class="note-item">
+                <div class="note-icon">${f.icon}</div>
+                <div class="note-info"><div class="note-name">${f.icon} ${f.label}</div></div>
+            </div>`).join('');
+        return;
+    }
+
     counter.textContent = notes.length + ' مكون';
 
-    const hideNames = document.getElementById('hideMaterialNames') &&
-                      document.getElementById('hideMaterialNames').checked;
-
     container.innerHTML = notes.map(n => {
-        const family = `${n.family_icon || ''} ${n.family_name_ar || n.family_name || ''}`.trim();
-        const nameBlock = hideNames
-            ? `<div class="note-name">${family || 'عائلة عطرية'}</div>`
-            : `<div class="note-name">${n.name}</div>
-               ${n.name_ar ? `<div class="note-name-ar">${n.name_ar}</div>` : ''}
-               <div class="note-family">${family}</div>
-               ${n.odor_description ? `<div class="note-odor">${n.odor_description}</div>` : ''}`;
+        const family = `${n.family_icon || ''} ${n.family_name_ar || n.family_name || ''}`.trim() || 'عائلة عطرية';
+        let info, pct;
+        if (noteMode === 1) {            // family + percentage
+            info = `<div class="note-name">${family}</div>`;
+            pct = `<div class="note-pct">${n.percentage}%</div>`;
+        } else {                         // full
+            info = `<div class="note-name">${n.name}</div>
+                ${n.name_ar ? `<div class="note-name-ar">${n.name_ar}</div>` : ''}
+                <div class="note-family">${family}</div>
+                ${n.odor_description ? `<div class="note-odor">${n.odor_description}</div>` : ''}`;
+            pct = `<div class="note-pct">${n.percentage}%</div>`;
+        }
         return `
         <div class="note-item">
             <div class="note-icon">${n.family_icon || '🔮'}</div>
-            <div class="note-info">${nameBlock}</div>
-            <div class="note-pct">${n.percentage}%</div>
+            <div class="note-info">${info}</div>
+            ${pct}
         </div>`;
     }).join('');
 }
