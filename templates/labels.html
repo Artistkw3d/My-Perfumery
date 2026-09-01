@@ -384,8 +384,83 @@ function formatFlashPoint(m) {
     return `Flash Point : ${raw.replace(/°?\s*C\s*$/i, '')}°C`;
 }
 
+// ---- Long-name wrapping ----------------------------------------------------
+// A long material name used to be drawn as one line and simply spill past the
+// sticker edge (clipped by the frame). It now word-wraps onto up to 2 lines
+// (3 as a last resort) and shrinks a little to fit the sticker width. All
+// measurement is in millimetres via a single offscreen canvas context, so the
+// HTML preview/print (labelHtml) and the PNG/thermal-print canvas
+// (drawLabelCanvas) wrap at exactly the same points.
+let _nameMeasureCtx = null;
+function nameMeasureWidthMM(str, fontMM) {
+    if (!_nameMeasureCtx) _nameMeasureCtx = document.createElement('canvas').getContext('2d');
+    const S = 10; // px per mm — arbitrary, only the ratio matters
+    _nameMeasureCtx.font = `700 ${fontMM * S}px Arial`;
+    return _nameMeasureCtx.measureText(str).width / S;
+}
+
+// Line-break candidates: whole space-separated words, plus the piece after
+// every hyphen inside a word (so a long chemical name like
+// "2-Isobutyl-4-methyltetrahydro-2H-pyran-4-ol" can break instead of
+// overflowing). `space` marks tokens that get a leading space re-inserted
+// when they follow another token on the same line.
+function _nameTokens(name) {
+    const toks = [];
+    name.trim().split(/\s+/).forEach(word => {
+        // Split after each hyphen, keeping the hyphen on the left piece
+        // ("2-Isobutyl-4-ol" -> ["2-", "Isobutyl-", "4-ol"]).
+        (word.match(/[^-]*-|[^-]+$/g) || [word]).forEach((part, pi) => {
+            toks.push({ text: part, space: pi === 0 && toks.length > 0 });
+        });
+    });
+    return toks;
+}
+
+function _wrapName(name, fontMM, maxWidthMM) {
+    const lines = [];
+    let cur = '';
+    for (const t of _nameTokens(name)) {
+        const trial = cur ? cur + (t.space ? ' ' : '') + t.text : t.text;
+        if (cur && nameMeasureWidthMM(trial, fontMM) > maxWidthMM) {
+            lines.push(cur.trim());
+            cur = t.text;
+        } else {
+            cur = trial;
+        }
+    }
+    if (cur) lines.push(cur.trim());
+    return lines.length ? lines : [''];
+}
+
+// {lines, font} in mm for the name + the CAS line's effective top, pushed
+// down when the name took extra lines so the two never overlap.
+function nameLayout(m, L, wMM) {
+    const name = (m.name || '').trim();
+    const maxW = Math.max(4, wMM - 2 * L.textInset - 1);
+    const base = L.name;
+    let best;
+    if (nameMeasureWidthMM(name, base) <= maxW) {
+        best = { lines: [name], font: base };
+    } else {
+        const tryFit = (maxLines, minScale) => {
+            for (let f = base; f >= base * minScale - 1e-6; f -= base * 0.05) {
+                const lines = _wrapName(name, f, maxW);
+                const widest = Math.max(...lines.map(l => nameMeasureWidthMM(l, f)));
+                if (widest <= maxW && lines.length <= maxLines) return { lines, font: f };
+            }
+            return null;
+        };
+        best = tryFit(2, 0.7) || tryFit(3, 0.55)
+            || { lines: _wrapName(name, base * 0.55, maxW), font: base * 0.55 };
+    }
+    const lineStep = best.font * 1.15;
+    const casTop = Math.max(L.casTop, L.nameTop + best.lines.length * lineStep + 0.6);
+    return { lines: best.lines, font: best.font, nameTop: L.nameTop, lineStep, casTop };
+}
+
 function labelHtml(m, w, h) {
     const L = computeLayout(w, h, fontSizes);
+    const NL = nameLayout(m, L, w);
     const topCat = topOlfactiveCategory(m);
     const catLabel = topCat ? OLF_LABELS[OLF_CATS.indexOf(topCat)] : '';
     const mw = m.molecular_weight ? `${m.molecular_weight} g/mol` : '? g/mol';
@@ -405,8 +480,8 @@ function labelHtml(m, w, h) {
                 <div class="ph-x-icon" style="width:${L.iconSize}mm;height:${L.iconSize}mm;">${xCircleSvg()}</div>
                 <div class="ph-family" style="font-size:${L.family}mm;">${escapeHtml(catLabel)}</div>
             </div>` : ''}
-            <div class="ph-name" style="top:${L.nameTop}mm;left:${L.textInset}mm;right:${L.textInset}mm;font-size:${L.name}mm;">${escapeHtml(m.name)}</div>
-            ${m.cas_number ? `<div class="ph-cas" style="top:${L.casTop}mm;left:${L.textInset}mm;right:${L.textInset}mm;font-size:${L.cas}mm;">CAS N° :${escapeHtml(m.cas_number)}</div>` : ''}
+            <div class="ph-name" style="top:${NL.nameTop}mm;left:${L.textInset}mm;right:${L.textInset}mm;font-size:${NL.font}mm;line-height:1.15;">${NL.lines.map(escapeHtml).join('<br>')}</div>
+            ${m.cas_number ? `<div class="ph-cas" style="top:${NL.casTop}mm;left:${L.textInset}mm;right:${L.textInset}mm;font-size:${L.cas}mm;">CAS N° :${escapeHtml(m.cas_number)}</div>` : ''}
             <div class="ph-pyramid" style="bottom:${L.pyramidBottom}mm;left:${L.pyramidLeft}mm;width:${L.pyramidSize}mm;height:${L.pyramidSize}mm;">${pyramidSvg(m.profile)}</div>
             <div class="ph-meta" style="bottom:${L.metaBottom}mm;right:${L.metaRight}mm;font-size:${L.meta}mm;">
                 <div>${mw}</div>
@@ -624,14 +699,20 @@ function drawLabelCanvas(m, wMM, hMM) {
         ctx.restore();
     }
 
+    const NL = nameLayout(m, L, wMM);
     ctx.fillStyle = '#000';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.font = `700 ${px(L.name)}px Arial`;
-    ctx.fillText(m.name, canvas.width / 2, px(L.nameTop));
+    ctx.font = `700 ${px(NL.font)}px Arial`;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px(L.textInset), 0, canvas.width - px(2 * L.textInset), canvas.height);
+    ctx.clip();
+    NL.lines.forEach((ln, i) => ctx.fillText(ln, canvas.width / 2, px(NL.nameTop + i * NL.lineStep)));
+    ctx.restore();
     if (m.cas_number) {
         ctx.font = `700 ${px(L.cas)}px Arial`;
-        ctx.fillText(`CAS N° :${m.cas_number}`, canvas.width / 2, px(L.casTop));
+        ctx.fillText(`CAS N° :${m.cas_number}`, canvas.width / 2, px(NL.casTop));
     }
 
     const pyTop = hMM - L.pyramidBottom - L.pyramidSize;
