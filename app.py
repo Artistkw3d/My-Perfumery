@@ -1157,7 +1157,27 @@ def init_db():
         try:
             c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {dtype}")
         except: pass
-    
+
+    # Indexes for the joins that get hot as the library grows (materials in
+    # the thousands, hundreds of formulas). material_olfactive.material_id
+    # and material_msds.material_id are already PK/UNIQUE so they're covered.
+    for idx_sql in (
+        "CREATE INDEX IF NOT EXISTS idx_fi_formula   ON formula_ingredients(formula_id)",
+        "CREATE INDEX IF NOT EXISTS idx_fi_material  ON formula_ingredients(material_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ifracas_cas  ON ifra_cas_lookup(cas_number)",
+        "CREATE INDEX IF NOT EXISTS idx_mcomp_parent ON material_composition(parent_material_id)",
+        "CREATE INDEX IF NOT EXISTS idx_mcomp_comp   ON material_composition(component_material_id)",
+        "CREATE INDEX IF NOT EXISTS idx_mfiles_mat   ON material_files(material_id)",
+        "CREATE INDEX IF NOT EXISTS idx_fnotes_f     ON formula_notes(formula_id)",
+        "CREATE INDEX IF NOT EXISTS idx_fdrafts_f    ON formula_drafts(formula_id)",
+        "CREATE INDEX IF NOT EXISTS idx_dingr_draft  ON draft_ingredients(draft_id)",
+        "CREATE INDEX IF NOT EXISTS idx_materials_family   ON materials(family_id)",
+    ):
+        try:
+            c.execute(idx_sql)
+        except Exception as e:
+            log(f"[DB] index skipped: {e}")
+
     conn.commit()
     conn.close()
     log("[DB] Database initialized!")
@@ -5330,6 +5350,8 @@ def api_formulas():
 
     if request.method == 'GET':
         try:
+            olf_cats = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal']
+
             data = conn.execute('''
                 SELECT f.*, COUNT(fi.id) as ingredients_count,
                        COALESCE(SUM(fi.weight), 0) as total_weight
@@ -5338,46 +5360,54 @@ def api_formulas():
                 GROUP BY f.id ORDER BY f.created_at DESC
             ''').fetchall()
 
+            # --- Everything below used to be per-formula loops (one running
+            # ~350 sub-queries per formula for the olfactive profile). Now
+            # it's a handful of full-table passes folded into dicts, so the
+            # cost is flat regardless of how many formulas/ingredients exist.
+            cost_by_f = {r['formula_id']: r['c'] for r in conn.execute('''
+                SELECT fi.formula_id, COALESCE(SUM(fi.weight * m.price_per_gram), 0) AS c
+                FROM formula_ingredients fi JOIN materials m ON fi.material_id = m.id
+                GROUP BY fi.formula_id
+            ''').fetchall()}
+
+            names_by_f = {}
+            for r in conn.execute('''
+                SELECT fi.formula_id, m.name
+                FROM formula_ingredients fi JOIN materials m ON fi.material_id = m.id
+                ORDER BY fi.id
+            ''').fetchall():
+                names_by_f.setdefault(r['formula_id'], []).append(r['name'])
+
+            ingr_by_f = {}
+            for r in conn.execute(
+                "SELECT formula_id, weight, dilution, material_id FROM formula_ingredients"
+            ).fetchall():
+                ingr_by_f.setdefault(r['formula_id'], []).append(r)
+
+            olf_by_mat = {r['material_id']: r for r in conn.execute(
+                "SELECT * FROM material_olfactive"
+            ).fetchall()}
+
             result = []
             for f in data:
-                total_cost = conn.execute('''
-                    SELECT COALESCE(SUM(fi.weight * m.price_per_gram), 0)
-                    FROM formula_ingredients fi
-                    JOIN materials m ON fi.material_id = m.id
-                    WHERE fi.formula_id = ?
-                ''', (f['id'],)).fetchone()[0]
-
-                # Get ingredient names
-                ingredients = conn.execute('''
-                    SELECT m.name FROM formula_ingredients fi
-                    JOIN materials m ON fi.material_id = m.id
-                    WHERE fi.formula_id = ?
-                ''', (f['id'],)).fetchall()
-                ingredient_names = [i['name'] for i in ingredients]
-
-                # Calculate olfactive profile
-                olf_cats = ['citrus','aldehydic','aromatic','green','marine','floral','fruity','spicy','balsamic','woody','ambery','musky','leathery','animal']
+                rows = ingr_by_f.get(f['id'], [])
+                total_pure = sum((row['weight'] * (row['dilution'] or 1)) for row in rows)
                 olf_profile = {}
-                fi_rows = conn.execute('''
-                    SELECT fi.weight, fi.dilution, fi.material_id
-                    FROM formula_ingredients fi
-                    WHERE fi.formula_id = ?
-                ''', (f['id'],)).fetchall()
-                total_pure = sum((row['weight'] * (row['dilution'] or 1)) for row in fi_rows)
                 if total_pure > 0:
-                    for cat in olf_cats:
-                        val = 0
-                        for row in fi_rows:
-                            olf = conn.execute('SELECT * FROM material_olfactive WHERE material_id=?',
-                                (row['material_id'],)).fetchone()
-                            if olf and olf[cat]:
-                                pure_w = row['weight'] * (row['dilution'] or 1)
-                                val += olf[cat] * (pure_w / total_pure)
-                        olf_profile[cat] = round(val, 1)
+                    acc = {cat: 0.0 for cat in olf_cats}
+                    for row in rows:
+                        olf = olf_by_mat.get(row['material_id'])
+                        if not olf:
+                            continue
+                        share = (row['weight'] * (row['dilution'] or 1)) / total_pure
+                        for cat in olf_cats:
+                            if olf[cat]:
+                                acc[cat] += olf[cat] * share
+                    olf_profile = {cat: round(acc[cat], 1) for cat in olf_cats}
 
                 r = dict(f)
-                r['total_cost'] = total_cost
-                r['ingredient_names'] = ingredient_names
+                r['total_cost'] = cost_by_f.get(f['id'], 0)
+                r['ingredient_names'] = names_by_f.get(f['id'], [])
                 r['olfactive_profile'] = olf_profile
                 result.append(r)
 
