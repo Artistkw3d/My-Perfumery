@@ -347,6 +347,13 @@
 
 <div class="formula-list" id="formulasContainer"></div>
 
+<div id="formulasFooter" style="text-align:center;margin:18px 0;">
+    <div id="formulasCountInfo" style="color:var(--text-light);font-size:0.85rem;margin-bottom:8px;"></div>
+    <button id="loadMoreFormulasBtn" class="filter-btn-e" style="display:none;" onclick="loadMoreFormulas()">
+        <i class="bi bi-arrow-down-circle"></i> عرض المزيد (<span id="loadMoreFormulasN"></span>)
+    </button>
+</div>
+
 <!-- Create Modal -->
 <div class="modal fade" id="createModal" tabindex="-1">
     <div class="modal-dialog">
@@ -389,6 +396,44 @@ const OLF_COLORS = ['#d4a853','#b5a898','#7d9c7b','#8fb87d','#6b94b0','#c9847b',
 let allFormulas = [];
 let currentFilter = 'all';
 
+// ===== Windowed rendering =====
+// Each formula card draws a live Chart.js polar wheel; rendering hundreds
+// at once (and leaking the previous batch on every re-filter) locks the
+// browser. Render F_PAGE at a time, grow on "load more" / scroll.
+const F_PAGE = 30;
+let visibleFormulas = [];
+let fRenderedCount = F_PAGE;
+let formulaCharts = [];
+
+function drawFormulas() {
+    renderFormulas(visibleFormulas.slice(0, fRenderedCount));
+    updateFormulasFooter();
+}
+
+function loadMoreFormulas() {
+    if (fRenderedCount >= visibleFormulas.length) return;
+    fRenderedCount = Math.min(fRenderedCount + F_PAGE, visibleFormulas.length);
+    drawFormulas();
+}
+
+const _loadMoreFormulasObserver = new IntersectionObserver(entries => {
+    if (entries.some(e => e.isIntersecting)) loadMoreFormulas();
+}, { rootMargin: '600px' });
+
+function updateFormulasFooter() {
+    const total = visibleFormulas.length;
+    const shown = Math.min(fRenderedCount, total);
+    const info = document.getElementById('formulasCountInfo');
+    const btn  = document.getElementById('loadMoreFormulasBtn');
+    const nEl  = document.getElementById('loadMoreFormulasN');
+    if (info) info.textContent = total ? `عرض ${shown} من ${total}` : '';
+    if (btn) {
+        btn.style.display = shown < total ? '' : 'none';
+        _loadMoreFormulasObserver.observe(btn);
+    }
+    if (nEl) nEl.textContent = Math.min(F_PAGE, total - shown);
+}
+
 function loadFormulas() {
     fetch('/api/formulas')
         .then(r => r.json().then(data => ({ok: r.ok, data})))
@@ -396,7 +441,7 @@ function loadFormulas() {
             if (ok && data.success) {
                 allFormulas = data.data;
                 document.getElementById('formulaCount').textContent = allFormulas.length;
-                renderFormulas(allFormulas);
+                applyFilters();
             } else {
                 const msg = data.message || 'Unknown error';
                 console.error('API error:', msg, data);
@@ -411,8 +456,14 @@ function loadFormulas() {
 
 function renderFormulas(formulas) {
     const container = document.getElementById('formulasContainer');
+    // Destroy the previous batch of wheels before throwing away their
+    // canvases, otherwise Chart.js keeps each one's resize/animation loop
+    // alive forever (leaks on every re-filter / reload).
+    formulaCharts.forEach(c => { try { c.destroy(); } catch (e) {} });
+    formulaCharts = [];
     if (!formulas.length) {
-        container.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><p>لا توجد تركيبات بعد</p></div>';
+        const msg = allFormulas.length ? 'لا نتائج مطابقة' : 'لا توجد تركيبات بعد';
+        container.innerHTML = `<div class="empty-state"><i class="bi bi-inbox"></i><p>${msg}</p></div>`;
         return;
     }
 
@@ -474,7 +525,7 @@ function renderFormulas(formulas) {
             const fMax = Math.max(...data, 1);
             const fDynMax = Math.ceil(fMax * 1.3);
             const fStep = fDynMax <= 5 ? 1 : 2;
-            new Chart(canvas.getContext('2d'), {
+            formulaCharts.push(new Chart(canvas.getContext('2d'), {
                 type: 'polarArea',
                 data: {
                     labels: OLF_LABELS,
@@ -498,7 +549,7 @@ function renderFormulas(formulas) {
                         }
                     }
                 }
-            });
+            }));
         });
     }, 100);
 }
@@ -513,9 +564,11 @@ document.querySelectorAll('.filter-btn-e').forEach(btn => {
     });
 });
 
-// Search
+// Search (debounced — each rebuild redraws up to F_PAGE cards + wheels)
+let _fSearchT = null;
 document.getElementById('searchInput').addEventListener('input', function() {
-    applyFilters();
+    clearTimeout(_fSearchT);
+    _fSearchT = setTimeout(applyFilters, 200);
 });
 
 function applyFilters() {
@@ -533,7 +586,9 @@ function applyFilters() {
             return nameMatch || descMatch || ingMatch;
         });
     }
-    renderFormulas(filtered);
+    visibleFormulas = filtered;
+    fRenderedCount = Math.min(F_PAGE, visibleFormulas.length);
+    drawFormulas();
 }
 
 function showCreateModal() {
