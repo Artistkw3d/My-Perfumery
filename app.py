@@ -3424,7 +3424,11 @@ def api_materials():
                             'olf_avg': avg, 'olf_positive': pos})
         elif action == 'get':
             mid = request.args.get('id')
-            data = conn.execute("SELECT * FROM materials WHERE id=?", (mid,)).fetchone()
+            data = conn.execute('''
+                SELECT m.*, f.name as family_name, f.name_ar as family_name_ar, f.icon as family_icon
+                FROM materials m LEFT JOIN families f ON m.family_id = f.id
+                WHERE m.id=?
+            ''', (mid,)).fetchone()
             msds = conn.execute("SELECT * FROM material_msds WHERE material_id=?", (mid,)).fetchone()
             olfactive = conn.execute("SELECT * FROM material_olfactive WHERE material_id=?", (mid,)).fetchone()
             result = dict(data) if data else None

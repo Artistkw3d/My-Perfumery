@@ -300,6 +300,19 @@ function topOlfactiveCategory(m) {
     return best;
 }
 
+// Label's top-left text is the material's actual assigned fragrance family
+// (materials.family_id -> families.name, the same "العائلة العطرية" field
+// shown in the material edit form) — NOT the olfactive-wheel-derived
+// category topOlfactiveCategory() computes. Those are two different things
+// that can disagree, and the family field is the one the user actually set.
+// Falls back to the wheel-derived category only when the material has no
+// family assigned at all, so an unclassified material doesn't print blank.
+function labelFamilyText(m) {
+    if (m.family_name) return m.family_name;
+    const topCat = topOlfactiveCategory(m);
+    return topCat ? OLF_LABELS[OLF_CATS.indexOf(topCat)] : '';
+}
+
 // 3-band pyramid — top/middle/bottom bands correspond to materials.profile
 // (Top/Heart/Base), filled black to mark which one this material is,
 // matching the pyramid icon on the user's own printed label archive.
@@ -461,8 +474,7 @@ function nameLayout(m, L, wMM) {
 function labelHtml(m, w, h) {
     const L = computeLayout(w, h, fontSizes);
     const NL = nameLayout(m, L, w);
-    const topCat = topOlfactiveCategory(m);
-    const catLabel = topCat ? OLF_LABELS[OLF_CATS.indexOf(topCat)] : '';
+    const catLabel = labelFamilyText(m);
     const mw = m.molecular_weight ? `${m.molecular_weight} g/mol` : '? g/mol';
     const fp = formatFlashPoint(m);
     // The family row is centered across the FULL label width by default —
@@ -650,8 +662,7 @@ function drawLabelCanvas(m, wMM, hMM) {
     ctx.lineWidth = px(L.border);
     ctx.strokeRect(px(L.border) / 2, px(L.border) / 2, canvas.width - px(L.border), canvas.height - px(L.border));
 
-    const topCat = topOlfactiveCategory(m);
-    const catLabel = topCat ? OLF_LABELS[OLF_CATS.indexOf(topCat)] : '';
+    const catLabel = labelFamilyText(m);
 
     if (catLabel) {
         // Icon + family text center as one group across the AVAILABLE width
