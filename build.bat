@@ -23,6 +23,7 @@ python -m PyInstaller ^
   --add-data "templates;templates" ^
   --add-data "static;static" ^
   --add-data "data;data" ^
+  --icon "static\img\app-icon.ico" ^
   --hidden-import=webview.platforms.edgechromium ^
   launcher.py || goto :err
 
