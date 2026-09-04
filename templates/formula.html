@@ -437,6 +437,13 @@
     }
     .draft-tab.dt-active .dt-count,
     .draft-tab.dt-final .dt-count { background: rgba(255,255,255,0.2); }
+    .dt-rename-btn {
+        font-size: 0.7rem;
+        opacity: 0.45;
+        transition: opacity 0.2s;
+    }
+    .draft-tab:hover .dt-rename-btn { opacity: 0.85; }
+    .dt-rename-btn:hover { opacity: 1 !important; }
     .draft-tab-new {
         border-style: dashed;
         color: var(--text-light);
@@ -1991,6 +1998,7 @@ function renderDraftBar(drafts) {
                 <span class="dt-count">${d.ingredients_count}</span>
                 ${d.is_final ? '<i class="bi bi-star-fill" style="font-size:0.6rem;"></i>' : ''}
                 ${d.id === activeDraftId ? '<i class="bi bi-pencil-fill" style="font-size:0.6rem;" title="المسودة النشطة"></i>' : ''}
+                <i class="bi bi-pencil-square dt-rename-btn" title="إعادة تسمية المسودة" onclick="renameDraft(event, ${d.id})"></i>
             </div>`;
     });
 
@@ -2075,6 +2083,26 @@ function loadDraft(draftId) {
         } else {
             showAlert(data.message || 'خطأ', 'danger');
         }
+    });
+}
+
+function renameDraft(evt, draftId) {
+    evt.stopPropagation();
+    const draft = allDrafts.find(d => d.id === draftId);
+    const currentName = draft ? draft.name : '';
+    const newName = prompt('اسم جديد للمسودة:', currentName);
+    if (newName === null) return;
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === currentName) return;
+    const fd = new FormData();
+    fd.append('action', 'rename');
+    fd.append('draft_id', draftId);
+    fd.append('name', trimmed);
+    fetch(`/api/formula/${formulaId}/drafts`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) { loadDrafts(); showAlert(data.message); }
+        else { showAlert(data.message || 'خطأ', 'danger'); }
     });
 }
 
