@@ -714,6 +714,32 @@
 
         <div id="contribWarnings"></div>
 
+        <!-- Fragrance Analysis (quick reference to help fill out the review below) -->
+        <div class="e-card">
+            <div class="e-card-head">
+                <span><i class="bi bi-search-heart"></i> تحليل العطر</span>
+            </div>
+            <div class="e-card-body" style="padding:0;">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0" id="analysisTable">
+                        <thead>
+                            <tr>
+                                <th>المادة</th>
+                                <th>النوتة</th>
+                                <th>العائلة العطرية</th>
+                                <th>الوصف العطري</th>
+                            </tr>
+                        </thead>
+                        <tbody id="analysisBody"></tbody>
+                    </table>
+                </div>
+                <div id="analysisEmpty" style="text-align:center;color:var(--text-light);padding:10px;display:none;">
+                    <i class="bi bi-clipboard-plus" style="font-size:1.5rem;"></i><br>
+                    لا توجد مواد في هذه المسودة بعد
+                </div>
+            </div>
+        </div>
+
         <!-- Review -->
         <div class="e-card">
             <div class="e-card-head">
@@ -1269,6 +1295,7 @@ function loadIngredients() {
         .then(data => {
             if (data.success) {
                 renderIngredients(data.data, data.total_weight, data.total_pure, data.ifra_design_limit, data.ifra_final_limit);
+                renderAnalysis(data.data);
                 // Update summary strip
                 document.getElementById('ss_count').textContent = data.data.length;
                 document.getElementById('ss_weight').textContent = data.total_weight ? data.total_weight.toFixed(2) + 'g' : '-';
@@ -1332,6 +1359,38 @@ function convertToMaterial() {
             setTimeout(() => { window.location.reload(); }, 1200);
         })
         .catch(err => showAlert('خطأ: ' + err.message, 'danger'));
+}
+
+function renderAnalysis(items) {
+    const tbody = document.getElementById('analysisBody');
+    const empty = document.getElementById('analysisEmpty');
+    if (!items || !items.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+    const noteLabels = { Top: 'Top (الرأس)', Heart: 'Heart (القلب)', Base: 'Base (القاعدة)' };
+    tbody.innerHTML = items.map(i => {
+        const familyHtml = i.family_name
+            ? `${i.family_icon || ''} ${i.family_name_ar || i.family_name}`
+            : '<span style="color:var(--text-light);">-</span>';
+        const desc = i.odor_description
+            ? i.odor_description
+            : '<span style="color:var(--text-light);">-</span>';
+        const nameHtml = i.name_ar
+            ? `${i.name_ar}<br><small style="color:var(--text-light);">${i.name}</small>`
+            : i.name;
+        const noteHtml = i.profile
+            ? `<span class="badge badge-profile badge-${i.profile.toLowerCase()}">${noteLabels[i.profile] || i.profile}</span>`
+            : '<span style="color:var(--text-light);">-</span>';
+        return `<tr>
+            <td>${nameHtml}</td>
+            <td>${noteHtml}</td>
+            <td>${familyHtml}</td>
+            <td style="max-width:340px;">${desc}</td>
+        </tr>`;
+    }).join('');
 }
 
 function renderIngredients(items, totalWeight, totalPure, ifraDesignLimit, ifraFinalLimit) {

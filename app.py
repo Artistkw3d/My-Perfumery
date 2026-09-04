@@ -5614,9 +5614,11 @@ def api_formula_ingredients(fid):
 
         data = conn.execute('''
             SELECT fi.*, m.name, m.name_ar, m.cas_number, m.ifra_limit, m.manual_ifra_cats,
-                   m.price_per_gram, m.profile, m.uses
+                   m.price_per_gram, m.profile, m.uses, m.odor_description, m.family_id,
+                   f.name as family_name, f.name_ar as family_name_ar, f.icon as family_icon
             FROM formula_ingredients fi
             JOIN materials m ON fi.material_id = m.id
+            LEFT JOIN families f ON m.family_id = f.id
             WHERE fi.formula_id = ?
         ''', (fid,)).fetchall()
 
